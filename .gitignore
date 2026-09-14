@@ -1,0 +1,26 @@
+# Runtime state, credentials and generated output
+.env
+.env.*
+!.env.example
+.runtime/
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+*.pid
+
+# Local robot captures and generated firmware/build trees
+artifacts/
+.tools/
+.pio/
+build/
+dist/
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# IDE/OS state
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APEX MAPPING & ROUTE CONSOLE</title>
+    <style>
+        :root { --bg:#030506; --panel:#0b0e10; --line:#293238; --red:#e60000; --cyan:#00e5b0; --orange:#ff9d22; --blue:#27a7ff; --text:#dbe2e5; --muted:#78858b; }
+        * { box-sizing:border-box; }
+        html,body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--bg); color:var(--text); font-family:"Courier New",monospace; }
+        button { background:#111517; color:#aeb9bd; border:1px solid #3b464b; padding:9px 10px; font:700 11px "Courier New",monospace; cursor:pointer; text-transform:uppercase; }
+        button:hover { border-color:var(--cyan); color:#fff; }
+        button.active { background:var(--orange); border-color:#ffc36e; color:#160d02; }
+        button.primary { color:var(--cyan); border-color:var(--cyan); }
+        button.danger { color:#ff4650; border-color:#8b1c22; }
+        button:disabled { opacity:.35; cursor:not-allowed; }
+        .app { height:100%; display:grid; grid-template-rows:44px minmax(0,1fr); }
+        header { border-bottom:1px solid var(--line); border-top:2px solid var(--red); display:flex; align-items:center; gap:10px; padding:0 12px; background:#07090a; }
+        .brand { color:var(--red); letter-spacing:1.5px; font-size:15px; font-weight:900; }
+        .brand span { color:#fff; font-size:10px; }
+        .spacer { flex:1; }
+        .pill { border:1px solid #3b464b; border-radius:999px; padding:5px 9px; color:var(--muted); font-size:10px; white-space:nowrap; }
+        .pill.ok { color:var(--cyan); border-color:rgba(0,229,176,.6); }
+        .pill.warn { color:var(--orange); border-color:rgba(255,157,34,.65); }
+        .pill.bad { color:#ff4650; border-color:rgba(255,45,53,.65); }
+        .layout { min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:10px; padding:10px; }
+        .map-panel { min-width:0; min-height:0; position:relative; border:1px solid var(--line); border-top:3px solid var(--red); background:#030607; overflow:hidden; }
+        #mapCanvas { width:100%; height:100%; display:block; cursor:crosshair; }
+        .map-title { position:absolute; left:9px; top:8px; padding:5px 8px; background:rgba(2,5,6,.9); border:1px solid var(--red); color:var(--red); font-size:10px; font-weight:bold; pointer-events:none; }
+        .lock-banner { position:absolute; left:50%; top:8px; transform:translateX(-50%); background:rgba(20,3,4,.94); border:1px solid #a51f27; color:#ff4650; padding:6px 10px; font-size:10px; font-weight:bold; pointer-events:none; }
+        .map-hint { position:absolute; left:9px; bottom:9px; background:rgba(2,5,6,.9); border:1px solid #334148; color:#839198; padding:7px 9px; font-size:9px; line-height:1.45; pointer-events:none; }
+        .legend { position:absolute; right:9px; bottom:9px; background:rgba(2,5,6,.9); border:1px solid #334148; color:#839198; padding:7px 9px; font-size:9px; line-height:1.55; pointer-events:none; }
+        aside { min-height:0; overflow:auto; display:flex; flex-direction:column; gap:9px; }
+        .card { background:var(--panel); border:1px solid var(--line); border-top:2px solid var(--red); padding:10px; }
+        .card h2 { color:var(--red); font-size:11px; letter-spacing:1px; margin:0 0 9px; }
+        .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+        .status-list { display:grid; gap:6px; }
+        .row { display:flex; justify-content:space-between; gap:10px; padding-bottom:5px; border-bottom:1px solid #20272a; font-size:10px; }
+        .row span { color:var(--muted); }
+        .row strong { color:#fff; text-align:right; overflow-wrap:anywhere; }
+        #decision { color:var(--orange); }
+        #eventLog { min-height:48px; background:#050708; border:1px solid #252d31; color:#819096; padding:8px; white-space:pre-wrap; font-size:9px; line-height:1.45; }
+        .note { color:#7f8b91; font-size:9px; line-height:1.5; margin-top:8px; }
+        @media(max-width:900px){ html,body{overflow:auto}.app{height:auto;min-height:100%}.layout{grid-template-columns:1fr;grid-template-rows:70vh auto}.map-panel{min-height:520px} }
+    </style>
+</head>
+<body>
+<div class="app">
+    <header>
+        <div class="brand">APEX MAPPING <span>V2 · ROUTE PREVIEW</span></div>
+        <div id="mapBadge" class="pill">HARİTA BEKLENİYOR</div>
+        <div id="lidarBadge" class="pill">LIDAR --</div>
+        <div id="imuBadge" class="pill">IMU --</div>
+        <div id="tofBadge" class="pill">TOF --</div>
+        <div id="cameraBadge" class="pill">KAMERA --</div>
+        <div class="spacer"></div>
+        <button onclick="location.href='/'">ANA HUD ↗</button>
+        <button onclick="location.href='/camera-console'">KAMERA ↗</button>
+    </header>
+    <main class="layout">
+        <section class="map-panel" id="mapPanel">
+            <canvas id="mapCanvas"></canvas>
+            <div id="mapTitle" class="map-title">LOCAL OCCUPANCY · +X İLERİ / +Y SOL</div>
+            <div class="lock-banner">LIDAR GÜVENLİKLİ · DÜŞÜK HIZLI ROTA YÜRÜTME</div>
+            <div class="map-hint">HARİTADA HEDEF NOKTAYA TIKLA<br>Manuel onay veya otonom kararla tüm waypointler izlenir.</div>
+            <div class="legend"><span style="color:#53636a">■</span> BİLİNMEYEN<br><span style="color:#173036">■</span> GÖZLENDİ/BOŞ<br><span style="color:#ff4650">■</span> ENGEL<br><span style="color:#00e5b0">━</span> ROTA<br><span style="color:#ff9d22">◆</span> HEDEF</div>
+        </section>
+        <aside>
+            <section class="card">
+                <h2>HEDEF & ROTA</h2>
+                <div class="grid2">
+                    <button id="manualBtn" class="active" onclick="setMode('manual')">MANUEL ONAY</button>
+                    <button id="autoBtn" onclick="setMode('auto')">OTONOM KARAR</button>
+                </div>
+                <button id="approveBtn" class="primary" style="width:100%;margin-top:6px" onclick="approveRoute()" disabled>ROTAYI ONAYLA VE YÜRÜT</button>
+                <button class="danger" style="width:100%;margin-top:6px" onclick="clearGoal()">HEDEFİ / ROTAYI TEMİZLE</button>
+                <div class="note">Tüm rota parçaları düşük hızda izlenir. Konum odometrisi henüz kalibre edilmediği için varış komut-zaman tahminidir; taze LiDAR ve firmware deadman güvenlik için zorunludur.</div>
+            </section>
+            <section class="card">
+                <h2>PLAN DURUMU</h2>
+                <div class="status-list">
+                    <div class="row"><span>HARİTA MODU</span><strong id="mapMode">--</strong></div>
+                    <div class="row"><span>HEDEF X/Y</span><strong id="goalText">--</strong></div>
+                    <div class="row"><span>ROTA</span><strong id="routeStatus">--</strong></div>
+                    <div class="row"><span>UZUNLUK</span><strong id="routeLength">--</strong></div>
+                    <div class="row"><span>BİLİNMEYEN ORANI</span><strong id="unknownRatio">--</strong></div>
+                    <div class="row"><span>KARAR</span><strong id="decision">NO_GOAL</strong></div>
+                    <div class="row"><span>YÜRÜTME</span><strong id="executionState" style="color:#ff9d22">HAZIR</strong></div>
+                </div>
+            </section>
+            <section class="card">
+                <h2>HARİTA TELEMETRİSİ</h2>
+                <div class="status-list">
+                    <div class="row"><span>TARAMA</span><strong id="scanCount">0</strong></div>
+                    <div class="row"><span>GÖZLENEN HÜCRE</span><strong id="observedCells">0</strong></div>
+                    <div class="row"><span>ENGEL HÜCRESİ</span><strong id="occupiedCells">0</strong></div>
+                    <div class="row"><span>ÇÖZÜNÜRLÜK</span><strong id="resolution">--</strong></div>
+                </div>
+            </section>
+            <section class="card">
+                <h2>FÜZYON HAZIRLIK KAPISI</h2>
+                <div class="status-list">
+                    <div class="row"><span>2D NAVİGASYON</span><strong id="ready2d">--</strong></div>
+                    <div class="row"><span>GLOBAL SLAM</span><strong id="readySlam">--</strong></div>
+                    <div class="row"><span>SEYREK 3D</span><strong id="ready3d">--</strong></div>
+                    <div class="row"><span>KAMERA SEMANTİK</span><strong id="readySemantic">--</strong></div>
+                </div>
+                <div id="fusionBlockers" class="note">Kalibrasyon durumu bekleniyor.</div>
+            </section>
+            <section class="card"><h2>İŞLEM KAYDI</h2><div id="eventLog">Navigasyon veri kanalı bekleniyor.</div></section>
+        </aside>
+    </main>
+</div>
+<script>
+    const canvas = document.getElementById('mapCanvas');
+    const panel = document.getElementById('mapPanel');
+    const ctx = canvas.getContext('2d', {alpha:false});
+    let navState = null, gridCells = [], navWs = null;
+
+    function setLog(text, tone='normal') {
+        const el = document.getElementById('eventLog');
+        el.textContent = text;
+        el.style.color = tone === 'bad' ? '#ff4650' : tone === 'ok' ? 'var(--cyan)' : tone === 'warn' ? 'var(--orange)' : '#819096';
+    }
+
+    function decodeRle(encoded, expected) {
+        const out = new Int8Array(expected);
+        let offset = 0;
+        for (const pair of encoded || []) {
+            const value = Number(pair[0]), count = Number(pair[1]);
+            out.fill(value, offset, Math.min(expected, offset + count));
+            offset += count;
+            if (offset >= expected) break;
+        }
+        return out;
+    }
+
+    function resizeMap() {
+        const rect = panel.getBoundingClientRect();
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        canvas.width = Math.max(2, Math.round(rect.width * dpr));
+        canvas.height = Math.max(2, Math.round(rect.height * dpr));
+        canvas.style.width = `${rect.width}px`; canvas.style.height = `${rect.height}px`;
+        ctx.setTransform(dpr,0,0,dpr,0,0);
+        drawMap();
+    }
+
+    function viewTransform() {
+        if (!navState?.grid) return null;
+        const rect = panel.getBoundingClientRect(), g = navState.grid;
+        const mapW = g.width * g.resolution_m, mapH = g.height * g.resolution_m;
+        return {w:rect.width,h:rect.height,scale:Math.min((rect.width-36)/mapW,(rect.height-36)/mapH),pose:navState.pose||{x_m:0,y_m:0}};
+    }
+
+    function worldToScreen(x, y, tr) {
+        return [tr.w/2 - (y-tr.pose.y_m)*tr.scale, tr.h/2 - (x-tr.pose.x_m)*tr.scale];
+    }
+
+    function drawMap() {
+        const rect = panel.getBoundingClientRect(), w=rect.width, h=rect.height;
+        ctx.fillStyle='#030607'; ctx.fillRect(0,0,w,h);
+        if (!navState?.grid) return;
+        const g=navState.grid, tr=viewTransform();
+        const cellPx=Math.max(1,g.resolution_m*tr.scale);
+        for (let gy=0; gy<g.height; gy++) for (let gx=0; gx<g.width; gx++) {
+            const value=gridCells[gy*g.width+gx];
+            if (value < 0) continue;
+            const x=g.origin_x_m+gx*g.resolution_m, y=g.origin_y_m+gy*g.resolution_m;
+            const [sx,sy]=worldToScreen(x,y,tr);
+            ctx.fillStyle=value>=100?'#ff3845':'#102429';
+            ctx.fillRect(sx-cellPx/2,sy-cellPx/2,cellPx+0.4,cellPx+0.4);
+        }
+        ctx.strokeStyle='rgba(72,102,112,.35)'; ctx.lineWidth=1;
+        for(let m=1;m<=6;m++){
+            const [cx,cy]=worldToScreen(tr.pose.x_m,tr.pose.y_m,tr);
+            ctx.beginPath();ctx.arc(cx,cy,m*tr.scale,0,Math.PI*2);ctx.stroke();
+        }
+        if (Array.isArray(navState.route) && navState.route.length>1) {
+            ctx.strokeStyle='#00e5b0';ctx.lineWidth=3;ctx.shadowColor='#00e5b0';ctx.shadowBlur=8;ctx.beginPath();
+            navState.route.forEach((p,i)=>{const [sx,sy]=worldToScreen(Number(p[0]),Number(p[1]),tr);i?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy)});ctx.stroke();ctx.shadowBlur=0;
+        }
+        if(navState.goal){const [gx,gy]=worldToScreen(navState.goal.x_m,navState.goal.y_m,tr);ctx.save();ctx.translate(gx,gy);ctx.rotate(Math.PI/4);ctx.fillStyle='#ff9d22';ctx.fillRect(-7,-7,14,14);ctx.restore();}
+        const [rx,ry]=worldToScreen(tr.pose.x_m,tr.pose.y_m,tr);ctx.fillStyle='#e60000';ctx.beginPath();ctx.moveTo(rx,ry-15);ctx.lineTo(rx-10,ry+10);ctx.lineTo(rx+10,ry+10);ctx.closePath();ctx.fill();
+        ctx.strokeStyle='#ff9d22';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(rx,ry-18);ctx.lineTo(rx,ry-30);ctx.stroke();
+    }
+
+    function renderState(state) {
+        navState=state;
+        const g=state.grid||{};
+        gridCells=decodeRle(g.cells_rle,(g.width||0)*(g.height||0));
+        document.getElementById('mapMode').textContent=state.map_mode||'--';
+        document.getElementById('goalText').textContent=state.goal?`${state.goal.x_m.toFixed(2)} / ${state.goal.y_m.toFixed(2)} m`:'--';
+        document.getElementById('routeStatus').textContent=state.route_status||'--';
+        document.getElementById('routeLength').textContent=state.route_ok?`${Number(state.route_length_m).toFixed(2)} m`:'--';
+        document.getElementById('unknownRatio').textContent=state.route_ok?`${Math.round(Number(state.unknown_ratio)*100)}%`:'--';
+        document.getElementById('decision').textContent=state.decision||'--';
+        const test=state.platform_test||{};document.getElementById('executionState').textContent=test.active?'ÇALIŞIYOR':(test.state||'HAZIR');
+        if(test.message)setLog(test.message,['BLOCKED','ABORTED'].includes(test.state)?'bad':'ok');
+        document.getElementById('scanCount').textContent=g.scan_count||0;
+        document.getElementById('observedCells').textContent=g.observed_cells||0;
+        document.getElementById('occupiedCells').textContent=g.occupied_cells||0;
+        document.getElementById('resolution').textContent=g.resolution_m?`${Math.round(g.resolution_m*100)} cm`:'--';
+        document.getElementById('manualBtn').classList.toggle('active',state.approval_mode==='manual');
+        document.getElementById('autoBtn').classList.toggle('active',state.approval_mode==='auto');
+        document.getElementById('approveBtn').disabled=!(state.route_ok&&!test.active);
+        const lidar=state.sensors?.lidar||{}, imu=state.sensors?.imu||{}, tof=state.sensors?.tof||{}, camera=state.sensors?.camera||{};
+        setPill('lidarBadge',lidar.fresh?'LIDAR CANLI':'LIDAR BEKLENİYOR',lidar.fresh?'ok':'bad');
+        setPill('imuBadge',imu.valid?'IMU CANLI':'IMU YOK',imu.valid?'ok':'warn');
+        setPill('tofBadge',tof.valid?`TOF ${Math.round(tof.distance_mm)} mm`:'TOF YOK',tof.valid?'ok':'warn');
+        setPill('cameraBadge',camera.healthy?'KAMERA CANLI':'KAMERA YOK',camera.healthy?'ok':'warn');
+        setPill('mapBadge',`${state.map_mode||'--'} · ${g.observed_cells||0} HÜCRE`,(g.scan_count||0)>0?'ok':'warn');
+        const ready=state.fusion_readiness||{};
+        setReady('ready2d',ready.navigation_2d);setReady('readySlam',ready.global_slam);setReady('ready3d',ready.sparse_3d);setReady('readySemantic',ready.camera_semantic);
+        document.getElementById('fusionBlockers').textContent=(ready.blockers||[]).length?`BEKLEYEN: ${(ready.blockers||[]).join(' · ')}`:'TÜM FÜZYON KAPILARI HAZIR';
+        document.getElementById('mapTitle').textContent=`${state.map_mode||'LOCAL_ONLY'} OCCUPANCY · +X İLERİ / +Y SOL`;
+        drawMap();
+    }
+
+    function setPill(id,text,tone){const e=document.getElementById(id);e.textContent=text;e.className=`pill ${tone||''}`;}
+    function setReady(id,ready){const e=document.getElementById(id);e.textContent=ready?'HAZIR':'KİLİTLİ';e.style.color=ready?'var(--cyan)':'var(--orange)';}
+
+    async function postJson(url,payload={}) {
+        const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),cache:'no-store'});
+        const data=await r.json();if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);return data;
+    }
+
+    canvas.addEventListener('click',async ev=>{
+        if(!navState?.grid)return;
+        const rect=canvas.getBoundingClientRect(),tr=viewTransform();
+        const x=tr.pose.x_m+(tr.h/2-(ev.clientY-rect.top))/tr.scale;
+        const y=tr.pose.y_m+(tr.w/2-(ev.clientX-rect.left))/tr.scale;
+        try{const d=await postJson('/api/navigation/goal',{x_m:x,y_m:y});setLog(d.route_ok?(d.platform_test?.active?'Otonom rota yürütmesi başladı.':'Rota hesaplandı; onay bekleniyor.'):(d.route_message||'Rota bulunamadı.'),d.route_ok?'ok':'bad');}
+        catch(e){setLog(`Hedef ayarlanamadı: ${e.message}`,'bad');}
+    });
+
+    async function setMode(mode){try{const d=await postJson('/api/navigation/mode',{mode});setLog(mode==='manual'?'Manuel rota onayı seçildi.':(d.platform_test?.active?'Otonom rota yürütmesi başladı.':'Otonom karar seçildi; güvenli hedefte doğrudan yürütür.'),'ok')}catch(e){setLog(e.message,'bad')}}
+    async function approveRoute(){try{await postJson('/api/navigation/approve');setLog('Düşük hızlı rota yürütmesi başlatıldı.','ok')}catch(e){setLog(e.message,'bad')}}
+    async function clearGoal(){try{await postJson('/api/navigation/clear');setLog('Hedef ve rota temizlendi.','ok')}catch(e){setLog(e.message,'bad')}}
+
+    function connectNavigation(){
+        const proto=location.protocol==='https:'?'wss':'ws';navWs=new WebSocket(`${proto}://${location.host}/ws/navigation`);
+        navWs.onmessage=ev=>{try{const d=JSON.parse(ev.data);if(d.type==='navigation')renderState(d)}catch(e){setLog(`Veri hatası: ${e.message}`,'bad')}};
+        navWs.onclose=()=>{setPill('mapBadge','BAĞLANTI YOK','bad');setTimeout(connectNavigation,1500)};
+        navWs.onerror=()=>navWs.close();
+    }
+    new ResizeObserver(resizeMap).observe(panel);resizeMap();connectNavigation();
+</script>
+</body>
+</html>
