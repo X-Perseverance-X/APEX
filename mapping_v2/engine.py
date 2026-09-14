@@ -254,7 +254,7 @@ class MappingEngine:
             result = {
                 "type": "navigation",
                 "schema": "apex.mapping.v2",
-                "map_mode": "LOCAL_ONLY" if not self.pose.trusted else "ODOMETRY",
+                "map_mode": "LOCAL_ONLY" if not self.pose.trusted else "LOCAL_SLAM",
                 "pose": asdict(self.pose),
                 "grid": {
                     "width": self.grid.config.width,
@@ -293,12 +293,16 @@ class MappingEngine:
                     "navigation_2d": self._age_s(self.last_map_update_ns) is not None
                     and self._age_s(self.last_map_update_ns) < 1.0
                     and self._rejected_matches < 3,
-                    "global_slam": self.pose.trusted,
+                    "local_slam": self.pose.trusted,
+                    # Local scan matching provides odometry inside the active
+                    # submap. It is not loop-closed global SLAM yet.
+                    "global_slam": False,
                     "sparse_3d": bool(self.last_imu and self.last_imu.valid and self.extrinsics_trusted),
                     "camera_semantic": bool(self.camera_healthy and self.camera_calibrated and self.extrinsics_trusted),
                     "blockers": [
                         label for blocked, label in (
                             (not self.pose.trusted, "GÜVENİLİR ODOMETRİ YOK"),
+                            (True, "GLOBAL LOOP CLOSURE/POSE GRAPH YOK"),
                             (not (self.last_imu and self.last_imu.valid), "IMU YOK/GEÇERSİZ"),
                             (not self.extrinsics_trusted, "SENSÖR DIŞ KALİBRASYONU PROVISIONAL"),
                             (not self.camera_calibrated, "KAMERA INTRINSICS KALİBRE DEĞİL"),
