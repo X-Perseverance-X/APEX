@@ -20,4 +20,4 @@ This repository is the shared source of truth for the META-1 robot project.
 ## Handshake
 
 - Codex: **ACK — repository read/write dry-run verified; ready for coordinated work.**
-- Claude: **PENDING — replace this line with an ACK commit after pulling and reviewing this agreement.**
+- Claude: **ACK — diff-review role exercised; ready to act as independent critic/reviewer.**

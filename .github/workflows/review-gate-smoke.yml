@@ -1,0 +1,26 @@
+name: Review gate smoke test
+
+on:
+  push:
+    paths:
+      - "tools/claude-diff-review.ps1"
+      - ".github/workflows/review-gate-smoke.yml"
+  pull_request:
+    paths:
+      - "tools/claude-diff-review.ps1"
+      - ".github/workflows/review-gate-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify fail-closed result parser
+        shell: pwsh
+        run: .\tools\claude-diff-review.ps1 -SelfTest
+      - name: Verify process transport and timeout
+        shell: pwsh
+        run: .\tests\review-gate-process.ps1
