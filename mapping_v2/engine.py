@@ -10,6 +10,7 @@ from dataclasses import asdict
 from .contracts import ImuSample, LidarScan, Pose2D, TofSample
 from .occupancy import GridConfig, OccupancyGrid, rle_encode
 from .planner import PlanResult, plan_route
+from .scan_matcher import CorrelativeScanMatcher, MatchResult, normalize_angle
 
 
 class MappingEngine:
@@ -27,6 +28,7 @@ class MappingEngine:
         self.approved = False
         self.decision = "NO_GOAL"
         self.last_lidar_ns = 0
+        self.last_map_update_ns = 0
         self.last_imu: ImuSample | None = None
         self.last_tof: TofSample | None = None
         self.last_camera_ns = 0
@@ -36,14 +38,82 @@ class MappingEngine:
         # Ölçülmüş dış kalibrasyon gelmeden 3D/renk füzyonu güvenilir sayılmaz.
         self.extrinsics_trusted = False
         self.camera_calibrated = False
+        self.scan_matcher = CorrelativeScanMatcher()
+        self.last_match = MatchResult(False, self.pose, 0.0, 0.0, 0, reason="WAITING_FIRST_SCAN")
+        self._last_lidar_imu_yaw_deg: float | None = None
+        self._imu_yaw_sign: int | None = None
+        self._imu_sign_candidate: int | None = None
+        self._imu_sign_votes = 0
+        self._accepted_matches = 0
+        self._rejected_matches = 0
+        self._last_input_key: tuple[int, int] | None = None
 
     def ingest_lidar(self, scan: LidarScan) -> bool:
         with self._lock:
-            changed = self.grid.update_lidar(scan, self.pose)
+            input_key = (int(scan.sequence), int(scan.timestamp_ns))
+            if input_key == self._last_input_key:
+                return False
+            self._last_input_key = input_key
+
+            imu_delta_rad: float | None = None
+            current_imu_yaw: float | None = None
+            if self.last_imu and self.last_imu.valid:
+                current_imu_yaw = float(self.last_imu.yaw_deg)
+                if self._last_lidar_imu_yaw_deg is not None:
+                    delta_deg = (current_imu_yaw - self._last_lidar_imu_yaw_deg + 180.0) % 360.0 - 180.0
+                    if abs(delta_deg) <= 60.0:
+                        imu_delta_rad = math.radians(delta_deg)
+
+            first_scan = self.grid.scan_count == 0
+            if first_scan:
+                changed = self.grid.update_lidar(scan, self.pose)
+                self.last_match = MatchResult(False, self.pose, 0.0, 0.0, len(scan.points), reason="INITIALIZING_SUBMAP")
+            else:
+                match = self.scan_matcher.match(
+                    scan, self.grid, self.pose, imu_yaw_delta_rad=imu_delta_rad, imu_sign=self._imu_yaw_sign,
+                )
+                self.last_match = match
+                if match.accepted:
+                    self._accepted_matches += 1
+                    self._rejected_matches = 0
+                    if match.imu_sign in (-1, 1) and imu_delta_rad is not None and abs(imu_delta_rad) >= math.radians(0.5):
+                        if self._imu_sign_candidate == match.imu_sign:
+                            self._imu_sign_votes += 1
+                        else:
+                            self._imu_sign_candidate = match.imu_sign
+                            self._imu_sign_votes = 1
+                        if self._imu_sign_votes >= 3:
+                            self._imu_yaw_sign = match.imu_sign
+                    self.pose = Pose2D(
+                        x_m=match.pose.x_m,
+                        y_m=match.pose.y_m,
+                        yaw_rad=normalize_angle(match.pose.yaw_rad),
+                        trusted=self._accepted_matches >= 3,
+                        source="lidar_imu_correlative",
+                    )
+                    changed = self.grid.update_lidar(scan, self.pose)
+                elif match.reason == "INITIALIZING_SUBMAP":
+                    # Bootstrap only: build enough geometry for matching. Once
+                    # the submap is mature, rejected scans are never overlaid.
+                    changed = self.grid.update_lidar(scan, self.pose)
+                else:
+                    self._rejected_matches += 1
+                    changed = False
+
+            if current_imu_yaw is not None:
+                self._last_lidar_imu_yaw_deg = current_imu_yaw
+            self.last_lidar_ns = scan.timestamp_ns
             if changed:
-                self.last_lidar_ns = scan.timestamp_ns
+                self.last_map_update_ns = scan.timestamp_ns
                 if self.goal is not None:
                     self._replan_locked(preserve_approval_if_same=True)
+                self._revision += 1
+            elif not first_scan and (
+                self._rejected_matches in {1, 3} or self._rejected_matches % 10 == 0
+            ):
+                # Publish tracking/rejection diagnostics even when a weak scan
+                # was intentionally kept out of the probability grid. Rate
+                # limit repeated identical failures to avoid UI churn.
                 self._revision += 1
             return changed
 
@@ -113,6 +183,16 @@ class MappingEngine:
     def clear_map(self) -> None:
         with self._lock:
             self.grid.clear()
+            self.pose = Pose2D()
+            self.last_map_update_ns = 0
+            self.last_match = MatchResult(False, self.pose, 0.0, 0.0, 0, reason="WAITING_FIRST_SCAN")
+            self._last_lidar_imu_yaw_deg = None
+            self._imu_yaw_sign = None
+            self._imu_sign_candidate = None
+            self._imu_sign_votes = 0
+            self._accepted_matches = 0
+            self._rejected_matches = 0
+            self._last_input_key = None
             self.goal = None
             self.plan = None
             self.approved = False
@@ -198,8 +278,21 @@ class MappingEngine:
                     "tof": {"valid": bool(self.last_tof and self.last_tof.valid), "distance_mm": None if not self.last_tof else self.last_tof.distance_mm, "age_s": None if not self.last_tof else self._age_s(self.last_tof.timestamp_ns)},
                     "camera": {"healthy": self.camera_healthy, "age_s": self._age_s(self.last_camera_ns)},
                 },
+                "local_slam": {
+                    "state": "TRACKING" if self.last_match.accepted else self.last_match.reason,
+                    "score": round(self.last_match.score, 3),
+                    "in_bounds_ratio": round(self.last_match.in_bounds_ratio, 3),
+                    "points_used": self.last_match.points_used,
+                    "accepted_matches": self._accepted_matches,
+                    "consecutive_rejections": self._rejected_matches,
+                    "imu_yaw_sign": self._imu_yaw_sign,
+                    "imu_sign_votes": self._imu_sign_votes,
+                    "map_age_s": self._age_s(self.last_map_update_ns),
+                },
                 "fusion_readiness": {
-                    "navigation_2d": self._age_s(self.last_lidar_ns) is not None and self._age_s(self.last_lidar_ns) < 1.0,
+                    "navigation_2d": self._age_s(self.last_map_update_ns) is not None
+                    and self._age_s(self.last_map_update_ns) < 1.0
+                    and self._rejected_matches < 3,
                     "global_slam": self.pose.trusted,
                     "sparse_3d": bool(self.last_imu and self.last_imu.valid and self.extrinsics_trusted),
                     "camera_semantic": bool(self.camera_healthy and self.camera_calibrated and self.extrinsics_trusted),

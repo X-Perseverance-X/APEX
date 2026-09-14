@@ -929,15 +929,18 @@ def _mapping_worker():
                 valid=bool(telemetry.get("mpuOnline", False)),
             ))
             tof_mm = telemetry.get("tofMm")
-            _mapping_engine.ingest_tof(TofSample(
-                timestamp_ns=now_ns,
-                distance_mm=float(tof_mm) if isinstance(tof_mm, (int, float)) else 0.0,
-                valid=bool(telemetry.get("tofOnline", False)),
-            ))
             _mapping_engine.ingest_lidar(LidarScan(
                 timestamp_ns=scan_timestamp_ns or now_ns,
                 sequence=sequence,
                 points=points,
+            ))
+            # LiDAR scan matching first updates the current map pose. Fuse the
+            # forward ToF return afterwards so it lands in that same pose,
+            # rather than the previous scan's frame.
+            _mapping_engine.ingest_tof(TofSample(
+                timestamp_ns=now_ns,
+                distance_mm=float(tof_mm) if isinstance(tof_mm, (int, float)) else 0.0,
+                valid=bool(telemetry.get("tofOnline", False)),
             ))
             last_sequence = sequence
         # A1M8 normal modda yaklaşık 5 tam tur/s üretir. 20 Hz salt-okunur

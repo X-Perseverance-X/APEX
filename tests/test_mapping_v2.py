@@ -5,10 +5,11 @@ import unittest
 
 import numpy as np
 
-from mapping_v2 import ImuSample, LidarScan, MappingEngine
+from mapping_v2 import ImuSample, LidarScan, MappingEngine, Pose2D, TofSample
 from mapping_v2.occupancy import GridConfig, OccupancyGrid, rle_encode
 from mapping_v2.planner import plan_route
 from mapping_v2.pointcloud import VoxelCloud, project_lidar_scan, rotation_matrix_rpy
+from mapping_v2.scan_matcher import CorrelativeScanMatcher
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -38,15 +39,126 @@ class MappingV2Tests(unittest.TestCase):
 
     def test_local_costmap_forgets_obstacles_that_are_no_longer_seen(self):
         config = GridConfig(width=41, height=41, resolution_m=0.1, max_range_m=1.8,
-                            temporal_decay=0.5, forget_epsilon=0.08)
+                            stale_grace_s=0.1, stale_half_life_s=0.2, forget_epsilon=0.08)
         grid = OccupancyGrid(config)
+        start_ns = time.monotonic_ns()
         hit = [(0.0, 1000.0)] * 3
-        grid.update_lidar(LidarScan(time.monotonic_ns(), 1, hit))
+        grid.update_lidar(LidarScan(start_ns, 1, hit))
         gx, gy = grid.world_to_grid(1.0, 0.0)
         self.assertEqual(int(grid.states()[gy, gx]), 100)
         for sequence in range(2, 9):
-            grid.update_lidar(LidarScan(time.monotonic_ns(), sequence, []))
+            grid.update_lidar(LidarScan(start_ns + sequence * 200_000_000, sequence, []))
         self.assertEqual(int(grid.states()[gy, gx]), -1)
+
+    def test_farther_return_clears_a_stale_near_endpoint_immediately(self):
+        grid = OccupancyGrid(self.config)
+        now = time.monotonic_ns()
+        grid.update_lidar(LidarScan(now, 1, [(0.0, 1000.0)]))
+        near = grid.world_to_grid(1.0, 0.0)
+        self.assertEqual(int(grid.states()[near[1], near[0]]), 100)
+        grid.update_lidar(LidarScan(now + 200_000_000, 2, [(0.0, 2000.0)]))
+        self.assertNotEqual(int(grid.states()[near[1], near[0]]), 100)
+
+    def test_each_cell_is_updated_only_once_per_scan(self):
+        grid = OccupancyGrid(self.config)
+        scan = LidarScan(time.monotonic_ns(), 1, [(0.0, 1000.0)] * 8)
+        grid.update_lidar(scan)
+        gx, gy = grid.world_to_grid(1.0, 0.0)
+        self.assertAlmostEqual(float(grid.log_odds[gy, gx]), grid.config.occupied_delta, places=5)
+
+    @staticmethod
+    def _landmark_scan(pose_x, pose_y, pose_yaw, landmarks):
+        points = []
+        cosine, sine = math.cos(pose_yaw), math.sin(pose_yaw)
+        for wx, wy in landmarks:
+            dx, dy = wx - pose_x, wy - pose_y
+            lx = dx * cosine + dy * sine
+            ly = -dx * sine + dy * cosine
+            distance = math.hypot(lx, ly)
+            points.append((math.degrees(math.atan2(ly, lx)) % 360.0, distance * 1000.0))
+        return points
+
+    def test_correlative_matcher_recovers_rotation_without_scan_smearing(self):
+        config = GridConfig(width=161, height=161, resolution_m=0.05, max_range_m=3.8)
+        grid = OccupancyGrid(config)
+        landmarks = []
+        for x in np.linspace(-2.5, 2.5, 30):
+            landmarks.extend(((float(x), -2.0), (float(x), 2.0)))
+        for y in np.linspace(-1.8, 1.8, 24):
+            landmarks.extend(((-2.5, float(y)), (2.5, float(y))))
+        first = LidarScan(time.monotonic_ns(), 1, self._landmark_scan(0.0, 0.0, 0.0, landmarks))
+        grid.update_lidar(first, Pose2D())
+        matcher = CorrelativeScanMatcher()
+        rotated = LidarScan(time.monotonic_ns(), 2, self._landmark_scan(0.0, 0.0, math.radians(7.0), landmarks))
+        result = matcher.match(rotated, grid, Pose2D(), imu_yaw_delta_rad=math.radians(7.0))
+        self.assertTrue(result.accepted, result)
+        self.assertAlmostEqual(math.degrees(result.pose.yaw_rad), 7.0, delta=2.0)
+
+    def test_engine_marks_pose_trusted_only_after_repeated_good_matches(self):
+        config = GridConfig(width=161, height=161, resolution_m=0.05, max_range_m=3.8)
+        engine = MappingEngine(config)
+        landmarks = []
+        for x in np.linspace(-2.5, 2.5, 30):
+            landmarks.extend(((float(x), -2.0), (float(x), 2.0)))
+        for y in np.linspace(-1.8, 1.8, 24):
+            landmarks.extend(((-2.5, float(y)), (2.5, float(y))))
+        start_ns = time.monotonic_ns()
+        for sequence in range(1, 5):
+            yaw_deg = float(sequence - 1) * 1.5
+            engine.ingest_imu(ImuSample(start_ns + sequence, 0.0, 0.0, yaw_deg, True))
+            engine.ingest_lidar(LidarScan(
+                start_ns + sequence * 200_000_000,
+                sequence,
+                self._landmark_scan(0.0, 0.0, math.radians(yaw_deg), landmarks),
+            ))
+        snapshot = engine.snapshot(False)
+        self.assertTrue(snapshot["pose"]["trusted"])
+        self.assertEqual(snapshot["local_slam"]["state"], "TRACKING")
+        self.assertGreaterEqual(snapshot["local_slam"]["accepted_matches"], 3)
+        self.assertEqual(snapshot["local_slam"]["imu_yaw_sign"], 1)
+        self.assertGreaterEqual(snapshot["local_slam"]["imu_sign_votes"], 3)
+
+    def test_correlative_matcher_recovers_small_translation_and_yaw(self):
+        config = GridConfig(width=161, height=161, resolution_m=0.05, max_range_m=3.8)
+        grid = OccupancyGrid(config)
+        landmarks = [(2.4, y) for y in np.linspace(-1.6, 1.6, 35)]
+        landmarks += [(x, -2.1) for x in np.linspace(-2.2, 2.2, 35)]
+        grid.update_lidar(
+            LidarScan(time.monotonic_ns(), 1, self._landmark_scan(0.0, 0.0, 0.0, landmarks)),
+            Pose2D(),
+        )
+        moved = LidarScan(
+            time.monotonic_ns(), 2,
+            self._landmark_scan(0.06, -0.03, math.radians(4.0), landmarks),
+        )
+        result = CorrelativeScanMatcher().match(
+            moved, grid, Pose2D(), imu_yaw_delta_rad=math.radians(4.0),
+        )
+        self.assertTrue(result.accepted, result)
+        self.assertAlmostEqual(result.pose.x_m, 0.06, delta=0.04)
+        self.assertAlmostEqual(result.pose.y_m, -0.03, delta=0.04)
+        self.assertAlmostEqual(math.degrees(result.pose.yaw_rad), 4.0, delta=2.0)
+
+    def test_weak_match_is_not_inserted_into_mature_submap(self):
+        config = GridConfig(width=161, height=161, resolution_m=0.05, max_range_m=3.8)
+        grid = OccupancyGrid(config)
+        landmarks = [(2.0, y) for y in np.linspace(-1.5, 1.5, 60)]
+        initial = LidarScan(time.monotonic_ns(), 1, self._landmark_scan(0.0, 0.0, 0.0, landmarks))
+        grid.update_lidar(initial, Pose2D())
+        before = grid.log_odds.copy()
+        unrelated = LidarScan(time.monotonic_ns(), 2, [(float(a), 500.0) for a in range(0, 360, 5)])
+        result = CorrelativeScanMatcher().match(unrelated, grid, Pose2D())
+        self.assertFalse(result.accepted)
+        np.testing.assert_array_equal(before, grid.log_odds)
+
+    def test_tof_free_ray_does_not_erase_lidar_occupied_cell(self):
+        grid = OccupancyGrid(self.config)
+        now = time.monotonic_ns()
+        grid.update_lidar(LidarScan(now, 1, [(0.0, 1000.0)]), Pose2D())
+        gx, gy = grid.world_to_grid(1.0, 0.0)
+        before = float(grid.log_odds[gy, gx])
+        grid.update_tof(TofSample(now + 1, 2000.0, True), Pose2D())
+        self.assertEqual(float(grid.log_odds[gy, gx]), before)
 
     def test_astar_routes_around_inflated_wall_gap(self):
         grid = OccupancyGrid(self.config)

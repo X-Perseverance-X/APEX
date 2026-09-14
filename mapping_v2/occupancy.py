@@ -1,9 +1,9 @@
 """Bounded local occupancy grid fed by the existing LiDAR owner.
 
 This module never opens a serial device.  The Command Center remains the sole
-RPLIDAR owner and passes immutable scan copies here.  Without trusted odometry
-the grid is intentionally labelled LOCAL_ONLY; it must not be presented as a
-global SLAM map.
+RPLIDAR owner and passes immutable scan copies here. Pose estimation is supplied
+by the local scan matcher; this bounded active submap is intentionally not
+presented as a globally loop-closed map.
 """
 
 from __future__ import annotations
@@ -42,13 +42,15 @@ class GridConfig:
     min_range_m: float = 0.12
     max_range_m: float = 6.0
     occupied_delta: float = 0.90
-    free_delta: float = -0.24
-    occupied_threshold: float = 1.20
-    free_threshold: float = -0.65
+    free_delta: float = -0.55
+    occupied_threshold: float = 0.70
+    free_threshold: float = -0.50
     log_min: float = -4.0
     log_max: float = 6.0
-    temporal_decay: float = 0.82
     forget_epsilon: float = 0.08
+    free_ray_width_cells: int = 1
+    stale_grace_s: float = 1.5
+    stale_half_life_s: float = 4.0
 
 
 class OccupancyGrid:
@@ -58,8 +60,10 @@ class OccupancyGrid:
             raise ValueError("grid dimensions must be odd so the robot has a centre cell")
         self.log_odds = np.zeros((self.config.height, self.config.width), dtype=np.float32)
         self.observed = np.zeros_like(self.log_odds, dtype=np.bool_)
+        self.last_hit_ns = np.zeros_like(self.log_odds, dtype=np.int64)
         self.scan_count = 0
         self.last_scan_sequence = -1
+        self._last_decay_ns = 0
         self.pose = Pose2D()
 
     @property
@@ -93,15 +97,11 @@ class OccupancyGrid:
         if not self.in_bounds(*start):
             return False
 
-        # Güvenilir odometri yokken bu bir dünya haritası değil, robot merkezli
-        # canlı costmap'tir. Eski engeller sonsuza kadar ekranda kalmasın;
-        # görülmeyen kanıtı kademeli söndür, yeni taramaları baskın tut.
-        self.log_odds *= self.config.temporal_decay
-        forgotten = np.abs(self.log_odds) < self.config.forget_epsilon
-        self.log_odds[forgotten] = 0.0
-        self.observed[forgotten] = False
+        self._decay_stale_obstacles(scan.timestamp_ns)
 
         cos_yaw, sin_yaw = math.cos(pose.yaw_rad), math.sin(pose.yaw_rad)
+        hit_cells: set[tuple[int, int]] = set()
+        miss_cells: set[tuple[int, int]] = set()
         for angle_deg, distance_mm in scan.points:
             distance_m = float(distance_mm) / 1000.0
             if not math.isfinite(distance_m) or not self.config.min_range_m <= distance_m <= self.config.max_range_m:
@@ -115,16 +115,54 @@ class OccupancyGrid:
                 continue
             ray = list(bresenham(start[0], start[1], end[0], end[1]))
             for gx, gy in ray[1:-1]:
-                self.log_odds[gy, gx] += self.config.free_delta
-                self.observed[gy, gx] = True
-            gx, gy = end
-            self.log_odds[gy, gx] += self.config.occupied_delta
-            self.observed[gy, gx] = True
+                width = self.config.free_ray_width_cells
+                for oy in range(-width, width + 1):
+                    for ox in range(-width, width + 1):
+                        cell = (gx + ox, gy + oy)
+                        if self.in_bounds(*cell):
+                            miss_cells.add(cell)
+            hit_cells.add(end)
+
+        # Cartographer's update-marker principle: a cell is changed at most
+        # once per scan, and a measured return wins over free-space carving.
+        miss_cells.difference_update(hit_cells)
+        if miss_cells:
+            mx, my = zip(*miss_cells)
+            self.log_odds[np.asarray(my), np.asarray(mx)] += self.config.free_delta
+            self.observed[np.asarray(my), np.asarray(mx)] = True
+        if hit_cells:
+            hx, hy = zip(*hit_cells)
+            hit_x, hit_y = np.asarray(hx), np.asarray(hy)
+            self.log_odds[hit_y, hit_x] += self.config.occupied_delta
+            self.observed[hit_y, hit_x] = True
+            self.last_hit_ns[hit_y, hit_x] = int(scan.timestamp_ns)
 
         np.clip(self.log_odds, self.config.log_min, self.config.log_max, out=self.log_odds)
         self.scan_count += 1
         self.last_scan_sequence = scan.sequence
         return True
+
+    def _decay_stale_obstacles(self, timestamp_ns: int) -> None:
+        """Use elapsed time, not scan count, to forget unconfirmed hit noise."""
+        timestamp_ns = int(timestamp_ns)
+        if timestamp_ns <= 0:
+            return
+        if self._last_decay_ns <= 0:
+            self._last_decay_ns = timestamp_ns
+            return
+        elapsed_s = max(0.0, (timestamp_ns - self._last_decay_ns) / 1e9)
+        self._last_decay_ns = max(self._last_decay_ns, timestamp_ns)
+        if elapsed_s <= 0.0:
+            return
+        age_s = (timestamp_ns - self.last_hit_ns) / 1e9
+        stale = (self.last_hit_ns > 0) & (age_s >= self.config.stale_grace_s) & (self.log_odds > 0.0)
+        if np.any(stale):
+            factor = math.exp(-math.log(2.0) * elapsed_s / max(0.1, self.config.stale_half_life_s))
+            self.log_odds[stale] *= factor
+        forgotten = self.observed & (np.abs(self.log_odds) < self.config.forget_epsilon)
+        self.log_odds[forgotten] = 0.0
+        self.observed[forgotten] = False
+        self.last_hit_ns[forgotten] = 0
 
     def update_tof(self, sample: TofSample, pose: Pose2D | None = None) -> bool:
         if not sample.valid or not 50.0 <= sample.distance_mm <= 4000.0:
@@ -133,11 +171,21 @@ class OccupancyGrid:
         distance_m = sample.distance_mm / 1000.0
         wx = pose.x_m + distance_m * math.cos(pose.yaw_rad)
         wy = pose.y_m + distance_m * math.sin(pose.yaw_rad)
-        gx, gy = self.world_to_grid(wx, wy)
-        if not self.in_bounds(gx, gy):
+        end = self.world_to_grid(wx, wy)
+        start = self.world_to_grid(pose.x_m, pose.y_m)
+        if not self.in_bounds(*end) or not self.in_bounds(*start):
             return False
+        ray = list(bresenham(start[0], start[1], end[0], end[1]))
+        for gx, gy in ray[1:-1]:
+            # The single forward ToF beam is useful corroboration but must not
+            # erase a same-cycle LiDAR hit. LiDAR owns occupied-cell clearing.
+            if self.log_odds[gy, gx] < self.config.occupied_threshold:
+                self.log_odds[gy, gx] = max(self.config.log_min, self.log_odds[gy, gx] + self.config.free_delta)
+            self.observed[gy, gx] = True
+        gx, gy = end
         self.log_odds[gy, gx] = min(self.config.log_max, self.log_odds[gy, gx] + 1.4)
         self.observed[gy, gx] = True
+        self.last_hit_ns[gy, gx] = int(sample.timestamp_ns)
         return True
 
     def states(self) -> np.ndarray:
@@ -149,8 +197,10 @@ class OccupancyGrid:
     def clear(self) -> None:
         self.log_odds.fill(0.0)
         self.observed.fill(False)
+        self.last_hit_ns.fill(0)
         self.scan_count = 0
         self.last_scan_sequence = -1
+        self._last_decay_ns = 0
 
 
 def rle_encode(values: np.ndarray) -> list[list[int]]:
