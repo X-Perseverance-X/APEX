@@ -121,6 +121,10 @@
                     <div class="row"><span>GÖZLENEN HÜCRE</span><strong id="observedCells">0</strong></div>
                     <div class="row"><span>ENGEL HÜCRESİ</span><strong id="occupiedCells">0</strong></div>
                     <div class="row"><span>KESİN DUVAR</span><strong id="confirmedCells">0</strong></div>
+                    <div class="row"><span>ANAHTAR KARE</span><strong id="keyframeCount">0</strong></div>
+                    <div class="row"><span>GRAFİK TARAMASI</span><strong id="graphScanCount">0</strong></div>
+                    <div class="row"><span>LOOP CLOSURE</span><strong id="loopCount">0</strong></div>
+                    <div class="row"><span>GLOBAL DÜZELTME</span><strong id="globalCorrection">--</strong></div>
                     <div class="row"><span>ÇÖZÜNÜRLÜK</span><strong id="resolution">--</strong></div>
                 </div>
             </section>
@@ -231,6 +235,11 @@
         document.getElementById('observedCells').textContent=g.observed_cells||0;
         document.getElementById('occupiedCells').textContent=g.occupied_cells||0;
         document.getElementById('confirmedCells').textContent=g.confirmed_cells||0;
+        const graph=state.pose_graph||{};
+        document.getElementById('keyframeCount').textContent=graph.keyframes||0;
+        document.getElementById('graphScanCount').textContent=graph.observations||0;
+        document.getElementById('loopCount').textContent=graph.loop_closures||0;
+        document.getElementById('globalCorrection').textContent=graph.optimized?`${Number(graph.correction_translation_m||0).toFixed(2)} m / ${Number(graph.correction_yaw_deg||0).toFixed(1)}°`:'--';
         document.getElementById('resolution').textContent=g.resolution_m?`${Math.round(g.resolution_m*100)} cm`:'--';
         document.getElementById('manualBtn').classList.toggle('active',state.approval_mode==='manual');
         document.getElementById('autoBtn').classList.toggle('active',state.approval_mode==='auto');
@@ -283,7 +292,9 @@
     async function finishMapping(){
         try{
             const d=await postJson('/api/navigation/mapping/finish');
-            setLog(`Harita donduruldu ve kaydedildi: ${d.mapping_session?.archive_id||'tamam'}`,'ok');
+            const graph=d.mapping_session?.pose_graph||{};
+            const result=graph.loop_closures>0?`GLOBAL SLAM · ${graph.loop_closures} loop`:'LOCAL SLAM · doğrulanmış dönüş yok';
+            setLog(`Harita donduruldu ve kaydedildi: ${d.mapping_session?.archive_id||'tamam'} · ${result}`,'ok');
             await refreshMaps();
         }catch(e){setLog(`Harita kaydedilemedi: ${e.message}`,'bad')}
     }

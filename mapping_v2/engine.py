@@ -12,6 +12,7 @@ import numpy as np
 from .contracts import ImuSample, LidarScan, Pose2D, TofSample
 from .occupancy import GridConfig, OccupancyGrid, rle_encode
 from .planner import PlanResult, plan_route
+from .pose_graph import PoseGraph
 from .scan_matcher import CorrelativeScanMatcher, MatchResult, normalize_angle
 
 
@@ -41,6 +42,9 @@ class MappingEngine:
         self.extrinsics_trusted = False
         self.camera_calibrated = False
         self.scan_matcher = CorrelativeScanMatcher()
+        self.pose_graph = PoseGraph()
+        self._archived_global_slam = False
+        self._archived_global_status: dict | None = None
         self.last_match = MatchResult(False, self.pose, 0.0, 0.0, 0, reason="WAITING_FIRST_SCAN")
         self._last_lidar_imu_yaw_deg: float | None = None
         self._imu_yaw_sign: int | None = None
@@ -79,6 +83,10 @@ class MappingEngine:
             if first_scan:
                 changed = self.grid.update_lidar(scan, self.pose)
                 self.last_match = MatchResult(False, self.pose, 0.0, 0.0, len(scan.points), reason="INITIALIZING_SUBMAP")
+                if self.mapping_state == "MAPPING":
+                    stored = self._copy_scan(scan)
+                    observation = self.pose_graph.record_scan(self.pose, stored)
+                    self.pose_graph.maybe_add_keyframe(self.pose, stored, force=True, observation_index=observation)
             else:
                 match = self.scan_matcher.match(
                     scan, self.grid, self.pose, imu_yaw_delta_rad=imu_delta_rad, imu_sign=self._imu_yaw_sign,
@@ -105,10 +113,18 @@ class MappingEngine:
                     pose_changed = next_pose != self.pose
                     self.pose = next_pose
                     changed = False if frozen else self.grid.update_lidar(scan, self.pose)
+                    if self.mapping_state == "MAPPING":
+                        stored = self._copy_scan(scan)
+                        observation = self.pose_graph.record_scan(self.pose, stored)
+                        self.pose_graph.maybe_add_keyframe(self.pose, stored, observation_index=observation)
                 elif match.reason == "INITIALIZING_SUBMAP":
                     # Bootstrap only: build enough geometry for matching. Once
                     # the submap is mature, rejected scans are never overlaid.
                     changed = False if frozen else self.grid.update_lidar(scan, self.pose)
+                    if self.mapping_state == "MAPPING" and changed:
+                        stored = self._copy_scan(scan)
+                        observation = self.pose_graph.record_scan(self.pose, stored)
+                        self.pose_graph.maybe_add_keyframe(self.pose, stored, observation_index=observation)
                 else:
                     self._rejected_matches += 1
                     changed = False
@@ -131,6 +147,14 @@ class MappingEngine:
                 # limit repeated identical failures to avoid UI churn.
                 self._revision += 1
             return changed
+
+    @staticmethod
+    def _copy_scan(scan: LidarScan) -> LidarScan:
+        return LidarScan(
+            timestamp_ns=int(scan.timestamp_ns), sequence=int(scan.sequence),
+            points=tuple((float(angle), float(distance)) for angle, distance in scan.points),
+            frame_id=str(scan.frame_id),
+        )
 
     def ingest_imu(self, sample: ImuSample) -> None:
         with self._lock:
@@ -219,6 +243,9 @@ class MappingEngine:
         self._accepted_matches = 0
         self._rejected_matches = 0
         self._last_input_key = None
+        self.pose_graph.clear()
+        self._archived_global_slam = False
+        self._archived_global_status = None
         self.goal = None
         self.plan = None
         self.approved = False
@@ -244,6 +271,28 @@ class MappingEngine:
                 raise ValueError("aktif haritalama oturumu yok")
             if self.grid.scan_count < 3 or not np.any(self.grid.observed):
                 raise ValueError("kaydetmek için yeterli LiDAR taraması yok")
+            corrected_poses = self.pose_graph.finalize()
+            if self.pose_graph.optimized and corrected_poses:
+                # Loop constraints alter historic poses.  Rebuild once from
+                # immutable keyframe scans instead of warping probability
+                # cells, which avoids doubled walls after closing a circuit.
+                rebuilt = OccupancyGrid(self.grid.config)
+                for sequence, (observation, corrected) in enumerate(self.pose_graph.corrected_observations(corrected_poses), 1):
+                    corrected_pose = Pose2D(
+                        float(corrected[0]), float(corrected[1]), normalize_angle(float(corrected[2])),
+                        True, "global_pose_graph",
+                    )
+                    rebuilt.update_lidar(LidarScan(
+                        timestamp_ns=observation.timestamp_ns,
+                        sequence=sequence,
+                        points=observation.polar_points,
+                        frame_id=observation.frame_id,
+                    ), corrected_pose)
+                self.grid = rebuilt
+                final = corrected_poses[-1]
+                self.pose = Pose2D(float(final[0]), float(final[1]), normalize_angle(float(final[2])), True, "global_pose_graph")
+                self.grid.pose = self.pose
+                self.last_map_update_ns = time.monotonic_ns()
             self.mapping_state = "FROZEN"
             self.mapping_finished_at = time.time()
             self._revision += 1
@@ -266,6 +315,8 @@ class MappingEngine:
                     "confirmed_cells": int(self.grid.confirmed_mask().sum()),
                     "mapping_started_at": self.mapping_started_at,
                     "mapping_finished_at": self.mapping_finished_at,
+                    "global_slam": self._global_slam_ready_locked(),
+                    "pose_graph": self.pose_graph.status(),
                 },
             }
 
@@ -307,8 +358,19 @@ class MappingEngine:
             self.mapping_finished_at = metadata.get("mapping_finished_at")
             self.mapping_archive_id = str(metadata.get("map_id"))
             self.mapping_saved_at = str(metadata.get("saved_at_utc"))
+            self._archived_global_slam = bool(metadata.get("global_slam", False))
+            archived_status = metadata.get("pose_graph")
+            self._archived_global_status = dict(archived_status) if isinstance(archived_status, dict) else None
             self._revision += 1
             return self._mapping_status_locked()
+
+    def _global_slam_ready_locked(self) -> bool:
+        return bool(self._archived_global_slam or (self.pose_graph.optimized and self.pose_graph.loop_count > 0))
+
+    def _pose_graph_status_locked(self) -> dict:
+        if self._archived_global_status is not None:
+            return dict(self._archived_global_status)
+        return self.pose_graph.status()
 
     def _mapping_status_locked(self) -> dict:
         return {
@@ -319,6 +381,8 @@ class MappingEngine:
             "archive_id": self.mapping_archive_id,
             "saved_at": self.mapping_saved_at,
             "confirmed_cells": int(self.grid.confirmed_mask().sum()),
+            "global_slam": self._global_slam_ready_locked(),
+            "pose_graph": self._pose_graph_status_locked(),
         }
 
     @staticmethod
@@ -388,7 +452,7 @@ class MappingEngine:
             result = {
                 "type": "navigation",
                 "schema": "apex.mapping.v2",
-                "map_mode": "LOCAL_ONLY" if not self.pose.trusted else "LOCAL_SLAM",
+                "map_mode": "GLOBAL_SLAM" if self._global_slam_ready_locked() else ("LOCAL_ONLY" if not self.pose.trusted else "LOCAL_SLAM"),
                 "pose": asdict(self.pose),
                 "grid": {
                     "width": self.grid.config.width,
@@ -424,19 +488,19 @@ class MappingEngine:
                     "imu_sign_votes": self._imu_sign_votes,
                     "map_age_s": map_age_s,
                 },
+                "pose_graph": self._pose_graph_status_locked(),
                 "mapping_session": self._mapping_status_locked(),
                 "fusion_readiness": {
                     "navigation_2d": navigation_ready,
                     "local_slam": self.pose.trusted,
-                    # Local scan matching provides odometry inside the active
-                    # submap. It is not loop-closed global SLAM yet.
-                    "global_slam": False,
+                    "global_slam": self._global_slam_ready_locked(),
                     "sparse_3d": bool(self.last_imu and self.last_imu.valid and self.extrinsics_trusted),
                     "camera_semantic": bool(self.camera_healthy and self.camera_calibrated and self.extrinsics_trusted),
                     "blockers": [
                         label for blocked, label in (
                             (not self.pose.trusted, "GÜVENİLİR ODOMETRİ YOK"),
-                            (True, "GLOBAL LOOP CLOSURE/POSE GRAPH YOK"),
+                            (not self._global_slam_ready_locked(), "DOĞRULANMIŞ GLOBAL LOOP CLOSURE YOK"),
+                            (self.pose_graph.observation_overflow, "GLOBAL TARAMA TAMPONU DOLDU; LOKAL HARİTA KORUNDU"),
                             (not (self.last_imu and self.last_imu.valid), "IMU YOK/GEÇERSİZ"),
                             (not self.extrinsics_trusted, "SENSÖR DIŞ KALİBRASYONU PROVISIONAL"),
                             (not self.camera_calibrated, "KAMERA INTRINSICS KALİBRE DEĞİL"),

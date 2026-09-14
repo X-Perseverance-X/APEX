@@ -1709,7 +1709,9 @@ async def navigation_mapping_finish():
         return _navigation_unavailable()
     try:
         async with _mapping_archive_lock:
-            status = _mapping_engine.finish_mapping_session()
+            # Loop detection, graph relaxation and grid rebuilding are bounded,
+            # but still CPU work. Keep camera/navigation WebSockets responsive.
+            status = await asyncio.to_thread(_mapping_engine.finish_mapping_session)
             if status.get("archive_id"):
                 return JSONResponse({"ok": True, "mapping_session": status})
             metadata = await asyncio.to_thread(

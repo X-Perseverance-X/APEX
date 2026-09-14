@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import numpy as np
 
-from mapping_v2 import ImuSample, LidarScan, MapArchive, MappingEngine, Pose2D, TofSample
+from mapping_v2 import GraphConfig, ImuSample, LidarScan, MapArchive, MappingEngine, Pose2D, PoseGraph, TofSample
 from mapping_v2.occupancy import GridConfig, OccupancyGrid, rle_encode
 from mapping_v2.planner import plan_route
 from mapping_v2.pointcloud import VoxelCloud, project_lidar_scan, rotation_matrix_rpy
@@ -145,6 +145,124 @@ class MappingV2Tests(unittest.TestCase):
         self.assertAlmostEqual(result.pose.x_m, 0.06, delta=0.04)
         self.assertAlmostEqual(result.pose.y_m, -0.03, delta=0.04)
         self.assertAlmostEqual(math.degrees(result.pose.yaw_rad), 4.0, delta=2.0)
+
+    def test_pose_graph_loop_constraint_reduces_terminal_drift(self):
+        graph = PoseGraph(GraphConfig(relaxation_iterations=120))
+        scan = LidarScan(time.monotonic_ns(), 1, [(float(a), 1800.0) for a in range(0, 360, 3)])
+        drifted = [
+            Pose2D(0.0, 0.0, 0.0), Pose2D(1.0, 0.0, 0.0),
+            Pose2D(1.0, 1.0, math.pi / 2), Pose2D(0.0, 1.0, math.pi),
+            Pose2D(0.38, 0.12, math.radians(8.0)),
+        ]
+        for sequence, pose in enumerate(drifted, 1):
+            graph.maybe_add_keyframe(pose, LidarScan(scan.timestamp_ns + sequence, sequence, scan.points), force=True)
+        before = math.hypot(graph.keyframes[-1].pose[0], graph.keyframes[-1].pose[1])
+        graph.add_loop_constraint(0, 4, np.zeros(3, dtype=float), weight=0.75)
+        corrected = graph.optimize()
+        after = math.hypot(float(corrected[-1][0]), float(corrected[-1][1]))
+        self.assertTrue(graph.optimized)
+        self.assertLess(after, before * 0.45)
+        np.testing.assert_allclose(corrected[0], [0.0, 0.0, 0.0], atol=1e-9)
+
+    def test_engine_global_finalize_replays_every_accepted_scan(self):
+        engine = MappingEngine(self.config)
+        engine.start_mapping_session("Tam Tarama")
+        now = time.monotonic_ns()
+        base_points = [(float(a), 1800.0) for a in range(0, 360, 4)]
+        poses = [
+            Pose2D(0.0, 0.0, 0.0), Pose2D(1.0, 0.0, 0.0),
+            Pose2D(1.0, 1.0, math.pi / 2), Pose2D(0.0, 1.0, math.pi),
+            Pose2D(0.30, 0.08, math.radians(5.0)),
+        ]
+        sequence = 1
+        for index, pose in enumerate(poses):
+            scan = LidarScan(now + sequence, sequence, base_points)
+            engine.grid.update_lidar(scan, pose)
+            observation = engine.pose_graph.record_scan(pose, scan)
+            engine.pose_graph.maybe_add_keyframe(pose, scan, force=True, observation_index=observation)
+            sequence += 1
+            if index < len(poses) - 1:
+                # This non-keyframe-only return must survive the global rebuild.
+                intermediate = LidarScan(now + sequence, sequence, [(33.0, 730.0)] * 4)
+                mid_pose = Pose2D((pose.x_m + poses[index + 1].x_m) / 2, (pose.y_m + poses[index + 1].y_m) / 2, pose.yaw_rad)
+                engine.grid.update_lidar(intermediate, mid_pose)
+                engine.pose_graph.record_scan(mid_pose, intermediate)
+                sequence += 1
+        expected_scans = len(engine.pose_graph.observations)
+        engine.pose_graph.add_loop_constraint(0, len(poses) - 1, np.zeros(3), weight=0.75)
+        status = engine.finish_mapping_session()
+        self.assertTrue(status["global_slam"])
+        self.assertEqual(engine.grid.scan_count, expected_scans)
+        self.assertGreater(int(engine.grid.observed.sum()), 0)
+        self.assertEqual(engine.pose.source, "global_pose_graph")
+
+    def test_icp_validates_revisit_and_rejects_unrelated_scan(self):
+        config = GraphConfig(min_loop_separation=2, min_loop_path_length_m=1.0, loop_search_radius_m=1.0, loop_min_inlier_ratio=0.45)
+        graph = PoseGraph(config)
+        asymmetric = [(float(a), 900.0 + 4.0 * a) for a in range(0, 270, 3)]
+        first = LidarScan(time.monotonic_ns(), 1, asymmetric)
+        graph.maybe_add_keyframe(Pose2D(), first, force=True)
+        graph.maybe_add_keyframe(Pose2D(0.7, 0.0, 0.0), LidarScan(first.timestamp_ns + 1, 2, asymmetric), force=True)
+        graph.maybe_add_keyframe(Pose2D(0.18, -0.06, math.radians(4.0)), LidarScan(first.timestamp_ns + 2, 3, asymmetric), force=True)
+        self.assertGreaterEqual(graph.detect_loop_closures(), 1)
+        self.assertGreaterEqual(graph.loop_count, 1)
+
+        unrelated = PoseGraph(config)
+        unrelated.maybe_add_keyframe(Pose2D(), first, force=True)
+        unrelated.maybe_add_keyframe(Pose2D(0.7, 0.0, 0.0), LidarScan(first.timestamp_ns + 1, 2, asymmetric), force=True)
+        circle = [(float(a), 2500.0) for a in range(0, 360, 3)]
+        unrelated.maybe_add_keyframe(Pose2D(0.1, 0.0, 0.0), LidarScan(first.timestamp_ns + 2, 3, circle), force=True)
+        self.assertEqual(unrelated.detect_loop_closures(), 0)
+
+    def test_stationary_repeated_scans_do_not_claim_global_loop(self):
+        graph = PoseGraph(GraphConfig(min_loop_separation=2, min_loop_path_length_m=1.0))
+        points = [(float(a), 1200.0 + a) for a in range(0, 300, 3)]
+        now = time.monotonic_ns()
+        for sequence in range(1, 8):
+            graph.maybe_add_keyframe(
+                Pose2D(), LidarScan(now + sequence * 3_000_000_000, sequence, points), force=True,
+            )
+        self.assertEqual(graph.detect_loop_closures(), 0)
+        self.assertEqual(graph.loop_count, 0)
+
+    def test_observation_overflow_preserves_local_map_instead_of_partial_rebuild(self):
+        graph = PoseGraph(GraphConfig(max_observations=2, min_loop_separation=1))
+        points = [(float(a), 1200.0) for a in range(0, 360, 3)]
+        now = time.monotonic_ns()
+        for sequence in range(1, 4):
+            scan = LidarScan(now + sequence, sequence, points)
+            observation = graph.record_scan(Pose2D(float(sequence), 0.0, 0.0), scan)
+            if observation is not None:
+                graph.maybe_add_keyframe(Pose2D(float(sequence), 0.0, 0.0), scan, force=True, observation_index=observation)
+        self.assertTrue(graph.observation_overflow)
+        graph.add_loop_constraint(0, 1, np.zeros(3), weight=0.75)
+        graph.finalize()
+        self.assertFalse(graph.optimized)
+
+    def test_loading_legacy_map_clears_stale_pose_graph_state(self):
+        engine = MappingEngine(self.config)
+        scan = LidarScan(time.monotonic_ns(), 1, [(float(a), 1000.0) for a in range(0, 360, 3)])
+        for sequence, x_m in enumerate((0.0, 1.0), 1):
+            frame = LidarScan(scan.timestamp_ns + sequence, sequence, scan.points)
+            engine.pose_graph.maybe_add_keyframe(Pose2D(x_m, 0.0, 0.0), frame, force=True)
+        engine.pose_graph.add_loop_constraint(0, 1, np.zeros(3))
+        engine.pose_graph.optimize()
+        self.assertTrue(engine.pose_graph.optimized)
+        payload = {
+            "metadata": {
+                "resolution_m": self.config.resolution_m,
+                "origin_x_m": engine.grid.origin_x_m,
+                "origin_y_m": engine.grid.origin_y_m,
+                "scan_count": 5, "map_id": "legacy", "display_name": "Legacy", "saved_at_utc": "old",
+            },
+            "log_odds": np.zeros((self.config.height, self.config.width), dtype=np.float32),
+            "observed": np.zeros((self.config.height, self.config.width), dtype=np.bool_),
+            "hit_count": np.zeros((self.config.height, self.config.width), dtype=np.uint16),
+            "pose": np.zeros(3, dtype=np.float64),
+        }
+        engine.load_archive(payload)
+        self.assertFalse(engine.pose_graph.optimized)
+        self.assertFalse(engine.snapshot(False)["fusion_readiness"]["global_slam"])
 
     def test_weak_match_is_not_inserted_into_mature_submap(self):
         config = GridConfig(width=161, height=161, resolution_m=0.05, max_range_m=3.8)
@@ -305,6 +423,33 @@ class MappingV2Tests(unittest.TestCase):
         self.assertFalse(readiness["global_slam"])
         self.assertFalse(readiness["sparse_3d"])
         self.assertIn("SENSÖR DIŞ KALİBRASYONU PROVISIONAL", readiness["blockers"])
+        self.assertIn("DOĞRULANMIŞ GLOBAL LOOP CLOSURE YOK", readiness["blockers"])
+
+    def test_archived_global_slam_status_round_trips(self):
+        engine = MappingEngine(self.config)
+        payload = {
+            "metadata": {
+                "resolution_m": self.config.resolution_m,
+                "origin_x_m": engine.grid.origin_x_m,
+                "origin_y_m": engine.grid.origin_y_m,
+                "scan_count": 20,
+                "map_id": "global-test",
+                "display_name": "Global Test",
+                "saved_at_utc": "2026-01-01T00:00:00+00:00",
+                "global_slam": True,
+                "pose_graph": {"keyframes": 18, "loop_closures": 1, "optimized": True, "state": "OPTIMIZED"},
+            },
+            "log_odds": np.zeros((self.config.height, self.config.width), dtype=np.float32),
+            "observed": np.zeros((self.config.height, self.config.width), dtype=np.bool_),
+            "hit_count": np.zeros((self.config.height, self.config.width), dtype=np.uint16),
+            "pose": np.zeros(3, dtype=np.float64),
+        }
+        status = engine.load_archive(payload)
+        snapshot = engine.snapshot(False)
+        self.assertTrue(status["global_slam"])
+        self.assertEqual(snapshot["map_mode"], "GLOBAL_SLAM")
+        self.assertTrue(snapshot["fusion_readiness"]["global_slam"])
+        self.assertEqual(snapshot["pose_graph"]["loop_closures"], 1)
 
     def test_mapping_revision_changes_only_for_publishable_state(self):
         engine = MappingEngine(self.config)
