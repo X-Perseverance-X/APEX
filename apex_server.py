@@ -50,11 +50,12 @@ logging.basicConfig(
 log = logging.getLogger("apex")
 
 try:
-    from mapping_v2 import ImuSample, LidarScan, MappingEngine, TofSample
+    from mapping_v2 import ImuSample, LidarScan, MapArchive, MappingEngine, TofSample
     MAPPING_V2_AVAILABLE = True
 except ImportError as mapping_import_error:
     MAPPING_V2_AVAILABLE = False
     MappingEngine = None
+    MapArchive = None
     log.warning(f"[MAPPING-V2] Yüklenemedi: {mapping_import_error}")
 
 # ─── Konfigürasyon ───────────────────────────────────────────────────────────
@@ -108,6 +109,8 @@ TELEMETRY_CACHE_TTL_S = 0.45
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 UI_FILE  = os.path.join(THIS_DIR, "apex_ui.html")
 CAMERA_UI_FILE = os.path.join(THIS_DIR, "camera_console.html")
+MAP_ARCHIVE_DIR = os.environ.get("APEX_MAP_DIR", os.path.join(THIS_DIR, ".runtime", "maps"))
+_map_archive = MapArchive(MAP_ARCHIVE_DIR) if MAPPING_V2_AVAILABLE else None
 NAVIGATION_UI_FILE = os.path.join(THIS_DIR, "navigation_console.html")
 THREE_JS_FILE = os.path.join(THIS_DIR, "apex_kinematics_lab", "static", "three.min.js")
 
@@ -447,6 +450,7 @@ _lidar_last_scan_ts = 0.0
 _lidar_scan_seq = 0
 _lidar_last_error = ""
 _lidar_motor_command_lock = asyncio.Lock()
+_mapping_archive_lock = asyncio.Lock()
 
 # mapping_v2 LiDAR/kamera aygıtı açmaz ve hiçbir aktüatör endpoint'i bilmez.
 # Mevcut LiDAR sahibinin paylaşılan son taramasını salt okunur tüketir.
@@ -1668,6 +1672,72 @@ async def navigation_status():
     result = _mapping_engine.snapshot(include_grid=True)
     result["platform_test"] = dict(_navigation_platform_status)
     return JSONResponse(result)
+
+
+@app.get("/api/navigation/maps")
+async def navigation_maps():
+    if _mapping_engine is None or _map_archive is None:
+        return _navigation_unavailable()
+    return JSONResponse({"ok": True, "maps": _map_archive.list_maps()})
+
+
+@app.post("/api/navigation/mapping/start")
+async def navigation_mapping_start(request: Request):
+    if _mapping_engine is None:
+        return _navigation_unavailable()
+    if _navigation_platform_status.get("active"):
+        return JSONResponse({"ok": False, "error": "Rota yürütülürken haritalama sıfırlanamaz"}, status_code=409)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    async with _mapping_archive_lock:
+        motor = await _set_lidar_motor(True)
+        if not motor.get("applied"):
+            return JSONResponse({
+                "ok": False,
+                "error": motor.get("error") or "LiDAR taraması başlatılamadı; harita temizlenmedi",
+                "motor": motor,
+            }, status_code=409)
+        status = _mapping_engine.start_mapping_session(str(payload.get("name") or "Ev Haritası"))
+    return JSONResponse({"ok": True, "mapping_session": status, "motor": motor})
+
+
+@app.post("/api/navigation/mapping/finish")
+async def navigation_mapping_finish():
+    if _mapping_engine is None or _map_archive is None:
+        return _navigation_unavailable()
+    try:
+        async with _mapping_archive_lock:
+            status = _mapping_engine.finish_mapping_session()
+            if status.get("archive_id"):
+                return JSONResponse({"ok": True, "mapping_session": status})
+            metadata = await asyncio.to_thread(
+                _map_archive.save,
+                _mapping_engine.export_archive(),
+                str(status.get("label") or "Ev Haritası"),
+            )
+            status = _mapping_engine.mark_archive_saved(metadata)
+        return JSONResponse({"ok": True, "mapping_session": status, "map": metadata})
+    except (ValueError, OSError, KeyError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=409)
+
+
+@app.post("/api/navigation/mapping/load")
+async def navigation_mapping_load(request: Request):
+    if _mapping_engine is None or _map_archive is None:
+        return _navigation_unavailable()
+    if _navigation_platform_status.get("active"):
+        return JSONResponse({"ok": False, "error": "Rota yürütülürken harita değiştirilemez"}, status_code=409)
+    try:
+        payload = await request.json()
+        map_id = str(payload["map_id"])
+        async with _mapping_archive_lock:
+            archive = await asyncio.to_thread(_map_archive.load, map_id)
+            status = _mapping_engine.load_archive(archive)
+        return JSONResponse({"ok": True, "mapping_session": status})
+    except (KeyError, ValueError, OSError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
 
 def _navigation_telemetry_error(data: dict, require_stand: bool = True) -> str | None:

@@ -1,15 +1,19 @@
 import math
 import pathlib
+import tempfile
 import time
 import unittest
+from unittest.mock import AsyncMock, patch
 
+import httpx
 import numpy as np
 
-from mapping_v2 import ImuSample, LidarScan, MappingEngine, Pose2D, TofSample
+from mapping_v2 import ImuSample, LidarScan, MapArchive, MappingEngine, Pose2D, TofSample
 from mapping_v2.occupancy import GridConfig, OccupancyGrid, rle_encode
 from mapping_v2.planner import plan_route
 from mapping_v2.pointcloud import VoxelCloud, project_lidar_scan, rotation_matrix_rpy
 from mapping_v2.scan_matcher import CorrelativeScanMatcher
+import apex_server as server
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -163,6 +167,53 @@ class MappingV2Tests(unittest.TestCase):
         grid.update_tof(TofSample(now + 1, 2000.0, True), Pose2D())
         self.assertEqual(float(grid.log_odds[gy, gx]), before)
 
+    def test_wall_becomes_confirmed_then_requires_three_clear_rays(self):
+        grid = OccupancyGrid(self.config)
+        start_ns = time.monotonic_ns()
+        for sequence in range(1, 5):
+            grid.update_lidar(LidarScan(start_ns + sequence, sequence, [(0.0, 1000.0)]))
+        gx, gy = grid.world_to_grid(1.0, 0.0)
+        self.assertTrue(bool(grid.confirmed_mask()[gy, gx]))
+        for sequence in (5, 6):
+            grid.update_lidar(LidarScan(start_ns + sequence, sequence, [(0.0, 2000.0)]))
+            self.assertTrue(bool(grid.confirmed_mask()[gy, gx]))
+        grid.update_lidar(LidarScan(start_ns + 7, 7, [(0.0, 2000.0)]))
+        self.assertFalse(bool(grid.confirmed_mask()[gy, gx]))
+
+    def test_mapping_session_is_atomically_saved_loaded_and_frozen(self):
+        engine = MappingEngine(self.config)
+        status = engine.start_mapping_session("Salon Testi")
+        self.assertEqual(status["state"], "MAPPING")
+        start_ns = time.monotonic_ns()
+        points = [(float(angle), 1500.0) for angle in range(0, 360, 5)]
+        for sequence in range(1, 5):
+            engine.grid.update_lidar(LidarScan(start_ns + sequence, sequence, points), Pose2D())
+        finished = engine.finish_mapping_session()
+        self.assertEqual(finished["state"], "FROZEN")
+        before = engine.grid.log_odds.copy()
+
+        with tempfile.TemporaryDirectory() as directory:
+            archive = MapArchive(directory)
+            metadata = archive.save(engine.export_archive(), "Salon Testi")
+            engine.mark_archive_saved(metadata)
+            self.assertEqual(len(archive.list_maps()), 1)
+            loaded_payload = archive.load(metadata["map_id"])
+            restored = MappingEngine(self.config)
+            loaded_status = restored.load_archive(loaded_payload)
+            self.assertEqual(loaded_status["state"], "FROZEN")
+            np.testing.assert_array_equal(restored.grid.log_odds, before)
+            np.testing.assert_array_equal(restored.grid.hit_count, engine.grid.hit_count)
+
+        # A frozen map still localizes against scans but never mutates its
+        # archived occupancy evidence.
+        engine.ingest_lidar(LidarScan(start_ns + 1_000_000, 99, points))
+        np.testing.assert_array_equal(engine.grid.log_odds, before)
+
+    def test_map_archive_rejects_path_traversal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(ValueError):
+                MapArchive(directory).load("../outside")
+
     def test_astar_routes_around_inflated_wall_gap(self):
         grid = OccupancyGrid(self.config)
         # Mark the map observed/free, then add a wall with a wide upper gap.
@@ -275,6 +326,60 @@ class MappingV2Tests(unittest.TestCase):
         self.assertEqual(snapshot["sensors"]["imu"]["pitch_deg"], -4.25)
         self.assertEqual(snapshot["sensors"]["imu"]["yaw_deg"], 7.0)
         self.assertFalse(snapshot["pose"]["trusted"])
+
+
+class MappingApiTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.engine = MappingEngine()
+        self.engine_patch = patch.object(server, "_mapping_engine", self.engine)
+        self.archive_patch = patch.object(server, "_map_archive", MapArchive(self.temporary.name))
+        self.engine_patch.start()
+        self.archive_patch.start()
+        server._navigation_platform_status["active"] = False
+        self.client = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=server.app), base_url="http://test",
+        )
+
+    async def asyncTearDown(self):
+        await self.client.aclose()
+        self.archive_patch.stop()
+        self.engine_patch.stop()
+        self.temporary.cleanup()
+
+    async def test_start_failure_keeps_existing_map_intact(self):
+        self.engine.grid.update_lidar(LidarScan(time.monotonic_ns(), 1, [(0.0, 1000.0)]))
+        with patch.object(
+            server, "_set_lidar_motor",
+            AsyncMock(return_value={"applied": False, "error": "test motor failure"}),
+        ):
+            response = await self.client.post("/api/navigation/mapping/start", json={"name": "Test"})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.engine.grid.scan_count, 1)
+
+    async def test_start_finish_list_and_load_round_trip(self):
+        with patch.object(
+            server, "_set_lidar_motor",
+            AsyncMock(return_value={"applied": True, "enabled": True, "online": True}),
+        ):
+            started = await self.client.post("/api/navigation/mapping/start", json={"name": "Salon"})
+        self.assertEqual(started.status_code, 200)
+        self.assertEqual(started.json()["mapping_session"]["state"], "MAPPING")
+
+        now = time.monotonic_ns()
+        points = [(float(angle), 1500.0) for angle in range(0, 360, 5)]
+        for sequence in range(1, 5):
+            self.engine.grid.update_lidar(LidarScan(now + sequence, sequence, points), Pose2D())
+
+        finished = await self.client.post("/api/navigation/mapping/finish")
+        self.assertEqual(finished.status_code, 200)
+        map_id = finished.json()["mapping_session"]["archive_id"]
+        self.assertTrue(map_id)
+        listed = await self.client.get("/api/navigation/maps")
+        self.assertEqual([item["map_id"] for item in listed.json()["maps"]], [map_id])
+        loaded = await self.client.post("/api/navigation/mapping/load", json={"map_id": map_id})
+        self.assertEqual(loaded.status_code, 200)
+        self.assertEqual(loaded.json()["mapping_session"]["state"], "FROZEN")
 
 
 if __name__ == "__main__":

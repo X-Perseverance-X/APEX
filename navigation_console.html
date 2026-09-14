@@ -14,6 +14,7 @@
         button.primary { color:var(--cyan); border-color:var(--cyan); }
         button.danger { color:#ff4650; border-color:#8b1c22; }
         button:disabled { opacity:.35; cursor:not-allowed; }
+        input,select { width:100%; background:#050708; color:var(--text); border:1px solid #3b464b; padding:8px; font:700 10px "Courier New",monospace; }
         .app { height:100%; display:grid; grid-template-rows:44px minmax(0,1fr); }
         header { border-bottom:1px solid var(--line); border-top:2px solid var(--red); display:flex; align-items:center; gap:10px; padding:0 12px; background:#07090a; }
         .brand { color:var(--red); letter-spacing:1.5px; font-size:15px; font-weight:900; }
@@ -63,9 +64,24 @@
             <div id="mapTitle" class="map-title">LOCAL OCCUPANCY · +X İLERİ / +Y SOL</div>
             <div class="lock-banner">LIDAR GÜVENLİKLİ · DÜŞÜK HIZLI ROTA YÜRÜTME</div>
             <div class="map-hint">HARİTADA HEDEF NOKTAYA TIKLA<br>Manuel onay veya otonom kararla tüm waypointler izlenir.</div>
-            <div class="legend"><span style="color:#53636a">■</span> BİLİNMEYEN<br><span style="color:#173036">■</span> GÖZLENDİ/BOŞ<br><span style="color:#ff4650">■</span> ENGEL<br><span style="color:#00e5b0">━</span> ROTA<br><span style="color:#ff9d22">◆</span> HEDEF</div>
+            <div class="legend"><span style="color:#53636a">■</span> BİLİNMEYEN<br><span style="color:#173036">■</span> GÖZLENDİ/BOŞ<br><span style="color:#ff4650">■</span> AKTİF ÖLÇÜM<br><span style="color:#000;text-shadow:0 0 2px #aaa">■</span> KESİN DUVAR<br><span style="color:#00e5b0">━</span> ROTA<br><span style="color:#ff9d22">◆</span> HEDEF</div>
         </section>
         <aside>
+            <section class="card">
+                <h2>HARİTALAMA OTURUMU</h2>
+                <input id="mapName" maxlength="80" value="Ev Haritası" aria-label="Harita adı">
+                <div class="grid2" style="margin-top:6px">
+                    <button id="mappingStartBtn" class="primary" onclick="startMapping()">BAŞLAT</button>
+                    <button id="mappingFinishBtn" onclick="finishMapping()" disabled>BİTİR & KAYDET</button>
+                </div>
+                <select id="savedMaps" style="margin-top:6px" aria-label="Kayıtlı haritalar"><option value="">KAYITLI HARİTA YOK</option></select>
+                <button id="loadMapBtn" style="width:100%;margin-top:6px" onclick="loadMap()" disabled>KAYITLI HARİTAYI YÜKLE</button>
+                <div class="status-list" style="margin-top:8px">
+                    <div class="row"><span>OTURUM</span><strong id="mappingState">LIVE_PREVIEW</strong></div>
+                    <div class="row"><span>KAYIT</span><strong id="mappingArchive">--</strong></div>
+                </div>
+                <div class="note">Başlat yeni ve temiz bir aktif alt harita açar. Kırmızı ölçümler tekrar doğrulanınca siyah kesin duvara dönüşür. Bitir, haritayı dondurup Pi diskine atomik olarak kaydeder.</div>
+            </section>
             <section class="card">
                 <h2>HEDEF & ROTA</h2>
                 <div class="grid2">
@@ -94,6 +110,7 @@
                     <div class="row"><span>TARAMA</span><strong id="scanCount">0</strong></div>
                     <div class="row"><span>GÖZLENEN HÜCRE</span><strong id="observedCells">0</strong></div>
                     <div class="row"><span>ENGEL HÜCRESİ</span><strong id="occupiedCells">0</strong></div>
+                    <div class="row"><span>KESİN DUVAR</span><strong id="confirmedCells">0</strong></div>
                     <div class="row"><span>ÇÖZÜNÜRLÜK</span><strong id="resolution">--</strong></div>
                 </div>
             </section>
@@ -101,6 +118,7 @@
                 <h2>FÜZYON HAZIRLIK KAPISI</h2>
                 <div class="status-list">
                     <div class="row"><span>2D NAVİGASYON</span><strong id="ready2d">--</strong></div>
+                    <div class="row"><span>YEREL SLAM</span><strong id="readyLocalSlam">--</strong></div>
                     <div class="row"><span>GLOBAL SLAM</span><strong id="readySlam">--</strong></div>
                     <div class="row"><span>SEYREK 3D</span><strong id="ready3d">--</strong></div>
                     <div class="row"><span>KAMERA SEMANTİK</span><strong id="readySemantic">--</strong></div>
@@ -115,7 +133,7 @@
     const canvas = document.getElementById('mapCanvas');
     const panel = document.getElementById('mapPanel');
     const ctx = canvas.getContext('2d', {alpha:false});
-    let navState = null, gridCells = [], navWs = null;
+    let navState = null, gridCells = [], confirmedCells = [], navWs = null;
 
     function setLog(text, tone='normal') {
         const el = document.getElementById('eventLog');
@@ -167,8 +185,10 @@
             if (value < 0) continue;
             const x=g.origin_x_m+gx*g.resolution_m, y=g.origin_y_m+gy*g.resolution_m;
             const [sx,sy]=worldToScreen(x,y,tr);
-            ctx.fillStyle=value>=100?'#ff3845':'#102429';
+            const confirmed=confirmedCells[gy*g.width+gx]===1;
+            ctx.fillStyle=value>=100?(confirmed?'#000000':'#ff3845'):'#173036';
             ctx.fillRect(sx-cellPx/2,sy-cellPx/2,cellPx+0.4,cellPx+0.4);
+            if(value>=100&&confirmed&&cellPx>=2){ctx.strokeStyle='#59656a';ctx.lineWidth=.45;ctx.strokeRect(sx-cellPx/2,sy-cellPx/2,cellPx+.4,cellPx+.4);}
         }
         ctx.strokeStyle='rgba(72,102,112,.35)'; ctx.lineWidth=1;
         for(let m=1;m<=6;m++){
@@ -188,6 +208,7 @@
         navState=state;
         const g=state.grid||{};
         gridCells=decodeRle(g.cells_rle,(g.width||0)*(g.height||0));
+        confirmedCells=decodeRle(g.confirmed_rle,(g.width||0)*(g.height||0));
         document.getElementById('mapMode').textContent=state.map_mode||'--';
         document.getElementById('goalText').textContent=state.goal?`${state.goal.x_m.toFixed(2)} / ${state.goal.y_m.toFixed(2)} m`:'--';
         document.getElementById('routeStatus').textContent=state.route_status||'--';
@@ -199,6 +220,7 @@
         document.getElementById('scanCount').textContent=g.scan_count||0;
         document.getElementById('observedCells').textContent=g.observed_cells||0;
         document.getElementById('occupiedCells').textContent=g.occupied_cells||0;
+        document.getElementById('confirmedCells').textContent=g.confirmed_cells||0;
         document.getElementById('resolution').textContent=g.resolution_m?`${Math.round(g.resolution_m*100)} cm`:'--';
         document.getElementById('manualBtn').classList.toggle('active',state.approval_mode==='manual');
         document.getElementById('autoBtn').classList.toggle('active',state.approval_mode==='auto');
@@ -209,8 +231,13 @@
         setPill('tofBadge',tof.valid?`TOF ${Math.round(tof.distance_mm)} mm`:'TOF YOK',tof.valid?'ok':'warn');
         setPill('cameraBadge',camera.healthy?'KAMERA CANLI':'KAMERA YOK',camera.healthy?'ok':'warn');
         setPill('mapBadge',`${state.map_mode||'--'} · ${g.observed_cells||0} HÜCRE`,(g.scan_count||0)>0?'ok':'warn');
+        const session=state.mapping_session||{};
+        document.getElementById('mappingState').textContent=session.state||'--';
+        document.getElementById('mappingArchive').textContent=session.archive_id||'--';
+        document.getElementById('mappingStartBtn').disabled=session.state==='MAPPING';
+        document.getElementById('mappingFinishBtn').disabled=session.state!=='MAPPING';
         const ready=state.fusion_readiness||{};
-        setReady('ready2d',ready.navigation_2d);setReady('readySlam',ready.global_slam);setReady('ready3d',ready.sparse_3d);setReady('readySemantic',ready.camera_semantic);
+        setReady('ready2d',ready.navigation_2d);setReady('readyLocalSlam',ready.local_slam);setReady('readySlam',ready.global_slam);setReady('ready3d',ready.sparse_3d);setReady('readySemantic',ready.camera_semantic);
         document.getElementById('fusionBlockers').textContent=(ready.blockers||[]).length?`BEKLEYEN: ${(ready.blockers||[]).join(' · ')}`:'TÜM FÜZYON KAPILARI HAZIR';
         document.getElementById('mapTitle').textContent=`${state.map_mode||'LOCAL_ONLY'} OCCUPANCY · +X İLERİ / +Y SOL`;
         drawMap();
@@ -236,6 +263,35 @@
     async function setMode(mode){try{const d=await postJson('/api/navigation/mode',{mode});setLog(mode==='manual'?'Manuel rota onayı seçildi.':(d.platform_test?.active?'Otonom rota yürütmesi başladı.':'Otonom karar seçildi; güvenli hedefte doğrudan yürütür.'),'ok')}catch(e){setLog(e.message,'bad')}}
     async function approveRoute(){try{await postJson('/api/navigation/approve');setLog('Düşük hızlı rota yürütmesi başlatıldı.','ok')}catch(e){setLog(e.message,'bad')}}
     async function clearGoal(){try{await postJson('/api/navigation/clear');setLog('Hedef ve rota temizlendi.','ok')}catch(e){setLog(e.message,'bad')}}
+    async function startMapping(){
+        try{
+            const name=document.getElementById('mapName').value.trim()||'Ev Haritası';
+            await postJson('/api/navigation/mapping/start',{name});
+            setLog('Yeni haritalama oturumu başladı; LiDAR scan matching aktif.','ok');
+        }catch(e){setLog(`Haritalama başlatılamadı: ${e.message}`,'bad')}
+    }
+    async function finishMapping(){
+        try{
+            const d=await postJson('/api/navigation/mapping/finish');
+            setLog(`Harita donduruldu ve kaydedildi: ${d.mapping_session?.archive_id||'tamam'}`,'ok');
+            await refreshMaps();
+        }catch(e){setLog(`Harita kaydedilemedi: ${e.message}`,'bad')}
+    }
+    async function refreshMaps(){
+        try{
+            const r=await fetch('/api/navigation/maps',{cache:'no-store'}),d=await r.json();
+            if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);
+            const select=document.getElementById('savedMaps');select.replaceChildren();
+            for(const map of d.maps||[]){const option=document.createElement('option');option.value=map.map_id;option.textContent=`${map.display_name} · ${map.map_id}`;select.appendChild(option)}
+            if(!select.options.length){const option=document.createElement('option');option.value='';option.textContent='KAYITLI HARİTA YOK';select.appendChild(option)}
+            document.getElementById('loadMapBtn').disabled=!select.value;
+        }catch(e){setLog(`Harita listesi alınamadı: ${e.message}`,'warn')}
+    }
+    async function loadMap(){
+        const mapId=document.getElementById('savedMaps').value;if(!mapId)return;
+        try{await postJson('/api/navigation/mapping/load',{map_id:mapId});setLog(`Kayıtlı harita yüklendi: ${mapId}`,'ok')}
+        catch(e){setLog(`Harita yüklenemedi: ${e.message}`,'bad')}
+    }
 
     function connectNavigation(){
         const proto=location.protocol==='https:'?'wss':'ws';navWs=new WebSocket(`${proto}://${location.host}/ws/navigation`);
@@ -243,7 +299,8 @@
         navWs.onclose=()=>{setPill('mapBadge','BAĞLANTI YOK','bad');setTimeout(connectNavigation,1500)};
         navWs.onerror=()=>navWs.close();
     }
-    new ResizeObserver(resizeMap).observe(panel);resizeMap();connectNavigation();
+    document.getElementById('savedMaps').addEventListener('change',ev=>document.getElementById('loadMapBtn').disabled=!ev.target.value);
+    new ResizeObserver(resizeMap).observe(panel);resizeMap();refreshMaps();connectNavigation();
 </script>
 </body>
 </html>

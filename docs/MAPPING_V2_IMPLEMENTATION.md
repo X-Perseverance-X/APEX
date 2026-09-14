@@ -12,6 +12,14 @@
   rota katmanından kaldırabilir.
 - Gürültü eskimesi tarama sayısına değil monotonic geçen zamana bağlıdır; güçlü,
   tekrar görülen duvarlar tek-tur parazitlerinden daha uzun korunur.
+- Haritalama oturumu `BAŞLAT -> MAPPING -> BİTİR & KAYDET -> FROZEN` yaşam
+  döngüsüne sahiptir. Başlat temiz bir alt harita açıp LiDAR'ı doğrular; bitir
+  haritayı değişmez moda alır ve `.runtime/maps` altında atomik NPZ arşivi yazar.
+- Bir engel dört ayrı taramada doğrulanınca kesin duvar olur. Geçici tek-tur
+  noktaları kırmızı kalır; kesin duvar siyaha döner ve ancak üç ardışık serbest
+  ışın kanıtıyla çözülür. Planlayıcı iki sınıfı da engel kabul eder.
+- Kayıtlı haritalar konsoldan listelenip yeniden yüklenebilir. Yüklenen haritada
+  rota kullanılmadan önce canlı LiDAR ile yerel poz yeniden güvenilirleşir.
 - LiDAR seri portu ve kamera aygıtı için tek-sahip ilkesi korunur.
 - TOF geçerli olduğunda ön engel hücresi olarak füzyon sözleşmesine girer.
 - IMU roll/pitch/yaw zaman damgalı alınır. MPU6050 yaw mutlak pusula sayılmaz;
@@ -31,12 +39,13 @@ Ana HUD'daki mevcut 2D/3D LiDAR görünümleri değiştirilmedi. LiDAR kontrol
 
 Navigasyon konsolu:
 
-1. Occupancy grid üzerinde hedef seçer.
-2. Rotayı ve uzunluğunu gösterir.
-3. Bilinmeyen alan oranını raporlar.
-4. Manuel onay veya otonom karar kapısını uygular.
-5. Fiziksel hareketin kilitli olduğunu sürekli gösterir.
-6. 2D navigasyon, global SLAM, seyrek 3D ve kamera semantik füzyonu için gerçek
+1. Adlandırılmış haritalama oturumunu başlatır, bitirir, atomik kaydeder ve yükler.
+2. Aktif ölçüm ile kesinleşmiş duvarı ayrı renklerde gösterir.
+3. Occupancy grid üzerinde hedef seçer.
+4. Rotayı ve uzunluğunu gösterir.
+5. Bilinmeyen alan oranını raporlar.
+6. Manuel onay veya otonom karar kapısını uygular.
+7. 2D navigasyon, yerel/global SLAM, seyrek 3D ve kamera semantik füzyonu için gerçek
    hazır/engelleyici nedenleri listeler.
 
 ## Canlı ilk doğrulama

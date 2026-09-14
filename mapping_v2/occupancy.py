@@ -51,6 +51,9 @@ class GridConfig:
     free_ray_width_cells: int = 1
     stale_grace_s: float = 1.5
     stale_half_life_s: float = 4.0
+    confirmation_hits: int = 4
+    free_hit_count_decrement: int = 2
+    confirmed_clear_misses: int = 3
 
 
 class OccupancyGrid:
@@ -61,6 +64,8 @@ class OccupancyGrid:
         self.log_odds = np.zeros((self.config.height, self.config.width), dtype=np.float32)
         self.observed = np.zeros_like(self.log_odds, dtype=np.bool_)
         self.last_hit_ns = np.zeros_like(self.log_odds, dtype=np.int64)
+        self.hit_count = np.zeros_like(self.log_odds, dtype=np.uint16)
+        self.miss_streak = np.zeros_like(self.log_odds, dtype=np.uint8)
         self.scan_count = 0
         self.last_scan_sequence = -1
         self._last_decay_ns = 0
@@ -128,14 +133,28 @@ class OccupancyGrid:
         miss_cells.difference_update(hit_cells)
         if miss_cells:
             mx, my = zip(*miss_cells)
-            self.log_odds[np.asarray(my), np.asarray(mx)] += self.config.free_delta
-            self.observed[np.asarray(my), np.asarray(mx)] = True
+            miss_x, miss_y = np.asarray(mx), np.asarray(my)
+            self.log_odds[miss_y, miss_x] += self.config.free_delta
+            self.observed[miss_y, miss_x] = True
+            counts = self.hit_count[miss_y, miss_x].astype(np.int32)
+            was_confirmed = counts >= self.config.confirmation_hits
+            streaks = self.miss_streak[miss_y, miss_x].astype(np.int16)
+            streaks[was_confirmed] += 1
+            clear_confirmed = was_confirmed & (streaks >= self.config.confirmed_clear_misses)
+            counts[clear_confirmed] = 0
+            streaks[clear_confirmed] = 0
+            counts[~was_confirmed] -= self.config.free_hit_count_decrement
+            self.hit_count[miss_y, miss_x] = np.maximum(0, counts).astype(np.uint16)
+            self.miss_streak[miss_y, miss_x] = np.minimum(255, streaks).astype(np.uint8)
         if hit_cells:
             hx, hy = zip(*hit_cells)
             hit_x, hit_y = np.asarray(hx), np.asarray(hy)
             self.log_odds[hit_y, hit_x] += self.config.occupied_delta
             self.observed[hit_y, hit_x] = True
             self.last_hit_ns[hit_y, hit_x] = int(scan.timestamp_ns)
+            counts = self.hit_count[hit_y, hit_x].astype(np.uint32) + 1
+            self.hit_count[hit_y, hit_x] = np.minimum(np.iinfo(np.uint16).max, counts).astype(np.uint16)
+            self.miss_streak[hit_y, hit_x] = 0
 
         np.clip(self.log_odds, self.config.log_min, self.config.log_max, out=self.log_odds)
         self.scan_count += 1
@@ -155,7 +174,8 @@ class OccupancyGrid:
         if elapsed_s <= 0.0:
             return
         age_s = (timestamp_ns - self.last_hit_ns) / 1e9
-        stale = (self.last_hit_ns > 0) & (age_s >= self.config.stale_grace_s) & (self.log_odds > 0.0)
+        provisional = self.hit_count < self.config.confirmation_hits
+        stale = provisional & (self.last_hit_ns > 0) & (age_s >= self.config.stale_grace_s) & (self.log_odds > 0.0)
         if np.any(stale):
             factor = math.exp(-math.log(2.0) * elapsed_s / max(0.1, self.config.stale_half_life_s))
             self.log_odds[stale] *= factor
@@ -163,6 +183,8 @@ class OccupancyGrid:
         self.log_odds[forgotten] = 0.0
         self.observed[forgotten] = False
         self.last_hit_ns[forgotten] = 0
+        self.hit_count[forgotten] = 0
+        self.miss_streak[forgotten] = 0
 
     def update_tof(self, sample: TofSample, pose: Pose2D | None = None) -> bool:
         if not sample.valid or not 50.0 <= sample.distance_mm <= 4000.0:
@@ -188,6 +210,13 @@ class OccupancyGrid:
         self.last_hit_ns[gy, gx] = int(sample.timestamp_ns)
         return True
 
+    def confirmed_mask(self) -> np.ndarray:
+        return (
+            self.observed
+            & (self.log_odds >= self.config.occupied_threshold)
+            & (self.hit_count >= self.config.confirmation_hits)
+        )
+
     def states(self) -> np.ndarray:
         states = np.full(self.log_odds.shape, -1, dtype=np.int8)
         states[self.observed & (self.log_odds <= self.config.free_threshold)] = 0
@@ -198,6 +227,8 @@ class OccupancyGrid:
         self.log_odds.fill(0.0)
         self.observed.fill(False)
         self.last_hit_ns.fill(0)
+        self.hit_count.fill(0)
+        self.miss_streak.fill(0)
         self.scan_count = 0
         self.last_scan_sequence = -1
         self._last_decay_ns = 0
