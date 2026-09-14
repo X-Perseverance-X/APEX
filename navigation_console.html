@@ -42,7 +42,17 @@
         #decision { color:var(--orange); }
         #eventLog { min-height:48px; background:#050708; border:1px solid #252d31; color:#819096; padding:8px; white-space:pre-wrap; font-size:9px; line-height:1.45; }
         .note { color:#7f8b91; font-size:9px; line-height:1.5; margin-top:8px; }
-        @media(max-width:900px){ html,body{overflow:auto}.app{height:auto;min-height:100%}.layout{grid-template-columns:1fr;grid-template-rows:70vh auto}.map-panel{min-height:520px} }
+        @media(max-width:900px){
+            html,body{overflow:auto;max-width:100%}
+            .app{height:auto;min-height:100%;grid-template-rows:auto minmax(0,1fr)}
+            header{height:auto;min-height:44px;flex-wrap:wrap;padding:6px 8px}
+            header .brand{width:100%} header .spacer{display:none}
+            header .pill{font-size:8px;padding:4px 6px}
+            header button{flex:1 1 120px}
+            .layout{width:100%;min-width:0;grid-template-columns:minmax(0,1fr);grid-template-rows:70vh auto}
+            .map-panel{width:100%;min-width:0;min-height:520px}
+            aside,.card{width:100%;min-width:0}
+        }
     </style>
 </head>
 <body>
