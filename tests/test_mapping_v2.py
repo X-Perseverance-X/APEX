@@ -510,6 +510,41 @@ class MappingV2Tests(unittest.TestCase):
         self.assertGreater(len(cloud["points"]), 0)
         self.assertTrue(any(abs(point[2]) > 0.05 for point in cloud["points"]))
 
+    def test_route_vector_is_rotated_from_map_into_robot_body_frame(self):
+        # Robot faces map +Y. A map +X target is therefore on its right,
+        # never straight ahead as the old open-loop conversion claimed.
+        joy_x, joy_y, _duration, distance = server._navigation_segment_command(
+            [0.0, 0.0], [1.0, 0.0], math.pi / 2.0, 0.16,
+        )
+        self.assertAlmostEqual(distance, 1.0)
+        self.assertGreater(joy_x, 0.15)
+        self.assertAlmostEqual(joy_y, 0.0, places=5)
+
+    def test_route_waypoint_selection_advances_past_reached_point(self):
+        route = [[0.0, 0.0], [0.05, 0.0], [0.5, 0.0]]
+        target, index, distance = server._navigation_next_waypoint(
+            route, {"x_m": 0.0, "y_m": 0.0},
+        )
+        self.assertEqual(index, 2)
+        self.assertEqual(target, [0.5, 0.0])
+        self.assertAlmostEqual(distance, 0.5)
+
+    def test_sensor_timestamp_freshness_never_accepts_missing_or_future_data(self):
+        now = 10_000_000_000
+        self.assertFalse(server._sensor_timestamp_is_fresh(0, now))
+        self.assertFalse(server._sensor_timestamp_is_fresh(now + 1, now))
+        self.assertTrue(server._sensor_timestamp_is_fresh(now - 500_000_000, now))
+        self.assertFalse(server._sensor_timestamp_is_fresh(now - 1_500_000_000, now))
+
+    def test_single_point_live_route_fails_closed_before_motion_math(self):
+        with self.assertRaisesRegex(RuntimeError, "waypoint"):
+            server._navigation_next_waypoint([[0.0, 0.0]], {"x_m": 0.0, "y_m": 0.0})
+
+    def test_route_profile_uses_longer_slower_cycle(self):
+        self.assertEqual(server.NAV_ROUTE_GAIT_LEN_MM, 32)
+        self.assertEqual(server.NAV_ROUTE_GAIT_LIFT_MM, 12)
+        self.assertGreater(server.NAV_ROUTE_GAIT_CYCLE_MS, 1000)
+
 
 class MappingApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

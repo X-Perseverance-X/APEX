@@ -91,6 +91,7 @@ _telemetry_cache_lock = threading.Lock()
 _telemetry_cache = {
     "mpuP": 0.0, "mpuR": 0.0, "mpuY": 0.0, "mpuOnline": False,
     "tofOnline": False, "tofMm": None, "z": -100.0,
+    "mpu_monotonic_ns": 0, "tof_monotonic_ns": 0,
 }
 
 # /telemetry için KISA SÜRELİ (200ms) TAM YANIT önbelleği. Birden fazla
@@ -462,11 +463,18 @@ _mapping_thread_started = False
 # hız tahmininden hesaplanır; katı uzunluk/süre ve engel sınırları korunur.
 NAV_ROUTE_COMMAND_HZ = 10.0
 NAV_PLATFORM_TEST_REQUEST_BUDGET_S = 0.30
-NAV_ROUTE_JOY_MAG = 0.20
+NAV_ROUTE_JOY_MAG = 0.16
 NAV_ROUTE_FULL_SPEED_MPS = float(os.environ.get("APEX_NAV_FULL_SPEED_MPS", "0.18"))
 NAV_ROUTE_MAX_LENGTH_M = float(os.environ.get("APEX_NAV_MAX_LENGTH_M", "4.0"))
 NAV_ROUTE_MAX_DURATION_S = float(os.environ.get("APEX_NAV_MAX_DURATION_S", "120"))
 NAV_ROUTE_OBSTACLE_STOP_M = float(os.environ.get("APEX_NAV_OBSTACLE_STOP_M", "0.35"))
+NAV_ROUTE_WAYPOINT_TOLERANCE_M = 0.10
+NAV_ROUTE_GOAL_TOLERANCE_M = 0.12
+NAV_ROUTE_MIN_SCAN_POINTS = 35
+NAV_ROUTE_PROGRESS_TIMEOUT_S = 12.0
+NAV_ROUTE_GAIT_LEN_MM = 32
+NAV_ROUTE_GAIT_LIFT_MM = 12
+NAV_ROUTE_GAIT_CYCLE_MS = 1800  # duration, so larger is slower
 NAV_PLATFORM_TEST_MIN_BATTERY_V = 10.2
 _navigation_platform_task: asyncio.Task | None = None
 _navigation_platform_status = {
@@ -912,6 +920,10 @@ def start_lidar_thread():
     log.info(f"[LIDAR] Arka plan thread başladı — port: {LIDAR_PORT}")
 
 
+def _sensor_timestamp_is_fresh(source_ns: int, now_ns: int, max_age_ns: int = 1_000_000_000) -> bool:
+    return 0 < int(source_ns) <= int(now_ns) and int(now_ns) - int(source_ns) < int(max_age_ns)
+
+
 def _mapping_worker():
     """Feed mapping_v2 from shared sensor snapshots; never contact hardware."""
     last_sequence = -1
@@ -925,12 +937,16 @@ def _mapping_worker():
             with _telemetry_cache_lock:
                 telemetry = dict(_telemetry_cache)
             now_ns = time.monotonic_ns()
+            imu_timestamp_ns = int(telemetry.get("mpu_monotonic_ns") or 0)
+            tof_timestamp_ns = int(telemetry.get("tof_monotonic_ns") or 0)
+            imu_fresh = _sensor_timestamp_is_fresh(imu_timestamp_ns, now_ns)
+            tof_fresh = _sensor_timestamp_is_fresh(tof_timestamp_ns, now_ns)
             _mapping_engine.ingest_imu(ImuSample(
-                timestamp_ns=now_ns,
+                timestamp_ns=imu_timestamp_ns or now_ns,
                 roll_deg=float(telemetry.get("mpuR") or 0.0),
                 pitch_deg=float(telemetry.get("mpuP") or 0.0),
                 yaw_deg=float(telemetry.get("mpuY") or 0.0),
-                valid=bool(telemetry.get("mpuOnline", False)),
+                valid=bool(telemetry.get("mpuOnline", False)) and imu_fresh,
             ))
             tof_mm = telemetry.get("tofMm")
             _mapping_engine.ingest_lidar(LidarScan(
@@ -942,9 +958,9 @@ def _mapping_worker():
             # forward ToF return afterwards so it lands in that same pose,
             # rather than the previous scan's frame.
             _mapping_engine.ingest_tof(TofSample(
-                timestamp_ns=now_ns,
+                timestamp_ns=tof_timestamp_ns or now_ns,
                 distance_mm=float(tof_mm) if isinstance(tof_mm, (int, float)) else 0.0,
-                valid=bool(telemetry.get("tofOnline", False)),
+                valid=bool(telemetry.get("tofOnline", False)) and tof_fresh,
             ))
             last_sequence = sequence
         # A1M8 normal modda yaklaşık 5 tam tur/s üretir. 20 Hz salt-okunur
@@ -1867,24 +1883,55 @@ def _navigation_route_length(route: list[list[float]]) -> float:
     )
 
 
-def _navigation_segment_command(a: list[float], b: list[float]) -> tuple[float, float, float, float]:
+def _navigation_segment_command(
+    a: list[float], b: list[float], yaw_rad: float = 0.0, magnitude: float = NAV_ROUTE_JOY_MAG,
+) -> tuple[float, float, float, float]:
     dx, dy = float(b[0]) - float(a[0]), float(b[1]) - float(a[1])
     distance = math.hypot(dx, dy)
     if distance < 0.01:
         return 0.0, 0.0, 0.0, distance
-    # Harita +X ileri/+Y sol; firmware joystick: joyY ileri, joyX sağ.
-    joy_x = -NAV_ROUTE_JOY_MAG * dy / distance
-    joy_y = NAV_ROUTE_JOY_MAG * dx / distance
-    speed_mps = max(0.01, NAV_ROUTE_FULL_SPEED_MPS * NAV_ROUTE_JOY_MAG)
+    # Map vector -> live robot body frame. Robot +X is forward, +Y is left;
+    # firmware joystick +Y is forward and +X is right.
+    cosine, sine = math.cos(float(yaw_rad)), math.sin(float(yaw_rad))
+    forward = cosine * dx + sine * dy
+    left = -sine * dx + cosine * dy
+    magnitude = max(0.0, min(float(magnitude), NAV_ROUTE_JOY_MAG))
+    joy_x = -magnitude * left / distance
+    joy_y = magnitude * forward / distance
+    speed_mps = max(0.01, NAV_ROUTE_FULL_SPEED_MPS * max(magnitude, 0.01))
     return joy_x, joy_y, distance / speed_mps, distance
 
 
-async def _run_navigation_platform_test(route: list[list[float]], previous_params: dict) -> None:
-    """Follow every planned segment with bounded command-time dead reckoning.
+def _navigation_next_waypoint(route: list[list[float]], pose: dict) -> tuple[list[float], int, float]:
+    if len(route) < 2:
+        raise RuntimeError("Canlı rota waypoint üretmiyor")
+    try:
+        px, py = float(pose.get("x_m")), float(pose.get("y_m"))
+    except (TypeError, ValueError):
+        raise RuntimeError("LiDAR-SLAM pozu sayısal değil") from None
+    if not math.isfinite(px) or not math.isfinite(py):
+        raise RuntimeError("LiDAR-SLAM pozu sonlu değil")
+    nearest = min(
+        range(len(route)),
+        key=lambda index: math.hypot(float(route[index][0]) - px, float(route[index][1]) - py),
+    )
+    target_index = min(len(route) - 1, nearest + 1)
+    while target_index < len(route) - 1:
+        distance = math.hypot(float(route[target_index][0]) - px, float(route[target_index][1]) - py)
+        if distance >= NAV_ROUTE_WAYPOINT_TOLERANCE_M:
+            break
+        target_index += 1
+    target = route[target_index]
+    return target, target_index, math.hypot(float(target[0]) - px, float(target[1]) - py)
 
-    The current hardware has no trusted wheel/visual odometry, so completion is
-    explicitly ESTIMATED rather than falsely claiming a measured goal arrival.
-    Fresh directional LiDAR remains a hard stop throughout execution.
+
+async def _run_navigation_platform_test(route: list[list[float]], previous_params: dict) -> None:
+    """Follow a planned route using live LiDAR-SLAM pose feedback.
+
+    Time is only a watchdog. Direction and arrival are recomputed from the
+    measured map pose every heartbeat, with world vectors rotated into the
+    robot body frame. Manual approval keeps its approved path; auto mode may
+    consume a live safe replan.
     """
     global _navigation_platform_task, _ai_tracking_enabled, _lidar_nav_enabled
     try:
@@ -1911,7 +1958,10 @@ async def _run_navigation_platform_test(route: list[list[float]], previous_param
         ) as motion_client:
             params = await _navigation_direct_request(
                 motion_client, "/params",
-                {"z": str(previous_params["z"]), "len": "40", "lift": "10", "spd": "1000"},
+                # Firmware `spd` is cycle duration in milliseconds: 1800 is
+                # deliberately slower than the old 1000 ms route profile.
+                {"z": str(previous_params["z"]), "len": str(NAV_ROUTE_GAIT_LEN_MM),
+                 "lift": str(NAV_ROUTE_GAIT_LIFT_MM), "spd": str(NAV_ROUTE_GAIT_CYCLE_MS)},
                 timeout=1.0,
             )
             _navigation_require_ok(params, "Yavaş yürüyüş profili uygulanamadı")
@@ -1931,40 +1981,83 @@ async def _run_navigation_platform_test(route: list[list[float]], previous_param
                 estimated_duration_s=round(estimated_duration, 1),
                 heartbeat_hz=NAV_ROUTE_COMMAND_HZ,
             )
-            travelled_before = 0.0
-            for index, (a, b) in enumerate(zip(route, route[1:]), start=1):
-                joy_x, joy_y, segment_duration, segment_distance = _navigation_segment_command(a, b)
-                if segment_distance < 0.01:
+            goal = [float(route[-1][0]), float(route[-1][1])]
+            initial_goal_distance = max(0.01, math.hypot(goal[0] - float(route[0][0]), goal[1] - float(route[0][1])))
+            deadline = started + NAV_ROUTE_MAX_DURATION_S
+            approved_route = [list(point) for point in route]
+            next_command = started
+            pose_lost_since: float | None = None
+            tracking_streak = 3
+            best_goal_distance = initial_goal_distance
+            last_progress_at = started
+            while True:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("Rota geri besleme zaman aşımına uğradı")
+                live = _mapping_engine.snapshot(include_grid=False)
+                pose = live.get("pose") or {}
+                local_slam = live.get("local_slam") or {}
+                lidar_state = (live.get("sensors") or {}).get("lidar") or {}
+                tracking = bool(pose.get("trusted")) and local_slam.get("state") == "TRACKING" and lidar_state.get("fresh")
+                if tracking:
+                    tracking_streak += 1
+                    if pose_lost_since is not None and tracking_streak >= 3:
+                        pose_lost_since = None
+                else:
+                    tracking_streak = 0
+                    if pose_lost_since is None:
+                        pose_lost_since = time.monotonic()
+                    if time.monotonic() - pose_lost_since >= 0.30:
+                        raise RuntimeError("LiDAR-SLAM pozu güvenilir değil; rota güvenli durduruldu")
+                if not tracking or tracking_streak < 3:
+                    await _navigation_send_heartbeat(motion_client, 0.0, 0.0)
+                    await asyncio.sleep(1.0 / NAV_ROUTE_COMMAND_HZ)
                     continue
-                segment_started = time.monotonic()
-                next_command = segment_started
-                while time.monotonic() - segment_started < segment_duration:
-                    with _lidar_lock:
-                        points = list(_lidar_points)
-                        scan_fresh = _lidar_online and time.monotonic() - _lidar_last_scan_ts < 0.8
-                    if not scan_fresh or not points:
-                        raise RuntimeError("LiDAR taraması güncel değil; rota güvenli durduruldu")
-                    direction_deg = math.degrees(math.atan2(-joy_x, joy_y)) % 360.0
-                    obstacle_m = _get_lidar_distance_at_angle(points, direction_deg, 10.0)
-                    if obstacle_m is not None and obstacle_m < NAV_ROUTE_OBSTACLE_STOP_M:
-                        raise RuntimeError(f"Rota yönünde {obstacle_m:.2f} m engel algılandı")
-                    command = await _navigation_send_heartbeat(motion_client, joy_x, joy_y)
-                    _navigation_require_ok(command, "Omurilik hareket komutunu reddetti")
-                    segment_fraction = min(1.0, (time.monotonic() - segment_started) / segment_duration)
-                    progress = (travelled_before + segment_distance * segment_fraction) / route_length
-                    _navigation_platform_status.update(
-                        message=f"Rota yürütülüyor · {index}/{len(route)-1} parça · %{progress*100:.0f}",
-                        joy_x=round(joy_x, 3), joy_y=round(joy_y, 3),
-                        waypoint=index, progress=round(progress, 3),
-                        elapsed_s=round(time.monotonic() - started, 1),
-                        obstacle_m=None if obstacle_m is None else round(obstacle_m, 3),
-                    )
-                    next_command += 1.0 / NAV_ROUTE_COMMAND_HZ
-                    await asyncio.sleep(max(0.0, next_command - time.monotonic()))
-                travelled_before += segment_distance
+                live_goal = live.get("goal") or {}
+                if math.hypot(float(live_goal.get("x_m", math.inf)) - goal[0], float(live_goal.get("y_m", math.inf)) - goal[1]) > 0.02:
+                    raise RuntimeError("Hedef yürütme sırasında değişti")
+                active_route = approved_route
+                if live.get("approval_mode") == "auto":
+                    if not live.get("route_ok") or not live.get("approved"):
+                        raise RuntimeError("Canlı harita güvenli rota üretmiyor")
+                    active_route = live.get("route") or []
+                px, py = float(pose.get("x_m")), float(pose.get("y_m"))
+                goal_distance = math.hypot(goal[0] - px, goal[1] - py)
+                if goal_distance <= NAV_ROUTE_GOAL_TOLERANCE_M:
+                    break
+                if goal_distance < best_goal_distance - 0.03:
+                    best_goal_distance = goal_distance
+                    last_progress_at = time.monotonic()
+                elif time.monotonic() - last_progress_at >= NAV_ROUTE_PROGRESS_TIMEOUT_S:
+                    raise RuntimeError("LiDAR-SLAM hedefe ilerleme doğrulamadı; rota güvenli durduruldu")
+                target, target_index, target_distance = _navigation_next_waypoint(active_route, pose)
+                speed_scale = max(0.50, min(1.0, target_distance / 0.40))
+                joy_x, joy_y, _unused_duration, _unused_distance = _navigation_segment_command(
+                    [px, py], target, float(pose.get("yaw_rad") or 0.0), NAV_ROUTE_JOY_MAG * speed_scale,
+                )
+                with _lidar_lock:
+                    points = list(_lidar_points)
+                    scan_fresh = _lidar_online and time.monotonic() - _lidar_last_scan_ts < 0.8
+                if not scan_fresh or len(points) < NAV_ROUTE_MIN_SCAN_POINTS:
+                    raise RuntimeError("LiDAR taraması yetersiz/güncel değil; rota güvenli durduruldu")
+                direction_deg = math.degrees(math.atan2(-joy_x, joy_y)) % 360.0
+                obstacle_m = _get_lidar_distance_at_angle(points, direction_deg, 25.0)
+                if obstacle_m is not None and obstacle_m < NAV_ROUTE_OBSTACLE_STOP_M:
+                    raise RuntimeError(f"Rota koridorunda {obstacle_m:.2f} m engel algılandı")
+                command = await _navigation_send_heartbeat(motion_client, joy_x, joy_y)
+                _navigation_require_ok(command, "Omurilik hareket komutunu reddetti")
+                progress = max(0.0, min(1.0, 1.0 - goal_distance / initial_goal_distance))
+                _navigation_platform_status.update(
+                    message=f"LiDAR-SLAM rota takibi · {target_index}/{len(active_route)-1} · %{progress*100:.0f}",
+                    joy_x=round(joy_x, 3), joy_y=round(joy_y, 3),
+                    waypoint=target_index, waypoint_count=len(active_route) - 1, progress=round(progress, 3),
+                    elapsed_s=round(time.monotonic() - started, 1), pose_yaw_deg=round(math.degrees(float(pose.get("yaw_rad") or 0.0)), 1),
+                    obstacle_m=None if obstacle_m is None else round(obstacle_m, 3),
+                )
+                next_command += 1.0 / NAV_ROUTE_COMMAND_HZ
+                await asyncio.sleep(max(0.0, next_command - time.monotonic()))
         _navigation_platform_status.update(
             state="COMPLETED", active=True, progress=1.0,
-            message="Rota tamamlandı (komut-zaman tahmini); robot durduruldu",
+            message="Rota hedefi LiDAR-SLAM pozu ile doğrulandı; robot durduruldu",
         )
     except asyncio.CancelledError:
         _navigation_platform_status.update(state="STOPPED", active=True, message="Rota operatör tarafından durduruldu")
@@ -2012,9 +2105,23 @@ async def _begin_navigation_execution() -> dict:
     if not motor.get("applied"):
         raise ValueError(motor.get("error") or "LiDAR taraması başlatılamadı")
 
-    # Motor hazırlanırken harita değişmiş olabilir. Daima en güncel güvenli
-    # rotayı kullan; manuel modda değişmiş rota tekrar açık onay gerektirir.
+    # Motor devreye girdikten sonra en az üç kabul edilmiş scan-match ile
+    # ölçülmüş poz bekle. Sabit (0,0,0) veya bayat harita pozu ile yürümek yok.
     current = _mapping_engine.snapshot(include_grid=False)
+    for _ in range(40):
+        if current.get("goal") != snapshot.get("goal"):
+            raise ValueError("Hedef değişti; güncel rotayı yeniden onaylayın")
+        readiness = current.get("fusion_readiness") or {}
+        pose = current.get("pose") or {}
+        if readiness.get("navigation_2d") and pose.get("trusted"):
+            break
+        await asyncio.sleep(0.10)
+        current = _mapping_engine.snapshot(include_grid=False)
+    else:
+        raise ValueError("LiDAR-SLAM güvenilir poz üretemedi; hareket başlatılmadı")
+
+    # Poz kilitlenirken harita değişmiş olabilir. Daima en güncel güvenli
+    # rotayı kullan; manuel modda değişmiş rota tekrar açık onay gerektirir.
     if current.get("goal") != snapshot.get("goal"):
         raise ValueError("Hedef değişti; güncel rotayı yeniden onaylayın")
     if current.get("route") != route:
@@ -2431,6 +2538,7 @@ async def _proxy_to_esp32(path: str, query: dict, *, force_fresh: bool = False) 
                 data = r.json()
                 esp_online = True
                 with _telemetry_cache_lock:
+                    sensor_now_ns = time.monotonic_ns()
                     if "mpuP" in data: _telemetry_cache["mpuP"] = data["mpuP"]
                     if "mpuR" in data: _telemetry_cache["mpuR"] = data["mpuR"]
                     if "mpuY" in data: _telemetry_cache["mpuY"] = data["mpuY"]
@@ -2438,6 +2546,10 @@ async def _proxy_to_esp32(path: str, query: dict, *, force_fresh: bool = False) 
                     if "tofOnline" in data: _telemetry_cache["tofOnline"] = data["tofOnline"]
                     if "tofMm" in data: _telemetry_cache["tofMm"] = data["tofMm"]
                     if "z" in data:    _telemetry_cache["z"]    = data["z"]
+                    if all(key in data for key in ("mpuP", "mpuR", "mpuY", "mpuOnline")):
+                        _telemetry_cache["mpu_monotonic_ns"] = sensor_now_ns
+                    if all(key in data for key in ("tofMm", "tofOnline")):
+                        _telemetry_cache["tof_monotonic_ns"] = sensor_now_ns
                 # ESP32'nin bilmediği, sunucu tarafı bir bayrağı (AI takip
                 # açık/kapalı) JSON'a ekliyoruz — detection_hud.py bunu zaten
                 # poll ettiği /telemetry üzerinden okuyacak, ayrı bir endpoint

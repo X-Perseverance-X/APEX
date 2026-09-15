@@ -237,7 +237,7 @@
         document.getElementById('view2dBtn').classList.toggle('active',mappingView==='2d');document.getElementById('view3dBtn').classList.toggle('active',mappingView==='3d');
         if(mappingView==='3d'&&typeof THREE==='undefined'){mappingView='2d';canvas.style.display='block';document.getElementById('rgbCloudPanel').style.display='none';document.getElementById('view2dBtn').classList.add('active');document.getElementById('view3dBtn').classList.remove('active');setLog('RGB 3D kütüphanesi yüklenemedi; 2D plan korundu.','warn');}
         else if(mappingView==='3d'){initRgbCloud();resizeRgbCloud();updateRgbGeometry(navState||{});refreshCameraSnapshot();}
-        else stopCameraSnapshots();
+        else if(!cameraCaptureNeeded())stopCameraSnapshots();
     }
     function initRgbCloud(){
         if(cloudRenderer||typeof THREE==='undefined')return;const host=document.getElementById('rgbCloudPanel');
@@ -259,7 +259,7 @@
         return[cameraPixels.data[i]/255,cameraPixels.data[i+1]/255,cameraPixels.data[i+2]/255];
     }
     function ingestSparseCloud(state){
-        const cloud=state.sparse_cloud||{},sequence=Number(cloud.sequence||0),session=state.mapping_session?.state||'';if(session==='MAPPING'&&lastMappingState!=='MAPPING'){cloudVoxels.clear();lastCloudSequence=-1}lastMappingState=session;
+        const cloud=state.sparse_cloud||{},sequence=Number(cloud.sequence||0),session=state.mapping_session?.state||'',wasMapping=lastMappingState==='MAPPING';if(session==='MAPPING'&&!wasMapping){cloudVoxels.clear();lastCloudSequence=-1}lastMappingState=session;if(session==='MAPPING'&&!wasMapping)refreshCameraSnapshot();else if(session!=='MAPPING'&&wasMapping&&!cameraCaptureNeeded())stopCameraSnapshots();
         if(sequence<=0||sequence===lastCloudSequence||!Array.isArray(cloud.points))return;lastCloudSequence=sequence;const pose=state.pose||{};
         for(const point of cloud.points){if(!Array.isArray(point)||point.length<3)continue;const numeric=point.map(Number),key=numeric.map(v=>Math.round(v/.06)).join(':');cloudVoxels.set(key,{p:numeric,c:sampleCameraColor(numeric,pose)});}while(cloudVoxels.size>30000)cloudVoxels.delete(cloudVoxels.keys().next().value);if(mappingView==='3d')updateRgbGeometry(state);
     }
@@ -268,9 +268,10 @@
         const pose=state.pose||{};cloudRobot.position.set(-Number(pose.y_m||0),0,-Number(pose.x_m||0));cloudRobot.rotation.y=Number(pose.yaw_rad||0);renderRgbCloud();
     }
     function stopCameraSnapshots(){if(cameraSnapshotTimer){clearTimeout(cameraSnapshotTimer);cameraSnapshotTimer=null;}}
-    function scheduleCameraSnapshot(delay){stopCameraSnapshots();if(mappingView==='3d'&&!document.hidden)cameraSnapshotTimer=setTimeout(refreshCameraSnapshot,delay);}
+    function cameraCaptureNeeded(){return mappingView==='3d'||lastMappingState==='MAPPING';}
+    function scheduleCameraSnapshot(delay){stopCameraSnapshots();if(cameraCaptureNeeded()&&!document.hidden)cameraSnapshotTimer=setTimeout(refreshCameraSnapshot,delay);}
     function refreshCameraSnapshot(){
-        if(mappingView!=='3d'||document.hidden)return;const image=new Image();
+        if(!cameraCaptureNeeded()||document.hidden)return;const image=new Image();
         image.onload=()=>{snapshotCanvas.width=320;snapshotCanvas.height=180;snapshotCtx.drawImage(image,0,0,320,180);try{cameraPixels=snapshotCtx.getImageData(0,0,320,180);cameraPixelsAt=Date.now();cameraSnapshotFailures=0}catch(_){cameraPixels=null;cameraPixelsAt=0}scheduleCameraSnapshot(1000)};
         image.onerror=()=>{cameraPixels=null;cameraPixelsAt=0;cameraSnapshotFailures=Math.min(4,cameraSnapshotFailures+1);scheduleCameraSnapshot(1000*(2**cameraSnapshotFailures))};image.src=`/camera/snapshot?_=${Date.now()}`;
     }
@@ -380,7 +381,7 @@
         navWs.onerror=()=>navWs.close();
     }
     document.getElementById('savedMaps').addEventListener('change',ev=>document.getElementById('loadMapBtn').disabled=!ev.target.value);
-    document.addEventListener('visibilitychange',()=>{if(document.hidden)stopCameraSnapshots();else if(mappingView==='3d')refreshCameraSnapshot()});
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)stopCameraSnapshots();else if(cameraCaptureNeeded())refreshCameraSnapshot()});
     new ResizeObserver(resizeMap).observe(panel);resizeMap();refreshMaps();connectNavigation();
 </script>
 </body>
