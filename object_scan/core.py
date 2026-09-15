@@ -282,11 +282,14 @@ class ObjectScanSession:
         frame_width: int,
         frame_height: int,
         *,
-        horizontal_fov_deg: float = 105.0,
+        horizontal_fov_deg: float = 120.0,
         voxel_size_m: float = 0.012,
         max_range_m: float = 2.5,
         camera_from_lidar: np.ndarray | None = None,
+        motion_mode: str = "free",
     ):
+        if motion_mode not in {"free", "pivot"}:
+            raise ValueError("motion_mode must be 'free' or 'pivot'")
         self.visual = _VisualOdometry(frame_width, frame_height, horizontal_fov_deg)
         self.cloud = ColoredVoxelCloud(voxel_size_m=voxel_size_m)
         self.max_range_m = float(max_range_m)
@@ -299,6 +302,7 @@ class ObjectScanSession:
                 dtype=np.float64,
             )
         self.camera_from_lidar = np.asarray(camera_from_lidar, dtype=np.float64)
+        self.motion_mode = motion_mode
         self.world_from_camera = np.eye(4, dtype=np.float64)
         self.frame_index = 0
         self.accepted_frames = 0
@@ -308,11 +312,13 @@ class ObjectScanSession:
     def _sample_colors(self, frame_bgr: np.ndarray, points_camera: np.ndarray) -> np.ndarray:
         matrix = self.visual.camera_matrix
         z = points_camera[:, 2]
-        safe_z = np.where(z > 0.05, z, np.nan)
-        u = np.rint(matrix[0, 0] * points_camera[:, 0] / safe_z + matrix[0, 2]).astype(np.int64)
-        v = np.rint(matrix[1, 1] * points_camera[:, 1] / safe_z + matrix[1, 2]).astype(np.int64)
+        projectable = z > 0.05
+        u = np.full(len(points_camera), -1, dtype=np.int64)
+        v = np.full(len(points_camera), -1, dtype=np.int64)
+        u[projectable] = np.rint(matrix[0, 0] * points_camera[projectable, 0] / z[projectable] + matrix[0, 2]).astype(np.int64)
+        v[projectable] = np.rint(matrix[1, 1] * points_camera[projectable, 1] / z[projectable] + matrix[1, 2]).astype(np.int64)
         height, width = frame_bgr.shape[:2]
-        valid = (z > 0.05) & (u >= 0) & (u < width) & (v >= 0) & (v < height)
+        valid = projectable & (u >= 0) & (u < width) & (v >= 0) & (v < height)
         rgb = np.full((len(points_camera), 3), 128, dtype=np.uint8)
         rgb[valid] = frame_bgr[v[valid], u[valid], ::-1]
         return rgb
@@ -348,17 +354,57 @@ class ObjectScanSession:
             self.rejected_frames += 1
             return ScanUpdate(False, "GORSEL_POZ_KAYIP", self.frame_index, len(self.cloud), len(lidar_camera), features, inliers, 0.0, None, None)
 
+        if self.motion_mode == "pivot":
+            rotation_angle = _rotation_angle(relative[:3, :3])
+            if rotation_angle > math.radians(20.0):
+                self.rejected_frames += 1
+                return ScanUpdate(False, "PIVOT_DONUSU_COK_BUYUK", self.frame_index, len(self.cloud), len(lidar_camera), features, inliers, 0.0, None, 0.0)
+            rotation_only = np.eye(4, dtype=np.float64)
+            rotation_only[:3, :3] = relative[:3, :3]
+            candidate_pose = self.world_from_camera @ np.linalg.inv(rotation_only)
+            world = transform_points(lidar_camera, candidate_pose)
+            self.world_from_camera = candidate_pose
+            self.cloud.integrate(world, colors)
+            self.accepted_frames += 1
+            self.visual.commit()
+            self.trajectory.append({
+                "timestamp_s": float(timestamp_s),
+                "transform": self.world_from_camera.tolist(),
+                "fitness": None,
+                "rmse_m": None,
+                "visual_inliers": inliers,
+                "translation_scale_m": 0.0,
+                "motion_mode": "pivot",
+            })
+            return ScanUpdate(True, "PIVOT_ROTATION", self.frame_index, len(self.cloud), len(lidar_camera), features, inliers, 0.0, None, 0.0)
+
         target_xyz, _target_rgb, target_counts = self.cloud.arrays()
         stable_target = target_xyz[target_counts >= 1]
         best: tuple[float, ICPResult] | None = None
         for scale, initial in self._initial_pose_candidates(relative):
-            result = icp_register(lidar_camera, stable_target, initial, max_correspondence_m=0.14)
+            result = icp_register(
+                lidar_camera,
+                stable_target,
+                initial,
+                max_correspondence_m=0.14,
+                max_step_translation_m=0.16,
+                max_step_rotation_deg=18.0,
+            )
             score = result.fitness - min(result.rmse_m if math.isfinite(result.rmse_m) else 1.0, 1.0)
             if best is None or score > (best[1].fitness - min(best[1].rmse_m if math.isfinite(best[1].rmse_m) else 1.0, 1.0)):
                 best = (scale, result)
         assert best is not None
         scale, registration = best
-        if not registration.accepted:
+        bootstrap_accept = (
+            self.accepted_frames < 4
+            and registration.reason == "WEAK_GEOMETRIC_OVERLAP"
+            and registration.correspondences >= 12
+            and registration.fitness >= 0.55
+            and math.isfinite(registration.rmse_m)
+            and registration.rmse_m <= 0.060
+            and inliers >= 60
+        )
+        if not registration.accepted and not bootstrap_accept:
             self.rejected_frames += 1
             return ScanUpdate(False, registration.reason, self.frame_index, len(self.cloud), len(lidar_camera), features, inliers, registration.fitness, registration.rmse_m if math.isfinite(registration.rmse_m) else None, scale)
 
@@ -375,7 +421,7 @@ class ObjectScanSession:
             "visual_inliers": inliers,
             "translation_scale_m": scale,
         })
-        return ScanUpdate(True, "OK", self.frame_index, len(self.cloud), len(lidar_camera), features, inliers, registration.fitness, registration.rmse_m, scale)
+        return ScanUpdate(True, "BOOTSTRAP" if bootstrap_accept else "OK", self.frame_index, len(self.cloud), len(lidar_camera), features, inliers, registration.fitness, registration.rmse_m, scale)
 
     def export(self, directory: str | Path) -> dict:
         output = Path(directory)
@@ -389,6 +435,7 @@ class ObjectScanSession:
             "points": len(self.cloud),
             "voxel_size_m": self.cloud.voxel_size_m,
             "camera_from_lidar": self.camera_from_lidar.tolist(),
+            "motion_mode": self.motion_mode,
             "extrinsics_status": "PROVISIONAL",
             "intrinsics_status": "APPROXIMATE_FOV",
             "trajectory": self.trajectory,

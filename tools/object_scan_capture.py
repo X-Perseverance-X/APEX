@@ -26,6 +26,7 @@ def main() -> int:
     parser.add_argument("--rate", type=float, default=4.0)
     parser.add_argument("--output", default=str(ROOT / ".runtime" / "object-scans" / time.strftime("%Y%m%d-%H%M%S")))
     parser.add_argument("--max-range", type=float, default=2.5)
+    parser.add_argument("--motion-mode", choices=("free", "pivot"), default="free")
     args = parser.parse_args()
 
     try:
@@ -43,13 +44,19 @@ def main() -> int:
     deadline = time.monotonic() + max(1.0, args.seconds)
     interval = 1.0 / max(0.5, args.rate)
     samples: list[dict] = []
+    capture_path = output / "capture.json"
 
     while time.monotonic() < deadline:
         cycle_started = time.monotonic()
-        lidar_response = client.get("/api/lidar/snapshot")
-        camera_response = client.get("/camera/raw-snapshot")
-        lidar_response.raise_for_status()
-        camera_response.raise_for_status()
+        try:
+            lidar_response = client.get("/api/lidar/snapshot")
+            camera_response = client.get("/camera/raw-snapshot")
+            lidar_response.raise_for_status()
+            camera_response.raise_for_status()
+        except (httpx.HTTPError, httpx.TimeoutException) as exc:
+            print(f"[SKIP] geçici sensör kesintisi: {exc}", flush=True)
+            time.sleep(max(0.05, interval - (time.monotonic() - cycle_started)))
+            continue
         lidar = lidar_response.json()
         sequence = int(lidar.get("scan_seq", -1))
         if not lidar.get("fresh") or sequence == last_sequence:
@@ -60,13 +67,22 @@ def main() -> int:
             raise RuntimeError("ham kamera JPEG çözülemedi")
         if session is None:
             height, width = frame.shape[:2]
-            session = ObjectScanSession(width, height, max_range_m=args.max_range)
+            session = ObjectScanSession(width, height, max_range_m=args.max_range, motion_mode=args.motion_mode)
         update = session.add_frame(frame, lidar.get("points", []), time.time())
         last_sequence = sequence
         frame_path = frames_dir / f"{sequence:08d}.jpg"
         cv2.imwrite(str(frame_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 92])
-        record = {"scan_seq": sequence, "frame": frame_path.name, **update.__dict__}
+        record = {
+            "scan_seq": sequence,
+            "frame": frame_path.name,
+            "captured_at_s": time.time(),
+            "camera_frame_age_s": camera_response.headers.get("x-apex-frame-age"),
+            "lidar_scan_age_s": lidar.get("scan_age_s"),
+            "lidar_points": lidar.get("points", []),
+            **update.__dict__,
+        }
         samples.append(record)
+        capture_path.write_text(json.dumps(samples, ensure_ascii=False, indent=2), encoding="utf-8")
         state = "OK" if update.accepted else "RED"
         rmse = "--" if update.icp_rmse_m is None else f"{update.icp_rmse_m * 100:.1f}cm"
         print(f"[{state}] kare={update.frame_index} bulut={update.cloud_points} inlier={update.visual_inliers} ICP={update.icp_fitness:.2f}/{rmse} {update.reason}", flush=True)
@@ -75,7 +91,7 @@ def main() -> int:
     if session is None:
         raise RuntimeError("hiç eşzamanlı LiDAR/kamera karesi alınamadı")
     result = session.export(output)
-    (output / "capture.json").write_text(json.dumps(samples, ensure_ascii=False, indent=2), encoding="utf-8")
+    capture_path.write_text(json.dumps(samples, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
