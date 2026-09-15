@@ -35,7 +35,7 @@
 #include "DFRobotDFPlayerMini.h"
 #include "Adafruit_VL53L1X.h"
 
-#define APEX_FIRMWARE_VERSION "v57.8-dynamic-tripod"
+#define APEX_FIRMWARE_VERSION "v57.9-mounted-vector-gait"
 #define APEX_BUILD_PROFILE    "esp32s3-n16r8-generic"
 
 const char* ssid = "APEX-HUB";
@@ -260,6 +260,7 @@ const float SAFE_TRANSITION_MAX_SPEED_DEG_S = 60.0f;
 const float MIN_DYNAMIC_GAIT_CYCLE_MS = 900.0f;
 const float GAIT_LAG_SOFT_DEG = 2.5f;
 const float GAIT_LAG_HARD_DEG = 9.0f;
+const float GAIT_CONTACT_SLOPE = -0.55f;
 float controlFrameDtS = 0.020f;
 float gaitTrackingErrorDeg = 0.0f;
 float gaitPhaseRateScale = 1.0f;
@@ -2561,8 +2562,22 @@ void loop() {
         float t_leg = fmod(currentPhase + legPhase[i], 1.0);
 
         float sideSign = (i < 3) ? 1.0f : -1.0f;  // +1 sağ taraf, -1 sol taraf
-        float leg_vX = vX - sideSign * diff;
-        float leg_vY = vY;  // yanal: sadece joyX'ten gelir, dönüş katkısı yok
+
+        // Coxa montaj düzlemi projeksiyonu (RF/RR açılı, RM dik; sol ayna).
+        // bodyOffset vektörü aynı zamanda bacağın radyal montaj yönünü verir.
+        // Gövde +X ileri komutu her bacağın kendi (local-X, outward-Y)
+        // düzlemine ayrılır. Böylece orta bacak coxası klasik sağ-sol süpürür;
+        // ön bacak hem teğetsel hem dışa, arka bacak teğetsel ve içe gider.
+        // Fiziksel ayak uçlarının üçünün de dünya/gövde izi yine dümdüz +X'tir.
+        const float mountRadius = sqrtf(bodyOffsetX[i]*bodyOffsetX[i] +
+                                        bodyOffsetY[i]*bodyOffsetY[i]);
+        const float forwardToLocalX = fabsf(bodyOffsetY[i]) / mountRadius;
+        const float forwardToLocalYOut = bodyOffsetX[i] / mountRadius;
+        const float outwardToBodyY = (i < 3) ? -1.0f : 1.0f;
+        float leg_vX = vX * forwardToLocalX - sideSign * diff;
+        // Mevcut ve fiziksel olarak başarılı yanal komut aynen korunur; yalnız
+        // ileri vektörün açılı coxa için gereken outward bileşeni eklenir.
+        float leg_vY = vY + outwardToBodyY * vX * forwardToLocalYOut;
 
         float legBaseX = gaitX + legNeutralFwdOffset[i];
         float legX, legY, legZ;
@@ -2577,18 +2592,17 @@ void loop() {
             float smooth = bt*bt*bt*(10.0f + bt*(-15.0f + 6.0f*bt));
             swing_curve = -1.0f + 2.0f * smooth;
           } else {
-            // Cubic Hermite swing-leg retraction. Uç eğimleri -2 olduğundan
-            // aşağıdaki doğrusal stance ile C1 yatay hız süreklidir: temas
-            // anında ayak durup gövdeyi pıtı-pıtı frenlemez. Bütün bacaklarda
-            // aynı body-frame vektörü kullanıldığı için ileri izler +X'e,
-            // yanal izler +Y'ye kesin paralel kalır.
+            // Düşük geri-toplamalı Cubic Hermite. Swing ve stance aynı negatif
+            // uç eğimini paylaşır: temas anında yatay hız atlamaz, fakat -2
+            // eğimli önceki denemedeki görünür geri taşma da oluşmaz.
             const float bt2 = bt * bt;
             const float bt3 = bt2 * bt;
             const float h00 =  2.0f*bt3 - 3.0f*bt2 + 1.0f;
             const float h10 =        bt3 - 2.0f*bt2 + bt;
             const float h01 = -2.0f*bt3 + 3.0f*bt2;
             const float h11 =        bt3 -       bt2;
-            swing_curve = -h00 - 2.0f*h10 + h01 - 2.0f*h11;
+            swing_curve = -h00 + GAIT_CONTACT_SLOPE*h10
+                               + h01 + GAIT_CONTACT_SLOPE*h11;
           }
           legX = legBaseX + (leg_vX / 2.0) * swing_curve;
           legY = baseLegY + (leg_vY / 2.0) * swing_curve;
@@ -2606,9 +2620,14 @@ void loop() {
             float smooth = st*st*st*(10.0f + st*(-15.0f + 6.0f*st));
             stance_curve = 1.0f - 2.0f * smooth;
           } else {
-            // Temastaki üç ayak aynı sabit body-frame hızla geriye sürülür;
-            // böylece ön/orta/arka ayaklardan hiçbiri diğerinin yükünü çalmaz.
-            stance_curve = 1.0f - 2.0f * st;
+            const float st2 = st * st;
+            const float st3 = st2 * st;
+            const float h00 =  2.0f*st3 - 3.0f*st2 + 1.0f;
+            const float h10 =        st3 - 2.0f*st2 + st;
+            const float h01 = -2.0f*st3 + 3.0f*st2;
+            const float h11 =        st3 -       st2;
+            stance_curve = h00 + GAIT_CONTACT_SLOPE*h10
+                                - h01 + GAIT_CONTACT_SLOPE*h11;
           }
           legX = legBaseX + (leg_vX / 2.0) * stance_curve;
           legY = baseLegY + (leg_vY / 2.0) * stance_curve;
