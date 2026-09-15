@@ -35,7 +35,7 @@
 #include "DFRobotDFPlayerMini.h"
 #include "Adafruit_VL53L1X.h"
 
-#define APEX_FIRMWARE_VERSION "v57.7-smooth-feedback"
+#define APEX_FIRMWARE_VERSION "v57.8-dynamic-tripod"
 #define APEX_BUILD_PROFILE    "esp32s3-n16r8-generic"
 
 const char* ssid = "APEX-HUB";
@@ -252,9 +252,18 @@ const unsigned long STAND_RAMP_MS   = 3000UL;
 // Zaman tabanlı S-eğrisi, kalkış boyunca en fazla 30 deg/s.
 // Uzayan HTTP/I2C karesi telafi edilerek büyük bir açı sıçraması üretilmez.
 const float STAND_MAX_SPEED_DEG_S = 30.0f;
-const float LEG_TRACK_MAX_SPEED_DEG_S = 120.0f;
+// DS3240 femurlar yük altında coxa/tibia grubundan daha yavaş kalıyor. Eklem
+// bazlı sınır, hızlı gait hedefinin femuru geride bırakıp ayağı küçültmesini
+// önler; aşağıdaki phase governor bütün tripodu en yavaş ekleme senkronlar.
+const float LEG_TRACK_MAX_SPEED_DEG_S_BY_JOINT[3] = {145.0f, 100.0f, 125.0f};
 const float SAFE_TRANSITION_MAX_SPEED_DEG_S = 60.0f;
+const float MIN_DYNAMIC_GAIT_CYCLE_MS = 900.0f;
+const float GAIT_LAG_SOFT_DEG = 2.5f;
+const float GAIT_LAG_HARD_DEG = 9.0f;
 float controlFrameDtS = 0.020f;
+float gaitTrackingErrorDeg = 0.0f;
+float gaitPhaseRateScale = 1.0f;
+bool pureTurnGaitActive = false;
 int lastLegPwmTick[6][3] = {{-1,-1,-1},{-1,-1,-1},{-1,-1,-1},
                            {-1,-1,-1},{-1,-1,-1},{-1,-1,-1}};
 
@@ -1321,7 +1330,9 @@ void send_to_PCA9685(int leg, int joint, float target_angle) {
   if      (currentMode == HOME_RISE) maxStep = STAND_MAX_SPEED_DEG_S * controlFrameDtS;
   else if (bootSoftStart)          maxStep = 0.5f + 2.0f * bootMotionBlend;
   else if (safeTransitionActive)   maxStep = SAFE_TRANSITION_MAX_SPEED_DEG_S * controlFrameDtS;
-  else                             maxStep = LEG_TRACK_MAX_SPEED_DEG_S * controlFrameDtS;
+  else if (currentMode == BEZIER_JOY && pureTurnGaitActive)
+                                   maxStep = 120.0f * controlFrameDtS;
+  else                             maxStep = LEG_TRACK_MAX_SPEED_DEG_S_BY_JOINT[joint] * controlFrameDtS;
 
   if (currentMode == HOME_RISE && homeRisePhase == 1) {
     // Quintic minimum-jerk interpolation: zero speed/acceleration at endpoints.
@@ -2091,6 +2102,9 @@ void setup() {
         currentPhase = 0.0f;
         gaitCommandWasActive = false;
         s_joyX = s_joyY = s_joyR = 0.0f;
+        gaitTrackingErrorDeg = 0.0f;
+        gaitPhaseRateScale = 1.0f;
+        pureTurnGaitActive = false;
       }
     } else if (newMode == CAL && legOutputsArmed) {
       server.send(409, "application/json", "{\"ok\":false,\"error\":\"disarm all leg PWM before calibration mode\"}");
@@ -2498,16 +2512,38 @@ void loop() {
       s_joyR = approach(s_joyR, joyR, 0.12);
 
       float s_joyMag = sqrt(s_joyX * s_joyX + s_joyY * s_joyY + s_joyR * s_joyR);
+      float translationMag = sqrtf(s_joyX*s_joyX + s_joyY*s_joyY);
+      pureTurnGaitActive = fabsf(s_joyR) > 0.05f && translationMag < 0.08f;
 
       // Her yeni hareket çift-destek sınırından başlar. Komut bırakıldığında
       // yumuşatılmış genlik sıfıra yaklaşana kadar fazı sürdürmek, havadaki
       // ayağın aynı fazda dikey düşmesini engeller.
       if (joyMag > 0.05f && !gaitCommandWasActive && s_joyMag < 0.03f) currentPhase = 0.0f;
       if (joyMag > 0.05f || s_joyMag > 0.02f) {
-        float speedMultiplier = max(s_joyMag, 0.1f);
-        float cycleDuration = baseSpeed / speedMultiplier;
+        // Joystick büyüklüğü hem adım boyunu hem kadansı yönetir, fakat doğrusal
+        // bölgeyi eski 1/mag yasası gibi aşırı yavaşlatmaz. DS3240 femurların
+        // yetişemeyeceği çevrim ayrıca fiziksel alt sınıra sıkıştırılır.
+        float speedMultiplier = pureTurnGaitActive ? max(s_joyMag, 0.1f)
+                                                   : sqrtf(max(s_joyMag, 0.08f));
+        float cycleDuration = pureTurnGaitActive
+                            ? baseSpeed / speedMultiplier
+                            : max(baseSpeed / speedMultiplier, MIN_DYNAMIC_GAIT_CYCLE_MS);
 
-        currentPhase += (controlFrameDtS * 1000.0f / cycleDuration);
+        // Açık çevrim servoda gerçek konum geri bildirimi yok; buna rağmen
+        // yazılımın sınırladığı currentPhysicalAngle ile istenen IK arasındaki
+        // hata güvenilir bir hedefi-geride-bırakma göstergesidir. Fazı
+        // durdurmadan 0.22x'e kadar yavaşlatır; toparlanınca yumuşakça açar.
+        float lagPhaseScale = 1.0f;
+        if (!pureTurnGaitActive && gaitTrackingErrorDeg > GAIT_LAG_SOFT_DEG) {
+          float lag = constrain((gaitTrackingErrorDeg - GAIT_LAG_SOFT_DEG) /
+                                (GAIT_LAG_HARD_DEG - GAIT_LAG_SOFT_DEG), 0.0f, 1.0f);
+          lagPhaseScale = 1.0f - 0.78f * lag;
+        }
+        float phaseBlend = min(1.0f, controlFrameDtS * 7.0f);
+        if (pureTurnGaitActive) gaitPhaseRateScale = 1.0f;
+        else gaitPhaseRateScale += (lagPhaseScale - gaitPhaseRateScale) * phaseBlend;
+
+        currentPhase += (controlFrameDtS * 1000.0f / cycleDuration) * gaitPhaseRateScale;
         if (currentPhase >= 1.0) currentPhase -= 1.0;
       }
       gaitCommandWasActive = joyMag > 0.05f || s_joyMag > 0.02f;
@@ -2519,6 +2555,7 @@ void loop() {
       // joyR > 0: sağ taraf iç (kısa), sol taraf dış (uzun) → sağa viraj
       // joyR < 0: sağ taraf dış (uzun), sol taraf iç (kısa) → sola viraj
       float diff = s_joyR * s_len;
+      bool preservePureTurnGait = pureTurnGaitActive;
 
       for(int i=0; i<6; i++) {
         float t_leg = fmod(currentPhase + legPhase[i], 1.0);
@@ -2533,25 +2570,53 @@ void loop() {
 
         if (t_leg < 0.5) {
           float bt = t_leg * 2.0;
-          float smooth = bt*bt*bt*(10.0f + bt*(-15.0f + 6.0f*bt));
-          float swing_curve = -1.0f + 2.0f * smooth;
+          float swing_curve;
+          if (preservePureTurnGait) {
+            // Kullanıcı tarafından fiziksel olarak başarılı bulunan saf dönüş
+            // davranışına dokunma.
+            float smooth = bt*bt*bt*(10.0f + bt*(-15.0f + 6.0f*bt));
+            swing_curve = -1.0f + 2.0f * smooth;
+          } else {
+            // Cubic Hermite swing-leg retraction. Uç eğimleri -2 olduğundan
+            // aşağıdaki doğrusal stance ile C1 yatay hız süreklidir: temas
+            // anında ayak durup gövdeyi pıtı-pıtı frenlemez. Bütün bacaklarda
+            // aynı body-frame vektörü kullanıldığı için ileri izler +X'e,
+            // yanal izler +Y'ye kesin paralel kalır.
+            const float bt2 = bt * bt;
+            const float bt3 = bt2 * bt;
+            const float h00 =  2.0f*bt3 - 3.0f*bt2 + 1.0f;
+            const float h10 =        bt3 - 2.0f*bt2 + bt;
+            const float h01 = -2.0f*bt3 + 3.0f*bt2;
+            const float h11 =        bt3 -       bt2;
+            swing_curve = -h00 - 2.0f*h10 + h01 - 2.0f*h11;
+          }
           legX = legBaseX + (leg_vX / 2.0) * swing_curve;
           legY = baseLegY + (leg_vY / 2.0) * swing_curve;
           // Small joystick input must not command full-height suspended legs.
           // At zero input the lift settles to zero with the smoothed command.
           float liftBlend = constrain(s_joyMag / 0.35f, 0.0f, 1.0f);
-          float liftShape = powf(sinf(bt * PI), 4.0f);
+          float liftSin = sinf(bt * PI);
+          float liftShape = preservePureTurnGait ? powf(liftSin, 4.0f)
+                                                 : liftSin * liftSin;
           legZ = s_gaitZ + s_lift * liftBlend * liftShape;
         } else {
           float st = (t_leg - 0.5) * 2.0;
-          float smooth = st*st*st*(10.0f + st*(-15.0f + 6.0f*st));
-          float stance_curve = 1.0f - 2.0f * smooth;
+          float stance_curve;
+          if (preservePureTurnGait) {
+            float smooth = st*st*st*(10.0f + st*(-15.0f + 6.0f*st));
+            stance_curve = 1.0f - 2.0f * smooth;
+          } else {
+            // Temastaki üç ayak aynı sabit body-frame hızla geriye sürülür;
+            // böylece ön/orta/arka ayaklardan hiçbiri diğerinin yükünü çalmaz.
+            stance_curve = 1.0f - 2.0f * st;
+          }
           legX = legBaseX + (leg_vX / 2.0) * stance_curve;
           legY = baseLegY + (leg_vY / 2.0) * stance_curve;
           legZ = s_gaitZ;
         }
         calculate_body_ik_and_move(i, legX, legY, legZ);
       }
+      gaitTrackingErrorDeg = maxDiffThisFrame;
     }
     else if (currentMode == HOME_RISE) {
       s_joyX = approach(s_joyX, 0.0, 0.12);

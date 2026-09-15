@@ -12,7 +12,7 @@ class SpineMotionSmoothingTests(unittest.TestCase):
         cls.source = FIRMWARE.read_text(encoding="utf-8")
 
     def test_safe_boot_and_new_version_remain_explicit(self):
-        self.assertIn('APEX_FIRMWARE_VERSION "v57.7-smooth-feedback"', self.source)
+        self.assertIn('APEX_FIRMWARE_VERSION "v57.8-dynamic-tripod"', self.source)
         setup = self.source.split("void setup()", 1)[1].split("void loop()", 1)[0]
         self.assertIn("disableLegPwm(-1, -1);", setup)
         self.assertIn("spineState       = SPINE_DISARMED;", setup)
@@ -25,14 +25,20 @@ class SpineMotionSmoothingTests(unittest.TestCase):
         self.assertIn("currentPhysicalAngle[leg][joint] + offset[leg][joint]", output)
 
     def test_walk_has_time_based_slew_and_smooth_contact_boundaries(self):
-        self.assertIn("LEG_TRACK_MAX_SPEED_DEG_S * controlFrameDtS", self.source)
+        self.assertIn("LEG_TRACK_MAX_SPEED_DEG_S_BY_JOINT[joint] * controlFrameDtS", self.source)
         self.assertNotIn("else                             maxStep = 30.0f", self.source)
         gait = self.source.split("else if (currentMode == BEZIER_JOY)", 1)[1].split(
             "else if (currentMode == HOME_RISE)", 1
         )[0]
         self.assertIn("bt*bt*bt*(10.0f + bt*(-15.0f + 6.0f*bt))", gait)
-        self.assertIn("powf(sinf(bt * PI), 4.0f)", gait)
+        self.assertIn("powf(liftSin, 4.0f)", gait)
+        self.assertIn("liftSin * liftSin", gait)
         self.assertIn("st*st*st*(10.0f + st*(-15.0f + 6.0f*st))", gait)
+        self.assertIn("stance_curve = 1.0f - 2.0f * st", gait)
+        self.assertIn("preservePureTurnGait", gait)
+        self.assertIn("gaitPhaseRateScale", gait)
+        self.assertIn("pureTurnGaitActive ? max(s_joyMag, 0.1f)", gait)
+        self.assertIn("maxStep = 120.0f * controlFrameDtS", self.source)
 
     def test_each_new_walk_starts_from_double_support(self):
         self.assertIn("gaitCommandWasActive", self.source)
