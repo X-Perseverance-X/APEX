@@ -98,6 +98,8 @@ latest_frame=[None]
 latest_frame_ts=[0.0]
 latest_jpeg=[None]
 latest_jpeg_ts=[0.0]
+latest_raw_frame=[None]
+latest_raw_frame_ts=[0.0]
 process_started_ts=time.time()
 frame_lock=threading.Lock()
 frame_ready=threading.Condition(frame_lock)
@@ -677,6 +679,11 @@ def hud_render_worker():
     while True:
         frame, dets, fps = _raw_frame_queue.get()
         try:
+            # Nesne tarama/kalibrasyon hattı HUD yazıları olmadan gerçek kamera
+            # piksellerine ihtiyaç duyar. Aygıtı ikinci kez açmak yerine en taze
+            # ham kareyi aynı sahip süreçte tutuyoruz. JPEG yalnız istek gelince
+            # kodlanır; normal 30 FPS akışına ek encode yükü bindirilmez.
+            raw_frame = frame.copy()
             if DOWNSCALE < 1.0:
                 h, w = frame.shape[:2]
                 frame = cv2.resize(frame, (int(w*DOWNSCALE), int(h*DOWNSCALE)), interpolation=cv2.INTER_AREA)
@@ -692,6 +699,8 @@ def hud_render_worker():
                 latest_frame_ts[0] = now
                 latest_jpeg[0] = payload
                 latest_jpeg_ts[0] = now
+                latest_raw_frame[0] = raw_frame
+                latest_raw_frame_ts[0] = now
                 stream_stats['encoded_frames'] += 1
                 stream_stats['encode_ms'] = (time.perf_counter() - encode_started) * 1000.0
                 stream_stats['jpeg_bytes'] = len(payload)
@@ -760,6 +769,31 @@ class HUDStreamHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(jsonlib.dumps(data, ensure_ascii=False).encode('utf-8'))
+        elif path == "/raw-snapshot":
+            with frame_lock:
+                raw = None if latest_raw_frame[0] is None else latest_raw_frame[0].copy()
+                frame_ts = latest_raw_frame_ts[0]
+            age = time.time() - frame_ts if frame_ts else 999.0
+            if raw is not None and age <= STREAM_STALE_TIMEOUT_S:
+                ok, encoded = cv2.imencode('.jpg', raw, [cv2.IMWRITE_JPEG_QUALITY, 92])
+                if ok:
+                    payload = encoded.tobytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+                    self.send_header("X-Apex-Frame-Age", f"{age:.3f}")
+                    self.send_header("X-Apex-Frame-Ts", f"{frame_ts:.6f}")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
+            self.send_response(503)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(jsonlib.dumps({"camera": False, "fresh": False, "frame_age": age}).encode('utf-8'))
         elif path == "/snapshot":
             with frame_lock:
                 payload = latest_jpeg[0]

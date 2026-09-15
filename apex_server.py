@@ -1672,6 +1672,31 @@ async def ws_lidar(ws: WebSocket):
             receive_task.cancel()
 
 
+@app.get("/api/lidar/snapshot")
+async def lidar_snapshot():
+    """Return one immutable, read-only full scan for synchronized recording."""
+    with _lidar_lock:
+        points = list(_lidar_points)
+        sequence = int(_lidar_scan_seq)
+        scan_ts = float(_lidar_last_scan_ts)
+        online = bool(_lidar_online)
+        enabled = bool(_lidar_enabled)
+        error = _lidar_last_error or None
+    age = time.monotonic() - scan_ts if scan_ts else None
+    fresh = online and bool(points) and age is not None and 0.0 <= age < 0.8
+    return JSONResponse({
+        "type": "lidar_snapshot",
+        "online": online,
+        "enabled": enabled,
+        "fresh": fresh,
+        "scan_age_s": round(age, 4) if age is not None else None,
+        "scan_seq": sequence,
+        "timestamp_monotonic_s": scan_ts or None,
+        "points": points,
+        "error": error,
+    })
+
+
 # ─── mapping_v2 / rota + süre sınırlı platform HIL testi ───────────────────
 
 def _navigation_unavailable():
@@ -2414,6 +2439,26 @@ async def camera_snapshot_proxy():
         )
     except Exception as e:
         return JSONResponse({"error": f"Kamera/HUD snapshot alınamadı: {e}"}, status_code=502)
+
+
+@app.get("/camera/raw-snapshot")
+async def camera_raw_snapshot_proxy():
+    """Proxy the latest HUD-free frame without opening the CSI camera twice."""
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            r = await client.get(f"{CAMERA_STREAM_URL}/raw-snapshot")
+        headers = {"Cache-Control": "no-store"}
+        for name in ("x-apex-frame-age", "x-apex-frame-ts"):
+            if name in r.headers:
+                headers[name] = r.headers[name]
+        return Response(
+            content=r.content,
+            status_code=r.status_code,
+            media_type=r.headers.get("content-type", "image/jpeg"),
+            headers=headers,
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"Ham kamera snapshot alınamadı: {e}"}, status_code=502)
 
 @app.get("/camera/status")
 async def camera_status_proxy():
