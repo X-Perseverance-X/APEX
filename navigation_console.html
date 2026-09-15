@@ -27,6 +27,10 @@
         .layout { min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:10px; padding:10px; }
         .map-panel { min-width:0; min-height:0; position:relative; border:1px solid var(--line); border-top:3px solid var(--red); background:#030607; overflow:hidden; }
         #mapCanvas { width:100%; height:100%; display:block; cursor:crosshair; }
+        #rgbCloudPanel { position:absolute; inset:0; display:none; background:#030607; }
+        #rgbCloudPanel canvas { display:block; width:100%; height:100%; }
+        .map-view-toggle { position:absolute; left:9px; top:42px; z-index:6; display:flex; gap:5px; }
+        .map-view-toggle button { padding:5px 8px; font-size:8px; background:rgba(3,6,7,.92); }
         .map-title { position:absolute; left:9px; top:8px; padding:5px 8px; background:rgba(2,5,6,.9); border:1px solid var(--red); color:var(--red); font-size:10px; font-weight:bold; pointer-events:none; }
         .lock-banner { position:absolute; left:50%; top:8px; transform:translateX(-50%); background:rgba(20,3,4,.94); border:1px solid #a51f27; color:#ff4650; padding:6px 10px; font-size:10px; font-weight:bold; pointer-events:none; }
         .map-hint { position:absolute; left:9px; bottom:9px; background:rgba(2,5,6,.9); border:1px solid #334148; color:#839198; padding:7px 9px; font-size:9px; line-height:1.45; pointer-events:none; }
@@ -54,6 +58,7 @@
             aside,.card{width:100%;min-width:0}
         }
     </style>
+    <script src="/assets/three.min.js"></script>
 </head>
 <body>
 <div class="app">
@@ -71,6 +76,8 @@
     <main class="layout">
         <section class="map-panel" id="mapPanel">
             <canvas id="mapCanvas"></canvas>
+            <div id="rgbCloudPanel"></div>
+            <div class="map-view-toggle"><button id="view2dBtn" class="active" onclick="setMappingView('2d')">2D PLAN</button><button id="view3dBtn" onclick="setMappingView('3d')">RGB 3D</button></div>
             <div id="mapTitle" class="map-title">LOCAL OCCUPANCY · +X İLERİ / +Y SOL</div>
             <div class="lock-banner">LIDAR GÜVENLİKLİ · DÜŞÜK HIZLI ROTA YÜRÜTME</div>
             <div class="map-hint">HARİTADA HEDEF NOKTAYA TIKLA<br>Manuel onay veya otonom kararla tüm waypointler izlenir.</div>
@@ -125,6 +132,7 @@
                     <div class="row"><span>GRAFİK TARAMASI</span><strong id="graphScanCount">0</strong></div>
                     <div class="row"><span>LOOP CLOSURE</span><strong id="loopCount">0</strong></div>
                     <div class="row"><span>GLOBAL DÜZELTME</span><strong id="globalCorrection">--</strong></div>
+                    <div class="row"><span>AYNA / SIÇRAMA FİLTRESİ</span><strong id="outlierCount">0</strong></div>
                     <div class="row"><span>ÇÖZÜNÜRLÜK</span><strong id="resolution">--</strong></div>
                 </div>
             </section>
@@ -138,6 +146,7 @@
                     <div class="row"><span>KAMERA SEMANTİK</span><strong id="readySemantic">--</strong></div>
                 </div>
                 <div id="fusionBlockers" class="note">Kalibrasyon durumu bekleniyor.</div>
+                <div class="note">RGB 3D, balık gözü kamera snapshot renklerini IMU ile eğilmiş gerçek LiDAR düzlemine yaklaşık projeler. Kamera intrinsic/extrinsic kalibrasyonu tamamlanana kadar ölçüsel renk eşleşmesi PROVISIONAL'dır.</div>
             </section>
             <section class="card"><h2>İŞLEM KAYDI</h2><div id="eventLog">Navigasyon veri kanalı bekleniyor.</div></section>
         </aside>
@@ -148,6 +157,9 @@
     const panel = document.getElementById('mapPanel');
     const ctx = canvas.getContext('2d', {alpha:false});
     let navState = null, gridCells = [], confirmedCells = [], navWs = null;
+    let mappingView='2d', cloudScene, cloudCamera, cloudRenderer, cloudPoints, cloudRobot;
+    let cloudVoxels=new Map(), lastCloudSequence=-1, lastMappingState='', cameraPixels=null, cameraPixelsAt=0, cameraSnapshotTimer=null, cameraSnapshotFailures=0;
+    const snapshotCanvas=document.createElement('canvas'), snapshotCtx=snapshotCanvas.getContext('2d',{willReadFrequently:true});
 
     function setLog(text, tone='normal') {
         const el = document.getElementById('eventLog');
@@ -175,6 +187,7 @@
         canvas.style.width = `${rect.width}px`; canvas.style.height = `${rect.height}px`;
         ctx.setTransform(dpr,0,0,dpr,0,0);
         drawMap();
+        resizeRgbCloud();
     }
 
     function viewTransform() {
@@ -200,9 +213,9 @@
             const x=g.origin_x_m+gx*g.resolution_m, y=g.origin_y_m+gy*g.resolution_m;
             const [sx,sy]=worldToScreen(x,y,tr);
             const confirmed=confirmedCells[gy*g.width+gx]===1;
-            ctx.fillStyle=value>=100?(confirmed?'#000000':'#ff3845'):'#173036';
+            ctx.fillStyle=value>=100?(confirmed?'#050505':'#ff3845'):'#173036';
             ctx.fillRect(sx-cellPx/2,sy-cellPx/2,cellPx+0.4,cellPx+0.4);
-            if(value>=100&&confirmed&&cellPx>=2){ctx.strokeStyle='#59656a';ctx.lineWidth=.45;ctx.strokeRect(sx-cellPx/2,sy-cellPx/2,cellPx+.4,cellPx+.4);}
+            if(value>=100&&confirmed){ctx.save();ctx.shadowColor='#e8f1f4';ctx.shadowBlur=2.5;ctx.strokeStyle='#d6e0e3';ctx.lineWidth=Math.max(1,Math.min(1.6,cellPx*.55));ctx.strokeRect(sx-cellPx/2,sy-cellPx/2,cellPx+.4,cellPx+.4);ctx.restore();}
         }
         ctx.strokeStyle='rgba(72,102,112,.35)'; ctx.lineWidth=1;
         for(let m=1;m<=6;m++){
@@ -214,8 +227,52 @@
             navState.route.forEach((p,i)=>{const [sx,sy]=worldToScreen(Number(p[0]),Number(p[1]),tr);i?ctx.lineTo(sx,sy):ctx.moveTo(sx,sy)});ctx.stroke();ctx.shadowBlur=0;
         }
         if(navState.goal){const [gx,gy]=worldToScreen(navState.goal.x_m,navState.goal.y_m,tr);ctx.save();ctx.translate(gx,gy);ctx.rotate(Math.PI/4);ctx.fillStyle='#ff9d22';ctx.fillRect(-7,-7,14,14);ctx.restore();}
-        const [rx,ry]=worldToScreen(tr.pose.x_m,tr.pose.y_m,tr);ctx.fillStyle='#e60000';ctx.beginPath();ctx.moveTo(rx,ry-15);ctx.lineTo(rx-10,ry+10);ctx.lineTo(rx+10,ry+10);ctx.closePath();ctx.fill();
-        ctx.strokeStyle='#ff9d22';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(rx,ry-18);ctx.lineTo(rx,ry-30);ctx.stroke();
+        const [rx,ry]=worldToScreen(tr.pose.x_m,tr.pose.y_m,tr);ctx.save();ctx.translate(rx,ry);ctx.rotate(-Number(tr.pose.yaw_rad||0));ctx.fillStyle='#e60000';ctx.beginPath();ctx.moveTo(0,-15);ctx.lineTo(-10,10);ctx.lineTo(10,10);ctx.closePath();ctx.fill();
+        ctx.strokeStyle='#ff9d22';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,-18);ctx.lineTo(0,-30);ctx.stroke();ctx.restore();
+    }
+
+    function setMappingView(view){
+        mappingView=view==='3d'?'3d':'2d';canvas.style.display=mappingView==='2d'?'block':'none';
+        document.getElementById('rgbCloudPanel').style.display=mappingView==='3d'?'block':'none';
+        document.getElementById('view2dBtn').classList.toggle('active',mappingView==='2d');document.getElementById('view3dBtn').classList.toggle('active',mappingView==='3d');
+        if(mappingView==='3d'&&typeof THREE==='undefined'){mappingView='2d';canvas.style.display='block';document.getElementById('rgbCloudPanel').style.display='none';document.getElementById('view2dBtn').classList.add('active');document.getElementById('view3dBtn').classList.remove('active');setLog('RGB 3D kütüphanesi yüklenemedi; 2D plan korundu.','warn');}
+        else if(mappingView==='3d'){initRgbCloud();resizeRgbCloud();updateRgbGeometry(navState||{});refreshCameraSnapshot();}
+        else stopCameraSnapshots();
+    }
+    function initRgbCloud(){
+        if(cloudRenderer||typeof THREE==='undefined')return;const host=document.getElementById('rgbCloudPanel');
+        cloudScene=new THREE.Scene();cloudScene.background=new THREE.Color(0x030607);cloudScene.fog=new THREE.Fog(0x030607,8,18);
+        cloudCamera=new THREE.PerspectiveCamera(52,1,.03,40);cloudCamera.position.set(6,5,7);cloudCamera.lookAt(0,0,0);
+        cloudRenderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});cloudRenderer.setPixelRatio(Math.min(1.5,devicePixelRatio||1));host.appendChild(cloudRenderer.domElement);
+        cloudPoints=new THREE.Points(new THREE.BufferGeometry(),new THREE.PointsMaterial({vertexColors:true,size:.055,sizeAttenuation:true,transparent:true,opacity:.96}));cloudScene.add(cloudPoints);cloudScene.add(new THREE.GridHelper(12,24,0x2b5961,0x153137));
+        cloudRobot=new THREE.Group();const body=new THREE.Mesh(new THREE.BoxGeometry(.34,.16,.45),new THREE.MeshBasicMaterial({color:0xe60000}));body.position.y=.10;cloudRobot.add(body);const heading=new THREE.Mesh(new THREE.ConeGeometry(.08,.28,10),new THREE.MeshBasicMaterial({color:0xffa500}));heading.rotation.x=-Math.PI/2;heading.position.set(0,.12,-.32);cloudRobot.add(heading);cloudScene.add(cloudRobot);
+        let drag=false,lx=0,ly=0,az=.7,polar=.82,radius=10;const moveCamera=()=>{cloudCamera.position.set(radius*Math.sin(polar)*Math.sin(az),radius*Math.cos(polar),radius*Math.sin(polar)*Math.cos(az));cloudCamera.lookAt(0,0,0);renderRgbCloud()};const dom=cloudRenderer.domElement;
+        dom.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;dom.setPointerCapture?.(e.pointerId)});dom.addEventListener('pointermove',e=>{if(!drag)return;az-=(e.clientX-lx)*.008;polar=Math.max(.15,Math.min(1.48,polar-(e.clientY-ly)*.006));lx=e.clientX;ly=e.clientY;moveCamera()});dom.addEventListener('pointerup',()=>drag=false);dom.addEventListener('wheel',e=>{e.preventDefault();radius=Math.max(2.5,Math.min(20,radius*(1+e.deltaY*.001)));moveCamera()},{passive:false});moveCamera();
+    }
+    function resizeRgbCloud(){if(!cloudRenderer)return;const rect=document.getElementById('rgbCloudPanel').getBoundingClientRect();if(rect.width<2||rect.height<2)return;cloudRenderer.setSize(rect.width,rect.height,false);cloudCamera.aspect=rect.width/rect.height;cloudCamera.updateProjectionMatrix();renderRgbCloud();}
+    function renderRgbCloud(){if(cloudRenderer)cloudRenderer.render(cloudScene,cloudCamera);}
+    function depthColor(distance){return distance<.6?[1,.22,.27]:distance<1.5?[1,.68,.13]:distance<3?[0,.9,.69]:[.15,.65,1];}
+    function sampleCameraColor(point,pose){
+        const dx=point[0]-Number(pose.x_m||0),dy=point[1]-Number(pose.y_m||0),yaw=Number(pose.yaw_rad||0),forward=dx*Math.cos(yaw)+dy*Math.sin(yaw),left=-dx*Math.sin(yaw)+dy*Math.cos(yaw),distance=Math.hypot(forward,left);
+        if(!cameraPixels||Date.now()-cameraPixelsAt>3000||forward<=0)return depthColor(distance);const angle=Math.atan2(left,forward),halfFov=80*Math.PI/180;if(Math.abs(angle)>halfFov)return depthColor(distance);
+        const x=Math.max(0,Math.min(cameraPixels.width-1,Math.round((.5-angle/(2*halfFov))*cameraPixels.width)));const elevation=Math.atan2(Number(point[2]||0),Math.max(.05,distance)),y=Math.max(0,Math.min(cameraPixels.height-1,Math.round((.5-elevation/(100*Math.PI/180))*cameraPixels.height))),i=(y*cameraPixels.width+x)*4;
+        return[cameraPixels.data[i]/255,cameraPixels.data[i+1]/255,cameraPixels.data[i+2]/255];
+    }
+    function ingestSparseCloud(state){
+        const cloud=state.sparse_cloud||{},sequence=Number(cloud.sequence||0),session=state.mapping_session?.state||'';if(session==='MAPPING'&&lastMappingState!=='MAPPING'){cloudVoxels.clear();lastCloudSequence=-1}lastMappingState=session;
+        if(sequence<=0||sequence===lastCloudSequence||!Array.isArray(cloud.points))return;lastCloudSequence=sequence;const pose=state.pose||{};
+        for(const point of cloud.points){if(!Array.isArray(point)||point.length<3)continue;const numeric=point.map(Number),key=numeric.map(v=>Math.round(v/.06)).join(':');cloudVoxels.set(key,{p:numeric,c:sampleCameraColor(numeric,pose)});}while(cloudVoxels.size>30000)cloudVoxels.delete(cloudVoxels.keys().next().value);if(mappingView==='3d')updateRgbGeometry(state);
+    }
+    function updateRgbGeometry(state){
+        if(!cloudPoints)return;const positions=[],colors=[];for(const value of cloudVoxels.values()){positions.push(-value.p[1],value.p[2],-value.p[0]);colors.push(...value.c)}const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));cloudPoints.geometry.dispose();cloudPoints.geometry=geometry;
+        const pose=state.pose||{};cloudRobot.position.set(-Number(pose.y_m||0),0,-Number(pose.x_m||0));cloudRobot.rotation.y=Number(pose.yaw_rad||0);renderRgbCloud();
+    }
+    function stopCameraSnapshots(){if(cameraSnapshotTimer){clearTimeout(cameraSnapshotTimer);cameraSnapshotTimer=null;}}
+    function scheduleCameraSnapshot(delay){stopCameraSnapshots();if(mappingView==='3d'&&!document.hidden)cameraSnapshotTimer=setTimeout(refreshCameraSnapshot,delay);}
+    function refreshCameraSnapshot(){
+        if(mappingView!=='3d'||document.hidden)return;const image=new Image();
+        image.onload=()=>{snapshotCanvas.width=320;snapshotCanvas.height=180;snapshotCtx.drawImage(image,0,0,320,180);try{cameraPixels=snapshotCtx.getImageData(0,0,320,180);cameraPixelsAt=Date.now();cameraSnapshotFailures=0}catch(_){cameraPixels=null;cameraPixelsAt=0}scheduleCameraSnapshot(1000)};
+        image.onerror=()=>{cameraPixels=null;cameraPixelsAt=0;cameraSnapshotFailures=Math.min(4,cameraSnapshotFailures+1);scheduleCameraSnapshot(1000*(2**cameraSnapshotFailures))};image.src=`/camera/snapshot?_=${Date.now()}`;
     }
 
     function renderState(state) {
@@ -240,6 +297,7 @@
         document.getElementById('graphScanCount').textContent=graph.observations||0;
         document.getElementById('loopCount').textContent=graph.loop_closures||0;
         document.getElementById('globalCorrection').textContent=graph.optimized?`${Number(graph.correction_translation_m||0).toFixed(2)} m / ${Number(graph.correction_yaw_deg||0).toFixed(1)}°`:'--';
+        document.getElementById('outlierCount').textContent=state.lidar_filter?.rejected_points||0;
         document.getElementById('resolution').textContent=g.resolution_m?`${Math.round(g.resolution_m*100)} cm`:'--';
         document.getElementById('manualBtn').classList.toggle('active',state.approval_mode==='manual');
         document.getElementById('autoBtn').classList.toggle('active',state.approval_mode==='auto');
@@ -258,7 +316,8 @@
         const ready=state.fusion_readiness||{};
         setReady('ready2d',ready.navigation_2d);setReady('readyLocalSlam',ready.local_slam);setReady('readySlam',ready.global_slam);setReady('ready3d',ready.sparse_3d);setReady('readySemantic',ready.camera_semantic);
         document.getElementById('fusionBlockers').textContent=(ready.blockers||[]).length?`BEKLEYEN: ${(ready.blockers||[]).join(' · ')}`:'TÜM FÜZYON KAPILARI HAZIR';
-        document.getElementById('mapTitle').textContent=`${state.map_mode||'LOCAL_ONLY'} OCCUPANCY · +X İLERİ / +Y SOL`;
+        document.getElementById('mapTitle').textContent=mappingView==='3d'?'RGB 3D · IMU PROJECTION · KAMERA RENK PROVISIONAL':`${state.map_mode||'LOCAL_ONLY'} OCCUPANCY · +X İLERİ / +Y SOL`;
+        ingestSparseCloud(state);
         drawMap();
     }
 
@@ -321,6 +380,7 @@
         navWs.onerror=()=>navWs.close();
     }
     document.getElementById('savedMaps').addEventListener('change',ev=>document.getElementById('loadMapBtn').disabled=!ev.target.value);
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)stopCameraSnapshots();else if(mappingView==='3d')refreshCameraSnapshot()});
     new ResizeObserver(resizeMap).observe(panel);resizeMap();refreshMaps();connectNavigation();
 </script>
 </body>

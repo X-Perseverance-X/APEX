@@ -10,8 +10,10 @@ from dataclasses import asdict
 import numpy as np
 
 from .contracts import ImuSample, LidarScan, Pose2D, TofSample
+from .filters import LidarOutlierFilter
 from .occupancy import GridConfig, OccupancyGrid, rle_encode
 from .planner import PlanResult, plan_route
+from .pointcloud import project_lidar_scan
 from .pose_graph import PoseGraph
 from .scan_matcher import CorrelativeScanMatcher, MatchResult, normalize_angle
 
@@ -42,6 +44,9 @@ class MappingEngine:
         self.extrinsics_trusted = False
         self.camera_calibrated = False
         self.scan_matcher = CorrelativeScanMatcher()
+        self.outlier_filter = LidarOutlierFilter()
+        self._latest_cloud_xyz = np.empty((0, 3), dtype=np.float32)
+        self._latest_cloud_sequence = 0
         self.pose_graph = PoseGraph()
         self._archived_global_slam = False
         self._archived_global_status: dict | None = None
@@ -68,13 +73,17 @@ class MappingEngine:
             self._last_input_key = input_key
 
             imu_delta_rad: float | None = None
+            yaw_delta_deg: float | None = None
             current_imu_yaw: float | None = None
             if self.last_imu and self.last_imu.valid:
                 current_imu_yaw = float(self.last_imu.yaw_deg)
                 if self._last_lidar_imu_yaw_deg is not None:
                     delta_deg = (current_imu_yaw - self._last_lidar_imu_yaw_deg + 180.0) % 360.0 - 180.0
                     if abs(delta_deg) <= 60.0:
+                        yaw_delta_deg = delta_deg
                         imu_delta_rad = math.radians(delta_deg)
+
+            scan = self.outlier_filter.filter(scan, yaw_delta_deg)
 
             first_scan = self.grid.scan_count == 0
             frozen = self.mapping_state == "FROZEN"
@@ -131,6 +140,7 @@ class MappingEngine:
 
             if current_imu_yaw is not None:
                 self._last_lidar_imu_yaw_deg = current_imu_yaw
+            self._update_sparse_cloud_locked(scan)
             self.last_lidar_ns = scan.timestamp_ns
             if changed:
                 self.last_map_update_ns = scan.timestamp_ns
@@ -147,6 +157,23 @@ class MappingEngine:
                 # limit repeated identical failures to avoid UI churn.
                 self._revision += 1
             return changed
+
+    def _update_sparse_cloud_locked(self, scan: LidarScan) -> None:
+        if not self.last_imu or not self.last_imu.valid or len(scan.points) < 1:
+            self._latest_cloud_xyz = np.empty((0, 3), dtype=np.float32)
+            return
+        xyz = project_lidar_scan(
+            scan,
+            roll_rad=math.radians(float(self.last_imu.roll_deg)),
+            pitch_rad=math.radians(float(self.last_imu.pitch_deg)),
+            yaw_rad=float(self.pose.yaw_rad),
+            translation_xyz_m=(float(self.pose.x_m), float(self.pose.y_m), 0.0),
+            max_range_m=self.grid.config.max_range_m,
+        )
+        if len(xyz) > 720:
+            xyz = xyz[:: max(1, math.ceil(len(xyz) / 720))][:720]
+        self._latest_cloud_xyz = np.asarray(xyz, dtype=np.float32)
+        self._latest_cloud_sequence = int(scan.sequence)
 
     @staticmethod
     def _copy_scan(scan: LidarScan) -> LidarScan:
@@ -243,6 +270,9 @@ class MappingEngine:
         self._accepted_matches = 0
         self._rejected_matches = 0
         self._last_input_key = None
+        self.outlier_filter.clear()
+        self._latest_cloud_xyz = np.empty((0, 3), dtype=np.float32)
+        self._latest_cloud_sequence = 0
         self.pose_graph.clear()
         self._archived_global_slam = False
         self._archived_global_status = None
@@ -487,6 +517,14 @@ class MappingEngine:
                     "imu_yaw_sign": self._imu_yaw_sign,
                     "imu_sign_votes": self._imu_sign_votes,
                     "map_age_s": map_age_s,
+                },
+                "lidar_filter": self.outlier_filter.status(),
+                "sparse_cloud": {
+                    "sequence": self._latest_cloud_sequence,
+                    "points": np.round(self._latest_cloud_xyz, 3).tolist(),
+                    "provisional": True,
+                    "frame": "map",
+                    "color_source": "camera_snapshot_approximate",
                 },
                 "pose_graph": self._pose_graph_status_locked(),
                 "mapping_session": self._mapping_status_locked(),

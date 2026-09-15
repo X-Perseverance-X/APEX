@@ -72,22 +72,28 @@ class CorrelativeScanMatcher:
     @staticmethod
     def _likelihood(grid: OccupancyGrid) -> np.ndarray:
         occupied = grid.log_odds >= grid.config.occupied_threshold
-        field = occupied.astype(np.float32)
+        confirmed = grid.confirmed_mask()
+        provisional = occupied & ~confirmed
+        # Mature walls become the registration anchor. New red measurements
+        # still contribute, but cannot pull the robot away from repeatedly
+        # verified geometry with the same strength.
+        field = provisional.astype(np.float32) * 0.55
+        field[confirmed] = 1.0
         # A tiny distance-like field makes sparse A1M8 endpoints match walls
         # without scipy and without allowing distant geometry to look correct.
-        expanded = occupied.copy()
-        previous = np.zeros_like(occupied)
-        for value in (0.72, 0.42, 0.20):
-            previous[:, :] = expanded
-            padded = np.pad(previous, 1, mode="constant", constant_values=False)
-            neighbours = [
-                padded[1 + dy:1 + dy + previous.shape[0], 1 + dx:1 + dx + previous.shape[1]]
-                for dy in (-1, 0, 1)
-                for dx in (-1, 0, 1)
-            ]
-            expanded = np.logical_or.reduce(neighbours)
-            ring = expanded & ~previous
-            field[ring] = value
+        for seeds, values in ((occupied, (0.38, 0.22, 0.10)), (confirmed, (0.78, 0.48, 0.24))):
+            expanded = seeds.copy()
+            for value in values:
+                previous = expanded
+                padded = np.pad(previous, 1, mode="constant", constant_values=False)
+                neighbours = [
+                    padded[1 + dy:1 + dy + previous.shape[0], 1 + dx:1 + dx + previous.shape[1]]
+                    for dy in (-1, 0, 1)
+                    for dx in (-1, 0, 1)
+                ]
+                expanded = np.logical_or.reduce(neighbours)
+                ring = expanded & ~previous
+                field[ring] = np.maximum(field[ring], value)
         return field
 
     @staticmethod

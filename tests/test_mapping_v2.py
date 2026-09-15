@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import numpy as np
 
-from mapping_v2 import GraphConfig, ImuSample, LidarScan, MapArchive, MappingEngine, Pose2D, PoseGraph, TofSample
+from mapping_v2 import GraphConfig, ImuSample, LidarOutlierFilter, LidarScan, MapArchive, MappingEngine, Pose2D, PoseGraph, TofSample
 from mapping_v2.occupancy import GridConfig, OccupancyGrid, rle_encode
 from mapping_v2.planner import plan_route
 from mapping_v2.pointcloud import VoxelCloud, project_lidar_scan, rotation_matrix_rpy
@@ -32,6 +32,34 @@ class MappingV2Tests(unittest.TestCase):
         ex, ey = grid.world_to_grid(2.0, 0.0)
         self.assertEqual(int(states[sy, sx]), 0)
         self.assertEqual(int(states[ey, ex]), 100)
+
+    def test_lidar_filter_rejects_isolated_mirror_ray(self):
+        filter_ = LidarOutlierFilter()
+        points = [(float(angle), 1500.0) for angle in range(0, 21)]
+        points[10] = (10.0, 5800.0)
+        filtered = filter_.filter(LidarScan(time.monotonic_ns(), 1, points))
+        self.assertNotIn((10.0, 5800.0), filtered.points)
+        self.assertGreater(filter_.status()["rejected_points"], 0)
+
+    def test_lidar_filter_requires_persistence_for_large_temporal_jump(self):
+        filter_ = LidarOutlierFilter(persistence=3)
+        now = time.monotonic_ns()
+        base = [(float(angle), 1200.0) for angle in range(0, 40)]
+        filter_.filter(LidarScan(now, 1, base))
+        changed = [(float(angle), 3000.0) for angle in range(0, 40)]
+        first = filter_.filter(LidarScan(now + 1, 2, changed))
+        second = filter_.filter(LidarScan(now + 2, 3, changed))
+        third = filter_.filter(LidarScan(now + 3, 4, changed))
+        self.assertEqual(len(first.points), 0)
+        self.assertEqual(len(second.points), 0)
+        self.assertEqual(len(third.points), len(changed))
+
+    def test_lidar_filter_cold_start_rejects_sparse_far_return(self):
+        filter_ = LidarOutlierFilter(persistence=3)
+        scan = LidarScan(time.monotonic_ns(), 1, [(0.0, 1000.0), (90.0, 5900.0)])
+        filtered = filter_.filter(scan)
+        self.assertIn((0.0, 1000.0), filtered.points)
+        self.assertNotIn((90.0, 5900.0), filtered.points)
 
     def test_duplicate_scan_sequence_is_not_integrated_twice(self):
         grid = OccupancyGrid(self.config)
@@ -471,6 +499,16 @@ class MappingV2Tests(unittest.TestCase):
         self.assertEqual(snapshot["sensors"]["imu"]["pitch_deg"], -4.25)
         self.assertEqual(snapshot["sensors"]["imu"]["yaw_deg"], 7.0)
         self.assertFalse(snapshot["pose"]["trusted"])
+
+    def test_snapshot_exposes_real_imu_projected_sparse_cloud(self):
+        engine = MappingEngine(self.config)
+        now = time.monotonic_ns()
+        engine.ingest_imu(ImuSample(now, 0.0, -15.0, 0.0, True))
+        engine.ingest_lidar(LidarScan(now + 1, 1, [(float(a), 1000.0) for a in range(0, 90, 2)]))
+        cloud = engine.snapshot(False)["sparse_cloud"]
+        self.assertTrue(cloud["provisional"])
+        self.assertGreater(len(cloud["points"]), 0)
+        self.assertTrue(any(abs(point[2]) > 0.05 for point in cloud["points"]))
 
 
 class MappingApiTests(unittest.IsolatedAsyncioTestCase):

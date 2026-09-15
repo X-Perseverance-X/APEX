@@ -16,6 +16,11 @@ olarak tüketen haritalama ve rota önizleme katmanıdır.
 - `GLOBAL_SLAM` etiketi yalnızca en az bir doğrulanmış loop closure optimize
   edildiyse kullanılır; yakınlık tek başına yeterli değildir.
 - MPU6050 yaw değeri mutlak yön değil, kısa dönem scan-matching öncülüdür.
+- Haritalama öncesi uzamsal/temporal LiDAR filtresi tekil ayna ve multipath
+  sıçramalarını reddeder; kalıcı sahne değişimleri ancak tekrar doğrulanınca alınır.
+- `sparse_cloud`, gerçek 2B LiDAR ışınlarını ölçülen IMU roll/pitch ve SLAM yaw
+  matrisiyle 3B'ye taşır. Kamera renkleri balık gözü intrinsic/extrinsic
+  kalibrasyonu tamamlanana kadar yalnız yaklaşık/provisional olarak eşlenir.
 - Haritalama oturumları başlatılabilir, kesinleştirilebilir, atomik kaydedilebilir
   ve daha sonra yeniden yüklenebilir.
 
