@@ -41,12 +41,17 @@ sonuc metrik hassasiyet iddiasi icin yeterli degildir.
 
 ## Ev icinde toplama
 
-Ilk deneysel 3D denemede evde dolasmayin: cihaz masa ustunde, ayni noktada
-kalirken laptop web panelinde `3D yakalamayi baslat` deyin ve yavasca egin.
-Varsayilan on gorus 200 derecedir (sag/sol 100 derece); arka taraftaki kisi
-3D buluta girmez. 30 saniye dolmadan `Durdur` ve `PLY indir` kullanilabilir.
-Bu nokta bulutu tam 3D harita degildir; Pi'nin fiziksel ekrani henuz ayni
-gorunumu korur. `RECORD` satiri disk siniri nedeniyle durabilir.
+3D tarama laptop panelinin solunda buyuk alan olarak acilir; on gorus ve 2D
+harita sagda ust-alt gorunur. Ilk durakta cihaz duz ve sabitken
+`3D yakalamayi baslat` deyin, sonra yavasca egerek laptop/masa/zemini tarayin.
+Yeni durak icin `Konum degistir`e basin, cihazi duz tutup tasiyin, 2D harita
+ACTIVE olunca `Yeni konumda surdur`u secin. Sonunda `Durdur` ve `PLY indir`
+kullanin. Sure siniri yoktur; 60.000 nokta siniri vardir. LiDAR merkezinin
+yerden yuksekligi girilirse zemin referansi cizilir. Varsayilan on gorus
+200 derecedir (sag/sol 100 derece); arka taraftaki kisi 3D buluta girmez.
+Duraklar arasi XY 2D haritadan yaklasik hesaplanir; egikken tasimak modeli
+bozar. Pi'nin fiziksel ekrani ayni gorunumu korur.
+15 cm altindaki 2D poz farki ayni durak sayilir.
 
 1. Sistemi baslangic noktasinda duz ve sabit tutun; haritanin ilk scan'lerini
    olusturmasi icin birkac saniye bekleyin.

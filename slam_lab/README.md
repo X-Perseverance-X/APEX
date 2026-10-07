@@ -112,18 +112,26 @@ PAUSED durumuna gecer, yataya donunce otomatik ACTIVE olur; fiziksel test edildi
 
 ## Laptopta deneysel 3D egme taramasi
 
-Web panelindeki `3D PIVOT SWEEP` sadece kisa, sabit IMU merkezi varsayimli
-manuel egme denemeleri icindir. IMU, LiDAR merkezinden x yonunde yaklasik
+Web panelindeki buyuk 3D alan sabit IMU merkezli durak taramalari icindir.
+IMU, LiDAR merkezinden x yonunde yaklasik
 +4 cm ileride ve z yonunde 4-5 cm asagidadir; `frames.yaml` nominal
 `[+0.04, 0, -0.045]` m ve z araligini kaydeder. y=0 olculmus degil,
 merkez hatti varsayimidir. Bu tam 3D SLAM veya XYZ konum takibi degildir.
 
-Laptopta `3D yakalamayi baslat` ile en cok 30 saniyelik, 15.000 noktalik
-tarama alin; cihaz konumunu sabit tutup yavasca egin. Baslangic/bitis IMU
-zaman eslesmesi 40 ms'yi veya tek scan donusu 3 dereceyi asarsa o scan atlanir.
+Laptopta `3D yakalamayi baslat` ile cihaz konumunu sabit tutup yavasca egin.
+30 saniyelik sure siniri kaldirildi; 2 cm voxel ve 60.000 nokta bellek siniri
+vardir. Yeni yere gecmek icin `Konum degistir` ile yakalamayi duraklatin,
+cihazi duz tutarak tasiyin, 2D harita ACTIVE ve score en az 0.5 olunca
+`Yeni konumda surdur`u secin. Duraklarin yaklasik XY kaymasi 2D scan matcher
+pozundan gelir; 15 cm altindaki 2D poz farki ayni durak sayilir. Egiterek
+tasirken guvenilir XYZ takibi yoktur. Baslangic/bitis IMU zaman eslesmesi
+40 ms'yi veya tek scan donusu 3 dereceyi asarsa o scan atlanir.
 Varsayilan on gorus sag/sol 100'er derece (toplam 200 derece); arkanizdaki
 operator 3D buluta ve PLY dosyasina alinmaz. Ham kayit ve 2D harita 360
-derece kalir. Fiziksel Pi ekrani degistirilmemistir.
+derece kalir. Yeri taramak icin sabit durakta LiDAR'i yavasca asagi egin.
+LiDAR merkezinin yerden yuksekligi cm olarak girilirse yaklasik zemin duzlemi
+ve bu duzleme yakin nokta sayisi gosterilir. Masa veya esyalarin engelledigi
+zemin gorulmez. Fiziksel Pi ekrani degistirilmemistir.
 
 Pi oturum kaydi 512 MB oturum boyutunda veya 512 MB bos disk alaninda durur;
 sensorler ve web paneli calismayi surdurur. `RECORD` satirini kontrol edin.

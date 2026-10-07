@@ -6,47 +6,57 @@
   <title>SLAM LAB V0</title>
   <style>
     :root{font-family:system-ui,sans-serif;color:#e6edf4;background:#09111b}
-    *{box-sizing:border-box}body{margin:0;padding:10px}h1{font-size:1.1rem;margin:0 0 8px;color:#67d5ec}
+    *{box-sizing:border-box}body{margin:0;padding:12px}h1{font-size:1.1rem;margin:0 0 8px;color:#67d5ec}
     .head{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
-    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .workspace{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(320px,1fr);gap:10px;align-items:start}
+    .side{display:grid;gap:10px;min-width:0}.telemetry{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
     .card{background:#142333;border:1px solid #2b4559;border-radius:8px;padding:8px;min-width:0}
     h2{margin:0 0 6px;font-size:.85rem;color:#9dc3d4;letter-spacing:.08em}
     .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 8px;font-size:.82rem}
     .kv span:nth-child(even){text-align:right;font-variant-numeric:tabular-nums}
-    .wide{grid-column:span 2}.warn{color:#ffb05f}.ok{color:#6de0a5}
-    canvas{width:100%;height:220px;display:block;background:#07131d;border-radius:5px}
-    #sweepCanvas{height:340px;touch-action:none;cursor:grab}
+    .warn{color:#ffb05f}.ok{color:#6de0a5}
+    canvas{width:100%;height:200px;display:block;background:#07131d;border-radius:5px}
+    #sweepCanvas{height:min(76vh,860px);min-height:500px;touch-action:none;cursor:grab}
     .controls{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:7px}
     button{background:#20435b;color:#e6edf4;border:1px solid #56849b;border-radius:5px;padding:5px 9px;cursor:pointer}
     button:disabled{opacity:.45;cursor:default}
     .controls label,.sweepText{font-size:.78rem;color:#a8d0df}
-    .controls input{vertical-align:middle}.foot{font-size:.68rem;color:#86a1ae;margin-top:6px}
-    @media(max-width:600px){body{padding:5px}.grid{gap:5px}.card{padding:5px}h1{font-size:.95rem}h2{font-size:.74rem}canvas{height:150px}#sweepCanvas{height:240px}.kv{font-size:.68rem}.foot{font-size:.58rem}}
+    .controls input{vertical-align:middle}#lidarHeightCm{width:65px;background:#09111b;color:#e6edf4;border:1px solid #56849b;border-radius:4px;padding:4px}
+    .foot{font-size:.68rem;color:#86a1ae;margin-top:6px}.telemetry .kv{font-size:.7rem;gap:3px}
+    @media(max-width:900px){.workspace{grid-template-columns:1fr}.side{grid-template-columns:repeat(2,minmax(0,1fr))}.telemetry{grid-column:span 2}#sweepCanvas{height:55vh;min-height:320px}}
+    @media(max-width:600px){body{padding:5px}.workspace,.side{gap:5px}.side{grid-template-columns:1fr}.telemetry{grid-column:auto}h1{font-size:.95rem}h2{font-size:.74rem}canvas{height:150px}#sweepCanvas{height:48vh;min-height:260px}.kv,.telemetry .kv{font-size:.65rem}.foot{font-size:.58rem}}
     body.local{padding:3px}body.local h1{font-size:.78rem;margin-bottom:2px}
-    body.local .grid{gap:3px}body.local .card{padding:3px;border-radius:3px}
+    body.local .workspace{display:block}body.local .side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px}
+    body.local .telemetry{display:contents}body.local .card{padding:3px;border-radius:3px}
     body.local h2{font-size:.63rem;margin-bottom:2px}
     body.local .kv{font-size:.57rem;gap:1px 3px;line-height:1.15}
-    body.local canvas{height:90px}body.local .wide,body.local .foot{display:none}
+    body.local canvas{height:90px}body.local .sweep,body.local .foot{display:none}
   </style>
 </head>
 <body>
 <div class="head"><h1>SLAM LAB V0 · ROS FREE</h1><div id="connection" class="warn">CONNECTING</div></div>
-<div class="grid">
-  <section class="card"><h2>SYSTEM</h2><div id="system" class="kv"></div></section>
-  <section class="card"><h2>IMU</h2><div id="imu" class="kv"></div></section>
-  <section class="card"><h2>RPLIDAR · ÖN GÖRÜŞ</h2><canvas id="scan"></canvas><div id="lidar" class="kv"></div></section>
-  <section class="card"><h2>2D PLANAR MAP</h2><canvas id="map"></canvas><div id="slam" class="kv"></div></section>
-  <section class="card wide"><h2>3D PIVOT SWEEP · DENEYSEL, SABİT NOKTA</h2>
+<div class="workspace">
+  <section class="card sweep"><h2>3D TARAMA · DENEYSEL</h2>
     <div class="controls">
       <button id="sweepStart">3D yakalamayı başlat</button><button id="sweepStop">Durdur</button>
+      <button id="sweepMove">Konum değiştir</button><button id="sweepResume">Yeni konumda sürdür</button>
       <button id="sweepClear">Temizle</button><button id="sweepExport">PLY indir</button>
       <label><span id="sweepFovLabel">ÖN 200° (±100°)</span>
         <input id="sweepFov" type="range" min="60" max="180" step="10" value="100"></label>
+      <label>LiDAR yerden cm <input id="lidarHeightCm" type="number" min="1" max="300" step="1" placeholder="örn. 75"></label>
     </div>
     <canvas id="sweepCanvas"></canvas>
     <div id="sweepStatus" class="sweepText"></div><div id="sweepDetails" class="foot"></div>
-    <div class="foot">IMU noktasını sabit tutup yavaşça eğin. Seçili ön görüşün dışı 3D buluta alınmaz. 2D harita eğimde durur. Bu yaklaşık nokta bulutu XYZ konumu veya tam 3D SLAM değildir; tarama 30 saniye ile sınırlıdır.</div>
+    <div class="foot">İlk durakta düz ve sabitken başlayın; yer/masa/laptop için IMU noktasını yerinde tutarak yavaşça aşağı-yukarı eğin. Laptop çevresinde başka yere geçerken "Konum değiştir"e basın, cihazı düz tutup taşıyın, 2D harita ACTIVE olunca "Yeni konumda sürdür"ü seçin. Tarama elle durur; tarayıcı belleği için 60.000 nokta sınırı vardır. Yer yüksekliği girilirse turuncu düzlem yaklaşık zemin referansıdır.</div>
   </section>
+  <div class="side">
+    <section class="card"><h2>RPLIDAR · ÖN GÖRÜŞ</h2><canvas id="scan"></canvas><div id="lidar" class="kv"></div></section>
+    <section class="card"><h2>2D PLANAR MAP</h2><canvas id="map"></canvas><div id="slam" class="kv"></div></section>
+    <div class="telemetry">
+      <section class="card"><h2>SYSTEM</h2><div id="system" class="kv"></div></section>
+      <section class="card"><h2>IMU</h2><div id="imu" class="kv"></div></section>
+    </div>
+  </div>
 </div>
 <div class="foot" id="warning">IMU offset is approximate</div>
 <script src="/sweep3d.js"></script>
@@ -59,7 +69,7 @@ function canvas(id){const c=$(id),r=c.getBoundingClientRect(),d=window.devicePix
 function axes(x,w,h,scale){x.strokeStyle='#263d4b';x.lineWidth=1;x.beginPath();x.moveTo(0,h/2);x.lineTo(w,h/2);x.moveTo(w/2,0);x.lineTo(w/2,h);x.stroke();x.fillStyle='#77bdc9';x.font='11px sans-serif';x.fillText('X+',w/2+6,13);x.fillText('Y+',7,h/2-6)}
 function drawScan(data){const [x,w,h]=canvas('scan');axes(x,w,h);const p=data.lidar.scan||[],radius=Math.min(w,h)*.45;let max=3;for(const a of p)max=Math.max(max,a[1]);x.fillStyle='#74e7c0';for(const [a,r] of p){if(!Sweep3D.frontFov(a,sweep3d.halfFovDeg))continue;const px=w/2+Math.cos(a)*r/max*radius,py=h/2-Math.sin(a)*r/max*radius;x.fillRect(px-1,py-1,2,2)}x.fillStyle='#f5b850';x.beginPath();x.arc(w/2,h/2,3,0,7);x.fill()}
 function drawMap(data){const [x,w,h]=canvas('map');axes(x,w,h);const cells=data.slam.map_cells||[],res=data.slam.resolution_m||.05;const pose=data.slam;const scale=Math.min(w,h)/8;for(const [cx,cy,p] of cells){x.fillStyle=p>.58?`rgba(255,136,97,${Math.min(1,(p-.5)*2)})`:`rgba(90,160,184,${Math.min(1,(.5-p)*2)})`;x.fillRect(w/2+cx*res*scale,h/2-cy*res*scale,Math.max(1,res*scale),Math.max(1,res*scale))}x.strokeStyle='#ffe070';x.lineWidth=2;x.beginPath();for(const [i,p] of (pose.trajectory||[]).entries()){const px=w/2+p[0]*scale,py=h/2-p[1]*scale;i?x.lineTo(px,py):x.moveTo(px,py)}x.stroke();x.fillStyle='#ffe070';x.fillRect(w/2+pose.x_m*scale-3,h/2-pose.y_m*scale-3,6,6)}
-const sweep3d=new Sweep3D.Controller({canvas:$('sweepCanvas'),status:$('sweepStatus'),details:$('sweepDetails'),start:$('sweepStart'),stop:$('sweepStop'),clear:$('sweepClear'),export:$('sweepExport'),fov:$('sweepFov'),fovLabel:$('sweepFovLabel')});
+const sweep3d=new Sweep3D.Controller({canvas:$('sweepCanvas'),status:$('sweepStatus'),details:$('sweepDetails'),start:$('sweepStart'),stop:$('sweepStop'),move:$('sweepMove'),resume:$('sweepResume'),clear:$('sweepClear'),export:$('sweepExport'),fov:$('sweepFov'),fovLabel:$('sweepFovLabel'),height:$('lidarHeightCm')});
 function render(d){$('connection').textContent=d.playback?'REPLAY '+d.playback.status:'LIVE';$('connection').className=d.playback&&d.playback.status.startsWith('ERROR')?'warn':'ok';table('system',[['UPTIME',fmt(d.system.uptime_s,0)+' s'],['CPU LOAD',fmt(d.system.cpu_load,2)],['RAM',fmt(d.system.ram_used_percent,0)+' %'],['TEMP',fmt(d.system.temperature_c,1)+' °C'],['IP',d.system.ip||'—'],['LIDAR',d.sensors.lidar],['IMU',d.sensors.imu],['RECORD',d.recording?.status||'—']]);table('imu',[['AX AY AZ RAW',(d.imu.accel||[]).map(v=>fmt(v,2)).join(' / ')||'—'],['GX GY GZ',(d.imu.gyro||[]).map(v=>fmt(v,2)).join(' / ')||'—'],['|A| RAW',fmt(d.imu.accel_norm,2)+' m/s²'],['|A| CORR',fmt(d.imu.accel_corrected_norm,2)+' m/s²'],['ROLL',fmt(d.imu.roll_deg,1)+'°'],['PITCH',fmt(d.imu.pitch_deg,1)+'°'],['YAW REL',fmt(d.imu.yaw_relative_deg,1)+'°'],['UPDATE',fmt(d.imu.update_hz,1)+' Hz']]);table('lidar',[['POINTS',d.lidar.points],['SCAN',fmt(d.lidar.scan_hz,1)+' Hz'],['HEALTH',d.lidar.health]]);table('slam',[['POSE',fmt(d.slam.x_m,2)+' / '+fmt(d.slam.y_m,2)+' m'],['YAW',fmt(d.slam.yaw_deg,1)+'°'],['SCORE',fmt(d.slam.score,2)],['MAP RATE',fmt(d.slam.update_hz,1)+' Hz'],['MAPPING',d.slam.mapping_status]]);$('warning').textContent=(d.warnings||[]).join(' · ');drawScan(d);drawMap(d);sweep3d.update(d)}
 function connect(){const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');ws.onmessage=e=>{try{render(JSON.parse(e.data))}catch(err){console.error(err)}};ws.onclose=()=>{$('connection').textContent='DISCONNECTED';$('connection').className='warn';sweep3d.onDisconnect();setTimeout(connect,1500)}}connect();
 </script>
