@@ -19,6 +19,17 @@ ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
 
+# Raspberry Pi SLAM runtime state, sensor recordings, and local builds
+/slam_lab/.runtime/
+/slam_lab/.venv/
+/slam_lab/sessions/
+/slam_lab/third_party/
+/slam_lab/drivers/lidar/lidar_control
+/slam_lab/drivers/lidar/scan_bridge
+/slam_lab/**/__pycache__/
+/slam_lab/**/*.py[cod]
+/slam_lab/*.png
+
 # IDE/OS state
 .idea/
 .vscode/

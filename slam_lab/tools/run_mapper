@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -u
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON="$ROOT/.venv/bin/python"
+child=0
+
+cleanup() {
+  if [[ "$child" -gt 0 ]] && kill -0 "$child" 2>/dev/null; then
+    kill -TERM "$child" 2>/dev/null || true
+    # Python stops three sensor threads and flushes session metadata before
+    # exiting. Give it time to finish; the old 3-second grace lost rates.
+    for _ in {1..200}; do
+      kill -0 "$child" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$child" 2>/dev/null; then
+      kill -KILL "$child" 2>/dev/null || true
+    fi
+    wait "$child" 2>/dev/null || true
+  fi
+  bridge_pid_file="$ROOT/.runtime/scan_bridge.pid"
+  if [[ -f "$bridge_pid_file" ]]; then
+    bridge_pid="$(cat "$bridge_pid_file" 2>/dev/null || true)"
+    if [[ "$bridge_pid" =~ ^[0-9]+$ ]] && [[ -r "/proc/$bridge_pid/cmdline" ]]; then
+      bridge_command="$(tr '\0' ' ' <"/proc/$bridge_pid/cmdline")"
+      if [[ "$bridge_command" == "$ROOT/drivers/lidar/scan_bridge "* ]]; then
+        kill -TERM "$bridge_pid" 2>/dev/null || true
+        for _ in {1..30}; do
+          kill -0 "$bridge_pid" 2>/dev/null || break
+          sleep 0.1
+        done
+      fi
+    fi
+    rm -f "$bridge_pid_file"
+  fi
+  SLAM_LIDAR_DIRECT=1 "$ROOT/tools/lidar_motor" off >/dev/null 2>&1 || true
+  if [[ -f "$ROOT/.runtime/mapper.pid" ]] && [[ "$(cat "$ROOT/.runtime/mapper.pid")" == "$$" ]]; then
+    rm -f "$ROOT/.runtime/mapper.pid"
+  fi
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+cd "$ROOT" || exit 1
+mkdir -p "$ROOT/.runtime"
+printf '%s\n' "$$" > "$ROOT/.runtime/mapper.pid"
+"$PYTHON" tools/run_mapper.py "$@" &
+child=$!
+wait "$child"
+exit $?

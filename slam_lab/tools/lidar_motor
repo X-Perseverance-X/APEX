@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CONFIG_FILE="${SLAM_HARDWARE_CONFIG:-$PROJECT_ROOT/config/hardware.yaml}"
+CONTROL_BIN="$PROJECT_ROOT/drivers/lidar/lidar_control"
+RUNTIME_DIR="$PROJECT_ROOT/.runtime"
+PID_FILE="$RUNTIME_DIR/lidar_off_hold.pid"
+LOG_FILE="$RUNTIME_DIR/lidar_off_hold.log"
+
+if [[ $# -ne 1 || ! "$1" =~ ^(on|off|status|release)$ ]]; then
+  echo "Usage: $0 {on|off|status|release}" >&2
+  exit 2
+fi
+
+if [[ ! -x "$CONTROL_BIN" ]]; then
+  make -C "$PROJECT_ROOT/drivers/lidar"
+fi
+
+config_port="$({
+  awk '
+    /^lidar:/ { in_lidar=1; next }
+    /^[^[:space:]]/ { in_lidar=0 }
+    in_lidar && /^[[:space:]]+port:/ {
+      sub(/^[[:space:]]*port:[[:space:]]*/, ""); print; exit
+    }
+  ' "$CONFIG_FILE"
+} || true)"
+
+port="${SLAM_LIDAR_PORT:-$config_port}"
+if [[ -z "$port" || ! -e "$port" ]]; then
+  echo "ERROR: configured LiDAR port does not exist: ${port:-<empty>}" >&2
+  echo "Run tools/detect_hardware.py and update config/hardware.yaml." >&2
+  exit 3
+fi
+
+# A live mapper owns the serial port. Ask it to pause/resume acquisition,
+# instead of racing the SDK bridge for the same USB device. This API is bound
+# to localhost-only access even though telemetry is available to the LAN.
+if [[ "${SLAM_LIDAR_DIRECT:-0}" != "1" && "$1" != "release" ]]; then
+  mapper_pid_file="$RUNTIME_DIR/mapper.pid"
+  if [[ -f "$mapper_pid_file" ]]; then
+    mapper_pid="$(cat "$mapper_pid_file" 2>/dev/null || true)"
+    if [[ "$mapper_pid" =~ ^[0-9]+$ ]] && kill -0 "$mapper_pid" 2>/dev/null; then
+      network_port="$(awk '
+        /^network:/ { in_network=1; next }
+        /^[^[:space:]]/ { in_network=0 }
+        in_network && /^[[:space:]]+port:/ { sub(/^[[:space:]]*port:[[:space:]]*/, ""); print; exit }
+      ' "$CONFIG_FILE")"
+      if [[ "$network_port" =~ ^[0-9]+$ ]]; then
+        if [[ "$1" == "status" ]]; then
+          exec curl --fail --silent --show-error --max-time 10 \
+            "http://127.0.0.1:$network_port/api/lidar/motor"
+        fi
+        exec curl --fail --silent --show-error --max-time 12 -X POST \
+          "http://127.0.0.1:$network_port/api/lidar/motor?action=$1"
+      fi
+      echo "ERROR: mapper is running but network port is invalid" >&2
+      exit 5
+    fi
+  fi
+fi
+
+mkdir -p "$RUNTIME_DIR"
+
+holder_pid=""
+if [[ -f "$PID_FILE" ]]; then
+  holder_pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+fi
+
+holder_alive() {
+  [[ "$holder_pid" =~ ^[0-9]+$ ]] && kill -0 "$holder_pid" 2>/dev/null
+}
+
+stop_holder() {
+  if holder_alive; then
+    kill -TERM "$holder_pid"
+    for _ in {1..30}; do
+      kill -0 "$holder_pid" 2>/dev/null || break
+      sleep 0.1
+    done
+  fi
+  rm -f "$PID_FILE"
+  holder_pid=""
+}
+
+case "$1" in
+  off)
+    if holder_alive; then
+      echo "motor_off_hold=ACTIVE pid=$holder_pid"
+      exit 0
+    fi
+    rm -f "$PID_FILE"
+    nohup "$CONTROL_BIN" --port "$port" --hold off \
+      </dev/null >"$LOG_FILE" 2>&1 &
+    holder_pid=$!
+    echo "$holder_pid" >"$PID_FILE"
+    for _ in {1..50}; do
+      grep -q 'motor_off_hold=ACTIVE' "$LOG_FILE" 2>/dev/null && break
+      kill -0 "$holder_pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    if ! holder_alive || ! grep -q 'motor_off_hold=ACTIVE' "$LOG_FILE" 2>/dev/null; then
+      echo "ERROR: LiDAR off holder failed to start" >&2
+      cat "$LOG_FILE" >&2 || true
+      rm -f "$PID_FILE"
+      exit 4
+    fi
+    cat "$LOG_FILE"
+    ;;
+  on)
+    stop_holder
+    exec "$CONTROL_BIN" --port "$port" on
+    ;;
+  release)
+    stop_holder
+    echo "motor_off_hold=RELEASED"
+    ;;
+  status)
+    if holder_alive; then
+      echo "motor_state=OFF_HELD pid=$holder_pid"
+      cat "$LOG_FILE" 2>/dev/null || true
+    else
+      rm -f "$PID_FILE"
+      echo "motor_state=UNKNOWN (no persistent motor controller)"
+      exec "$CONTROL_BIN" --port "$port" status
+    fi
+    ;;
+esac

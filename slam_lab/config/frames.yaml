@@ -1,0 +1,19 @@
+convention: x_forward_y_left_z_up
+handedness: right
+
+base_link:
+  origin: lidar_scan_plane_geometric_center
+
+lidar_link:
+  parent: base_link
+  translation_m: {x: 0.0, y: 0.0, z: 0.0}
+  rotation_quaternion_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+imu_link:
+  parent: base_link
+  translation_m:
+    x: TODO_MEASURE
+    y: TODO_MEASURE
+    z: TODO_MEASURE
+  orientation: verified_identity_from_mounted_pitch_roll_yaw_test_2026_10_07
+  axis_map_raw_to_base: ['+x', '+y', '+z']

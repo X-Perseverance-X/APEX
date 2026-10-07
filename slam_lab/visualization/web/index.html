@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SLAM LAB V0</title>
+  <style>
+    :root{font-family:system-ui,sans-serif;color:#e6edf4;background:#09111b}
+    *{box-sizing:border-box}body{margin:0;padding:10px}h1{font-size:1.1rem;margin:0 0 8px;color:#67d5ec}
+    .head{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .card{background:#142333;border:1px solid #2b4559;border-radius:8px;padding:8px;min-width:0}
+    h2{margin:0 0 6px;font-size:.85rem;color:#9dc3d4;letter-spacing:.08em}
+    .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 8px;font-size:.82rem}
+    .kv span:nth-child(even){text-align:right;font-variant-numeric:tabular-nums}
+    .wide{grid-column:span 2}.warn{color:#ffb05f}.ok{color:#6de0a5}
+    canvas{width:100%;height:220px;display:block;background:#07131d;border-radius:5px}
+    #preview{height:170px}.foot{font-size:.68rem;color:#86a1ae;margin-top:6px}
+    @media(max-width:600px){body{padding:5px}.grid{gap:5px}.card{padding:5px}h1{font-size:.95rem}h2{font-size:.74rem}canvas{height:150px}#preview{height:110px}.kv{font-size:.68rem}.foot{font-size:.58rem}}
+    body.local{padding:3px}body.local h1{font-size:.78rem;margin-bottom:2px}
+    body.local .grid{gap:3px}body.local .card{padding:3px;border-radius:3px}
+    body.local h2{font-size:.63rem;margin-bottom:2px}
+    body.local .kv{font-size:.57rem;gap:1px 3px;line-height:1.15}
+    body.local canvas{height:90px}body.local .wide,body.local .foot{display:none}
+  </style>
+</head>
+<body>
+<div class="head"><h1>SLAM LAB V0 · ROS FREE</h1><div id="connection" class="warn">CONNECTING</div></div>
+<div class="grid">
+  <section class="card"><h2>SYSTEM</h2><div id="system" class="kv"></div></section>
+  <section class="card"><h2>IMU</h2><div id="imu" class="kv"></div></section>
+  <section class="card"><h2>RPLIDAR · TOP VIEW</h2><canvas id="scan"></canvas><div id="lidar" class="kv"></div></section>
+  <section class="card"><h2>2D PLANAR MAP</h2><canvas id="map"></canvas><div id="slam" class="kv"></div></section>
+  <section class="card wide"><h2>3D ATTITUDE PREVIEW – NOT A 3D MAP</h2><canvas id="preview"></canvas><div class="foot">Current scan plane rotated by IMU orientation only. No translation or 3D map is inferred.</div></section>
+</div>
+<div class="foot" id="warning">WARNING: IMU extrinsic translation has not been measured</div>
+<script>
+if(new URLSearchParams(location.search).has('local'))document.body.classList.add('local');
+const $=id=>document.getElementById(id);
+const fmt=(v,n=1)=>v==null?'—':Number(v).toFixed(n);
+function table(id,rows){$(id).innerHTML=rows.map(([k,v])=>`<span>${k}</span><span>${v}</span>`).join('')}
+function canvas(id){const c=$(id),r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;c.width=Math.max(1,r.width*d);c.height=Math.max(1,r.height*d);const x=c.getContext('2d');x.scale(d,d);return [x,r.width,r.height]}
+function axes(x,w,h,scale){x.strokeStyle='#263d4b';x.lineWidth=1;x.beginPath();x.moveTo(0,h/2);x.lineTo(w,h/2);x.moveTo(w/2,0);x.lineTo(w/2,h);x.stroke();x.fillStyle='#77bdc9';x.font='11px sans-serif';x.fillText('X+',w/2+6,13);x.fillText('Y+',7,h/2-6)}
+function drawScan(data){const [x,w,h]=canvas('scan');axes(x,w,h);const p=data.lidar.scan||[],radius=Math.min(w,h)*.45;let max=3;for(const a of p)max=Math.max(max,a[1]);x.fillStyle='#74e7c0';for(const [a,r] of p){const px=w/2+Math.cos(a)*r/max*radius,py=h/2-Math.sin(a)*r/max*radius;x.fillRect(px-1,py-1,2,2)}x.fillStyle='#f5b850';x.beginPath();x.arc(w/2,h/2,3,0,7);x.fill()}
+function drawMap(data){const [x,w,h]=canvas('map');axes(x,w,h);const cells=data.slam.map_cells||[],res=data.slam.resolution_m||.05;const pose=data.slam;const scale=Math.min(w,h)/8;for(const [cx,cy,p] of cells){x.fillStyle=p>.58?`rgba(255,136,97,${Math.min(1,(p-.5)*2)})`:`rgba(90,160,184,${Math.min(1,(.5-p)*2)})`;x.fillRect(w/2+cx*res*scale,h/2-cy*res*scale,Math.max(1,res*scale),Math.max(1,res*scale))}x.strokeStyle='#ffe070';x.lineWidth=2;x.beginPath();for(const [i,p] of (pose.trajectory||[]).entries()){const px=w/2+p[0]*scale,py=h/2-p[1]*scale;i?x.lineTo(px,py):x.moveTo(px,py)}x.stroke();x.fillStyle='#ffe070';x.fillRect(w/2+pose.x_m*scale-3,h/2-pose.y_m*scale-3,6,6)}
+function rotate(q,p){let [w,x,y,z]=q,[vx,vy,vz]=p;let tx=2*(y*vz-z*vy),ty=2*(z*vx-x*vz),tz=2*(x*vy-y*vx);return [vx+w*tx+y*tz-z*ty,vy+w*ty+z*tx-x*tz,vz+w*tz+x*ty-y*tx]}
+function drawPreview(data){const [x,w,h]=canvas('preview'),q=data.imu.quaternion_wxyz||[1,0,0,0],origin=[w/2,h*.57],scale=Math.min(w,h)*.18;function project(p){return [origin[0]+scale*(p[0]+p[1]*.45),origin[1]-scale*(p[2]+p[1]*.35)]}for(const [v,color,label] of [[[1,0,0],'#ef7272','X'],[[0,1,0],'#7ce79f','Y'],[[0,0,1],'#83b8ff','Z']]){const p=project(rotate(q,v));x.strokeStyle=color;x.lineWidth=2;x.beginPath();x.moveTo(...origin);x.lineTo(...p);x.stroke();x.fillStyle=color;x.fillText(label,p[0]+3,p[1]-3)}x.fillStyle='#86c6d6';for(const [a,r] of (data.lidar.scan||[]).filter((_,i)=>i%8===0)){const p=project(rotate(q,[r*Math.cos(a),r*Math.sin(a),0]));x.fillRect(p[0],p[1],2,2)}}
+function render(d){$('connection').textContent=d.playback?'REPLAY '+d.playback.status:'LIVE';$('connection').className=d.playback&&d.playback.status.startsWith('ERROR')?'warn':'ok';table('system',[['UPTIME',fmt(d.system.uptime_s,0)+' s'],['CPU LOAD',fmt(d.system.cpu_load,2)],['RAM',fmt(d.system.ram_used_percent,0)+' %'],['TEMP',fmt(d.system.temperature_c,1)+' °C'],['IP',d.system.ip||'—'],['LIDAR',d.sensors.lidar],['IMU',d.sensors.imu]]);table('imu',[['AX AY AZ RAW',(d.imu.accel||[]).map(v=>fmt(v,2)).join(' / ')||'—'],['GX GY GZ',(d.imu.gyro||[]).map(v=>fmt(v,2)).join(' / ')||'—'],['|A| RAW',fmt(d.imu.accel_norm,2)+' m/s²'],['|A| CORR',fmt(d.imu.accel_corrected_norm,2)+' m/s²'],['ROLL',fmt(d.imu.roll_deg,1)+'°'],['PITCH',fmt(d.imu.pitch_deg,1)+'°'],['YAW REL',fmt(d.imu.yaw_relative_deg,1)+'°'],['UPDATE',fmt(d.imu.update_hz,1)+' Hz']]);table('lidar',[['POINTS',d.lidar.points],['SCAN',fmt(d.lidar.scan_hz,1)+' Hz'],['HEALTH',d.lidar.health]]);table('slam',[['POSE',fmt(d.slam.x_m,2)+' / '+fmt(d.slam.y_m,2)+' m'],['YAW',fmt(d.slam.yaw_deg,1)+'°'],['SCORE',fmt(d.slam.score,2)],['MAP RATE',fmt(d.slam.update_hz,1)+' Hz'],['MAPPING',d.slam.mapping_status]]);$('warning').textContent=(d.warnings||[]).join(' · ');drawScan(d);drawMap(d);drawPreview(d)}
+function connect(){const ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');ws.onmessage=e=>{try{render(JSON.parse(e.data))}catch(err){console.error(err)}};ws.onclose=()=>{$('connection').textContent='DISCONNECTED';$('connection').className='warn';setTimeout(connect,1500)}}connect();
+</script>
+</body>
+</html>
