@@ -110,6 +110,24 @@ Kucuk hareketler ve yatay, sabit yukseklikte tasima icin V0 algoritmasidir;
 loop closure veya 3D translation saglamaz. 5 dereceyi asan egimde harita
 PAUSED durumuna gecer, yataya donunce otomatik ACTIVE olur; fiziksel test edildi.
 
+## Laptopta deneysel 3D egme taramasi
+
+Web panelindeki `3D PIVOT SWEEP` sadece kisa, sabit IMU merkezi varsayimli
+manuel egme denemeleri icindir. IMU, LiDAR merkezinden x yonunde yaklasik
++4 cm ileride ve z yonunde 4-5 cm asagidadir; `frames.yaml` nominal
+`[+0.04, 0, -0.045]` m ve z araligini kaydeder. y=0 olculmus degil,
+merkez hatti varsayimidir. Bu tam 3D SLAM veya XYZ konum takibi degildir.
+
+Laptopta `3D yakalamayi baslat` ile en cok 30 saniyelik, 15.000 noktalik
+tarama alin; cihaz konumunu sabit tutup yavasca egin. Baslangic/bitis IMU
+zaman eslesmesi 40 ms'yi veya tek scan donusu 3 dereceyi asarsa o scan atlanir.
+Varsayilan on gorus sag/sol 100'er derece (toplam 200 derece); arkanizdaki
+operator 3D buluta ve PLY dosyasina alinmaz. Ham kayit ve 2D harita 360
+derece kalir. Fiziksel Pi ekrani degistirilmemistir.
+
+Pi oturum kaydi 512 MB oturum boyutunda veya 512 MB bos disk alaninda durur;
+sensorler ve web paneli calismayi surdurur. `RECORD` satirini kontrol edin.
+
 ## IMU kablolama
 
 NodeMCU-32S (klasik ESP32) ile I2C baglantisi:
@@ -138,4 +156,4 @@ varsayilan olarak kapali kalir.
 - Pi ekraninin GPIO/SPI veya boot/display konfigurasyonuna dokunulmaz.
 - SSH ve ag konfigurasyonu bu proje tarafindan degistirilmez.
 - Sabit 2D LiDAR + IMU ile ivmeyi iki kez entegre edip sahte 3D konum uretilmez.
-- IMU extrinsic translation olculmedi; `config/frames.yaml` icinde TODO'dur.
+- IMU extrinsic translation yalniz yaklasik olculdu; y ekseni varsayimdir.

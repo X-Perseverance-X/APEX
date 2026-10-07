@@ -18,7 +18,7 @@ import yaml
 
 from core.attitude.mahony import AttitudeEstimator
 from core.frames.axis_map import AxisMap
-from core.frames.geometry import Pose2, wrap_angle
+from core.frames.geometry import Pose2, Quaternion, wrap_angle
 from core.mapping.gate import mapping_pause_reason
 from core.mapping.occupancy import OccupancyGrid
 from core.scan_matching.correlative import CorrelativeMatcher
@@ -47,6 +47,25 @@ class Processor:
         self.lock = threading.Lock()
         self.started_ns = time.monotonic_ns()
         self.attitude = AttitudeEstimator()
+        self.attitude_history: deque[tuple[int, Quaternion]] = deque(maxlen=500)
+        self.max_scan_imu_skew_ms = float(hardware.get("timing", {}).get("max_scan_imu_skew_ms", 40.0))
+        if not 0.0 < self.max_scan_imu_skew_ms <= 100.0:
+            raise ValueError("timing.max_scan_imu_skew_ms must be within (0, 100]")
+        imu_frame = frames.get("imu_link", {})
+        translation = imu_frame.get("translation_m", {})
+        offset = [translation.get(axis) for axis in "xyz"]
+        offset_ready = all(
+            isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(float(value)) for value in offset
+        )
+        self.geometry = {
+            "frame": "base_link_at_initial_lidar_center",
+            "imu_offset_from_lidar_m": [float(value) for value in offset] if offset_ready else None,
+            "measurement": imu_frame.get("translation_measurement", {}),
+            "pivot_model": "stationary_imu_origin_approximate",
+            "ready": offset_ready and bool(hardware["imu"].get("axis_frame_verified"))
+            and bool(hardware["lidar"].get("angle_frame_verified")),
+        }
         tokens = frames.get("imu_link", {}).get("axis_map_raw_to_base")
         self.axis_map = AxisMap(tokens) if isinstance(tokens, list) else None
         imu_cal = calibration.get("imu", {})
@@ -90,7 +109,10 @@ class Processor:
             "system": {"uptime_s": 0, "cpu_load": None, "ram_used_percent": None,
                        "temperature_c": None, "ip": None},
             "sensors": {"lidar": "DISCONNECTED", "imu": "DISCONNECTED"},
-            "lidar": {"points": 0, "scan_hz": 0, "health": "UNVERIFIED", "scan": []},
+            "lidar": {"points": 0, "scan_hz": 0, "health": "UNVERIFIED", "scan": [],
+                      "sequence": None, "timestamp_end_ns": None,
+                      "scan_duration_ms": None, "scan_quaternion_wxyz": None,
+                      "imu_scan_skew_ms": None, "scan_motion_deg": None},
             "imu": {"accel": None, "accel_corrected": None, "gyro": None, "mag": None,
                     "accel_norm": None, "accel_corrected_norm": None,
                     "roll_deg": None, "pitch_deg": None, "yaw_relative_deg": None,
@@ -100,9 +122,16 @@ class Processor:
                      "mapping_status": "PAUSED: UNVERIFIED SENSOR FRAMES",
                      "trajectory": [], "map_cells": [], "resolution_m": mapping["resolution_m"],
                      "update_hz": 0},
-            "warnings": ["WARNING: IMU extrinsic translation has not been measured",
-                         "WARNING: accelerometer has only Z two-pose correction; full 6-position calibration pending"],
-            "mode": "ORIENTATION PREVIEW / NOT FULL 3D SLAM",
+            "geometry": self.geometry,
+            "warnings": [
+                "WARNING: IMU offset is approximate; y=0 is assumed from centerline",
+                "WARNING: stationary pivot sweep cannot recover 3D translation",
+                "WARNING: accelerometer has only Z two-pose correction; full 6-position calibration pending",
+            ] if offset_ready else [
+                "WARNING: IMU extrinsic translation has not been measured",
+                "WARNING: accelerometer has only Z two-pose correction; full 6-position calibration pending",
+            ],
+            "mode": "2D MAPPING + EXPERIMENTAL STATIONARY 3D SWEEP / NOT FULL 3D SLAM",
         }
 
     def event(self, message: str) -> None:
@@ -141,6 +170,7 @@ class Processor:
                 accel = self.axis_map.apply(accel_corrected)
                 gyro = self.axis_map.apply(sample.gyro_raw_frame_rad_s)
                 q = self.attitude.update(sample.host_receive_ns, accel, gyro)
+                self.attitude_history.append((sample.host_receive_ns, q))
                 roll, pitch, yaw = q.euler_rad()
                 imu.update({
                     "roll_deg": math.degrees(roll),
@@ -151,10 +181,32 @@ class Processor:
                 if self.writer:
                     self.writer.write_fused(sample.host_receive_ns, q, (roll, pitch, yaw))
 
+    def _nearest_attitude(self, timestamp_ns: int) -> tuple[Quaternion | None, float | None]:
+        """Call under self.lock; both clocks use host monotonic nanoseconds."""
+        if not self.attitude_history:
+            return None, None
+        sample_ns, quaternion = min(
+            self.attitude_history, key=lambda sample: abs(sample[0] - timestamp_ns)
+        )
+        skew_ms = (sample_ns - timestamp_ns) / 1e6
+        if abs(skew_ms) > self.max_scan_imu_skew_ms:
+            return None, skew_ms
+        return quaternion, skew_ms
+
     def process_scan(self, scan: LidarScan) -> None:
         if self.writer:
             self.writer.write_scan(scan)
         with self.lock:
+            start_q, start_skew_ms = self._nearest_attitude(scan.timestamp_start_ns)
+            end_q, end_skew_ms = self._nearest_attitude(scan.timestamp_end_ns)
+            scan_q = start_q.interpolated(end_q, 0.5) if start_q and end_q else None
+            scan_motion_deg = None
+            if start_q and end_q:
+                dot = abs(sum(a * b for a, b in zip(
+                    (start_q.w, start_q.x, start_q.y, start_q.z),
+                    (end_q.w, end_q.x, end_q.y, end_q.z),
+                )))
+                scan_motion_deg = math.degrees(2.0 * math.acos(min(1.0, dot)))
             self.scan_times_ns.append(scan.timestamp_end_ns)
             self.state["sensors"]["lidar"] = "STREAMING"
             self.state["lidar"].update({
@@ -162,14 +214,19 @@ class Processor:
                 "health": "OK", "scan": [
                     [point.angle_rad, point.range_m] for point in scan.points[::max(1, len(scan.points)//360)]
                 ],
+                "sequence": scan.sequence,
+                "timestamp_end_ns": scan.timestamp_end_ns,
+                "scan_duration_ms": (scan.timestamp_end_ns - scan.timestamp_start_ns) / 1e6,
+                "scan_quaternion_wxyz": [scan_q.w, scan_q.x, scan_q.y, scan_q.z] if scan_q else None,
+                "imu_scan_skew_ms": max(abs(start_skew_ms), abs(end_skew_ms))
+                if start_skew_ms is not None and end_skew_ms is not None else None,
+                "scan_motion_deg": scan_motion_deg,
             })
             self.scans_seen += 1
             if (self.scans_seen - 1) % self.process_every_n_scans:
                 return
             self.mapping_times_ns.append(scan.timestamp_end_ns)
-            imu = self.state["imu"]
-            roll = math.radians(imu["roll_deg"]) if imu["roll_deg"] is not None else None
-            pitch = math.radians(imu["pitch_deg"]) if imu["pitch_deg"] is not None else None
+            roll, pitch, yaw = scan_q.euler_rad() if scan_q else (None, None, None)
             reason = mapping_pause_reason(
                 roll, pitch,
                 max_roll_deg=self.hardware["mapping"]["max_roll_deg"],
@@ -179,7 +236,7 @@ class Processor:
             )
             score = 0.0
             if reason is None:
-                yaw = math.radians(imu["yaw_relative_deg"])
+                assert yaw is not None
                 yaw_guess = wrap_angle(yaw - self.previous_yaw) if self.previous_yaw is not None else 0.0
                 if self.previous_scan is not None:
                     result = self.matcher.match(self.previous_scan, scan, yaw_guess)
@@ -227,6 +284,11 @@ class Processor:
             data["lidar"]["scan"] = scan[::max(1, math.ceil(len(scan) / self.local_scan_points))]
             data["slam"]["map_cells"] = cells[::max(1, math.ceil(len(cells) / self.local_map_cells))]
         data["system"] = self._system_health()
+        data["recording"] = {
+            "status": "ACTIVE" if self.writer and self.writer.active else
+                      (f"PAUSED: {self.writer.pause_reason}" if self.writer else "DISABLED"),
+            "session": self.writer.directory.name if self.writer else None,
+        }
         return data
 
     def _system_health(self) -> dict:
@@ -290,6 +352,10 @@ class LiveRunner:
         with self.processor.lock:
             self.processor.state["sensors"]["lidar"] = "STOPPING"
             self.processor.state["slam"]["mapping_status"] = "PAUSED: LIDAR OFF"
+            self.processor.state["lidar"].update({
+                "scan": [], "scan_quaternion_wxyz": None,
+                "sequence": None, "timestamp_end_ns": None,
+            })
             self.processor.previous_scan = None
             self.processor.previous_yaw = None
         process = self.lidar_process
@@ -441,7 +507,12 @@ class LiveRunner:
                         self.processor.state["sensors"]["lidar"] = (
                             "PAUSED" if result.returncode == 0 else "OFF_FAILED"
                         )
-                        self.processor.state["lidar"].update({"points": 0, "scan_hz": 0, "scan": []})
+                        self.processor.state["lidar"].update({
+                            "points": 0, "scan_hz": 0, "scan": [],
+                            "sequence": None, "timestamp_end_ns": None,
+                            "scan_quaternion_wxyz": None,
+                            "imu_scan_skew_ms": None, "scan_motion_deg": None,
+                        })
             if self.lidar_enabled.is_set() and not self.stop_event.is_set():
                 self.stop_event.wait(2.0)
 

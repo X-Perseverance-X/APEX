@@ -59,10 +59,20 @@ class Quaternion:
         out = q * v * Quaternion(q.w, -q.x, -q.y, -q.z)
         return out.x, out.y, out.z
 
+    def interpolated(self, other: "Quaternion", fraction: float) -> "Quaternion":
+        """Normalized interpolation along the short arc between nearby attitudes."""
+        if not 0.0 <= fraction <= 1.0:
+            raise ValueError("fraction must be within [0, 1]")
+        first, second = self.normalized(), other.normalized()
+        a = (first.w, first.x, first.y, first.z)
+        b = (second.w, second.x, second.y, second.z)
+        if sum(x * y for x, y in zip(a, b)) < 0.0:
+            b = tuple(-value for value in b)
+        return Quaternion(*(x + fraction * (y - x) for x, y in zip(a, b))).normalized()
+
     def euler_rad(self) -> tuple[float, float, float]:
         q = self.normalized()
         roll = math.atan2(2 * (q.w * q.x + q.y * q.z), 1 - 2 * (q.x**2 + q.y**2))
         pitch = math.asin(max(-1.0, min(1.0, 2 * (q.w * q.y - q.z * q.x))))
         yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y**2 + q.z**2))
         return roll, pitch, yaw
-

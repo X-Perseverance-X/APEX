@@ -17,6 +17,7 @@ from drivers.imu_serial.protocol import parse_imu_line
 from drivers.imu_serial.port import open_esp32_serial
 from drivers.lidar.scan import LidarPoint, LidarScan, normalize_scan
 from replay.session import merged_events
+from slam_runtime.pipeline import Processor, load_configuration
 from slam_runtime.session import SessionWriter
 
 
@@ -40,6 +41,17 @@ class FrameTests(unittest.TestCase):
         self.assertEqual(AxisMap(["+y", "-x", "+z"]).apply((1, 2, 3)), (2, -1, 3))
         with self.assertRaises(ValueError):
             AxisMap(["+x", "-y", "+z"])
+
+    def test_quaternion_midpoint_short_arc(self):
+        first = Quaternion()
+        last = Quaternion(math.cos(math.radians(10)), math.sin(math.radians(10)), 0, 0)
+        midpoint = first.interpolated(last, .5)
+        self.assertAlmostEqual(math.degrees(midpoint.euler_rad()[0]), 10, places=5)
+        same_rotation_negative_sign = Quaternion(*(-value for value in (last.w, last.x, last.y, last.z)))
+        self.assertAlmostEqual(
+            math.degrees(first.interpolated(same_rotation_negative_sign, .5).euler_rad()[0]),
+            10, places=5,
+        )
 
     def test_timestamp_rollover(self):
         clock = EspClock()
@@ -91,6 +103,28 @@ class SensorTests(unittest.TestCase):
         self.assertEqual(mapping_pause_reason(math.radians(6), 0, **kwargs), "EXCESSIVE TILT")
         self.assertEqual(mapping_pause_reason(0, 0, **{**kwargs, "imu_axes_verified": False}),
                          "UNVERIFIED SENSOR FRAMES")
+
+    def test_scan_uses_imu_at_its_own_endpoints(self):
+        hardware, frames, calibration = load_configuration()
+        processor = Processor(hardware, frames, calibration)
+        start_ns, end_ns = 1_000_000_000, 1_134_000_000
+        end_q = Quaternion(math.cos(math.radians(10)), math.sin(math.radians(10)), 0, 0)
+        processor.attitude_history.extend([(start_ns, Quaternion()), (end_ns, end_q)])
+        scan = LidarScan(start_ns, end_ns, 7, (LidarPoint(0, 1, 10),))
+        processor.process_scan(scan)
+        self.assertEqual(processor.state["lidar"]["sequence"], 7)
+        self.assertAlmostEqual(processor.state["lidar"]["scan_duration_ms"], 134)
+        self.assertAlmostEqual(processor.state["lidar"]["scan_motion_deg"], 20, places=4)
+        self.assertEqual(processor.state["slam"]["mapping_status"], "PAUSED: EXCESSIVE TILT")
+        self.assertIsNotNone(processor.state["lidar"]["scan_quaternion_wxyz"])
+
+    def test_stale_imu_cannot_assign_3d_scan_attitude(self):
+        hardware, frames, calibration = load_configuration()
+        processor = Processor(hardware, frames, calibration)
+        processor.attitude_history.append((1_000_000_000, Quaternion()))
+        processor.process_scan(LidarScan(2_000_000_000, 2_134_000_000, 8, ()))
+        self.assertIsNone(processor.state["lidar"]["scan_quaternion_wxyz"])
+        self.assertEqual(processor.state["slam"]["mapping_status"], "PAUSED: NO IMU ATTITUDE")
 
     def test_matcher_stationary_does_not_drift_on_score_plateau(self):
         points = tuple(
@@ -149,6 +183,18 @@ class SensorTests(unittest.TestCase):
             self.assertEqual(metadata["lidar_firmware"], "1.29")
             self.assertEqual(metadata["esp32_serial_info"]["who_am_i"], "0x70")
             self.assertEqual(metadata["sensor_rates_observed_hz"]["mapping"], 2.5)
+
+    def test_session_size_limit_pauses_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hardware = {"lidar": {}, "imu": {}, "logging": {"max_session_mb": .0001, "min_free_mb": 1}}
+            writer = SessionWriter(Path(tmp), hardware, {"convention": "test"}, {})
+            try:
+                writer.event(1, "this should not be recorded")
+                self.assertFalse(writer.active)
+                self.assertEqual(writer.pause_reason, "SESSION SIZE LIMIT")
+            finally:
+                writer.close()
+            self.assertEqual((writer.directory / "events.log").read_text(), "")
 
 
 if __name__ == "__main__":

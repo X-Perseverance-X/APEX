@@ -20,6 +20,10 @@ def create_app(runner: LiveRunner) -> FastAPI:
     async def index():
         return FileResponse(static / "index.html")
 
+    @app.get("/sweep3d.js")
+    async def sweep3d_script():
+        return FileResponse(static / "sweep3d.js", media_type="application/javascript")
+
     @app.get("/api/state")
     async def state():
         return Response(content=json.dumps(runner.processor.snapshot(), separators=(",", ":")),

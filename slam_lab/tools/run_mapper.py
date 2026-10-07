@@ -26,7 +26,8 @@ def main() -> int:
         print(f"SESSION={runner.writer.directory}", flush=True)
     network = runner.hardware["network"]
     print(f"DASHBOARD=http://<PI_IP>:{network['port']}/", flush=True)
-    print("WARNING: IMU extrinsic translation has not been measured", flush=True)
+    for warning in runner.processor.state["warnings"]:
+        print(warning, flush=True)
 
     # Uvicorn 0.54 restores and re-raises SIGTERM after its own shutdown.
     # Use a Python exception so our finally block still flushes the session.

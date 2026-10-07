@@ -12,8 +12,14 @@ lidar_link:
 imu_link:
   parent: base_link
   translation_m:
-    x: TODO_MEASURE
-    y: TODO_MEASURE
-    z: TODO_MEASURE
+    x: 0.04
+    y: 0.0
+    z: -0.045
+  translation_measurement:
+    x: approximately_4_cm_ahead_user_measurement
+    y: assumed_centerline_not_measured
+    z_range_m: [-0.05, -0.04]
+    z_nominal_m: -0.045
+    precision: approximate_not_surveyed
   orientation: verified_identity_from_mounted_pitch_roll_yaw_test_2026_10_07
   axis_map_raw_to_base: ['+x', '+y', '+z']

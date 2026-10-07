@@ -31,6 +31,13 @@ mapping:
   scan_match_min_motion_gain: 0.04
   scan_match_downsample: 8
 
+timing:
+  max_scan_imu_skew_ms: 40.0
+
+logging:
+  max_session_mb: 512
+  min_free_mb: 512
+
 network:
   bind: 0.0.0.0
   port: 8765

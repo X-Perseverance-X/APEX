@@ -41,6 +41,13 @@ sonuc metrik hassasiyet iddiasi icin yeterli degildir.
 
 ## Ev icinde toplama
 
+Ilk deneysel 3D denemede evde dolasmayin: cihaz masa ustunde, ayni noktada
+kalirken laptop web panelinde `3D yakalamayi baslat` deyin ve yavasca egin.
+Varsayilan on gorus 200 derecedir (sag/sol 100 derece); arka taraftaki kisi
+3D buluta girmez. 30 saniye dolmadan `Durdur` ve `PLY indir` kullanilabilir.
+Bu nokta bulutu tam 3D harita degildir; Pi'nin fiziksel ekrani henuz ayni
+gorunumu korur. `RECORD` satiri disk siniri nedeniyle durabilir.
+
 1. Sistemi baslangic noktasinda duz ve sabit tutun; haritanin ilk scan'lerini
    olusturmasi icin birkac saniye bekleyin.
 2. Once tek, engelsiz bir odada deneyin. Aygiti zemine yakin ama darbe
@@ -88,6 +95,5 @@ Ctrl+C kullanin.
 
 Bu V0 akisi ile yalnizca 2D oda izi ve yonelim onizlemesi alinabilir. Guvenilir
 3D harita icin 3D derinlik sensoru veya 3D LiDAR ve 6-DoF konum takibi/odometri
-gerekir. Mevcut tarama duzlemini elle egerek 3D nokta bulutu toplamak desteklenmez:
-egim guvenlik kapisi haritayi durdurur ve mevcut poz tahmini LiDAR tarama
-duzleminin 3D hareketini cozumlemez.
+gerekir. Elle egme yalniz sabit IMU merkezi varsayimiyla yaklasik bir 3D
+nokta bulutu verir; egim sirasinda 2D harita guvenlik nedeniyle durur.

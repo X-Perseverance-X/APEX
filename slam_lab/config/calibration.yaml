@@ -9,7 +9,7 @@ imu:
   accel_scale_raw_frame: [1.0, 1.0, 0.9875]
   accel_z_two_pose_raw_m_s2: {face_up: 11.277, face_down: -8.585}
   axis_mapping: verified_identity_from_mounted_pitch_roll_yaw_test_2026_10_07
-  warning: IMU extrinsic translation has not been measured
+  warning: IMU offset is approximate; lateral offset is assumed near zero
   gyro_bias_raw_frame_rad_s:
   - 0.056466695652173916
   - 0.004377488865323436
