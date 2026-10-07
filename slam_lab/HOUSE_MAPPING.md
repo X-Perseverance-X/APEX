@@ -98,7 +98,9 @@ Ctrl+C kullanin.
 
 ## Gercek 3D icin gerekenler
 
-Bu V0 akisi ile yalnizca 2D oda izi ve yonelim onizlemesi alinabilir. Guvenilir
-3D harita icin 3D derinlik sensoru veya 3D LiDAR ve 6-DoF konum takibi/odometri
-gerekir. Elle egme yalniz sabit IMU merkezi varsayimiyla yaklasik bir 3D
-nokta bulutu verir; egim sirasinda 2D harita guvenlik nedeniyle durur.
+Bu V0 akisi 2D oda izi, sabit IMU merkezi etrafinda egerek yaklasik 3D
+nokta bulutu ve 2D poza dayali yaklasik durak birlestirmesi verir. Durak
+icinde elde tasima, surekli XYZ otelemeyi cozumleyemedigi icin bulutu bozar.
+Bu, ICP ile 3D bulut hizalamasi veya gercek 6-DoF takip degildir. Guvenilir
+oda 3D haritasi icin 3D derinlik sensoru veya 3D LiDAR ve 6-DoF konum
+takibi/odometri gerekir. Egim sirasinda 2D harita guvenlik nedeniyle durur.
