@@ -1,5 +1,6 @@
 import math
 import pathlib
+import re
 import unittest
 
 
@@ -13,6 +14,12 @@ class SpineSafeBootContractTests(unittest.TestCase):
         cls.source = FIRMWARE.read_text(encoding="utf-8")
         cls.ui = (ROOT / "apex_ui.html").read_text(encoding="utf-8")
         cls.server = (ROOT / "apex_server.py").read_text(encoding="utf-8")
+
+    def test_usb_status_printf_has_one_argument_per_field(self):
+        status_line = next(line for line in self.source.splitlines() if 'Serial.printf("@TEL1,' in line)
+        self.assertEqual(len(re.findall(r"%(?:[-+0-9.]+)?(?:lu|ld|[udfs])", status_line)), 40)
+        self.assertIn('homeSet ? 1U : 0U,', self.source)
+        self.assertIn('APEX_FIRMWARE_VERSION);', self.source)
 
     def test_boot_is_disarmed_and_does_not_start_ramp(self):
         setup = self.source.split("void setup()", 1)[1].split("void loop()", 1)[0]

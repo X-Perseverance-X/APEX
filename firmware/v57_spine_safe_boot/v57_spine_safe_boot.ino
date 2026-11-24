@@ -944,7 +944,7 @@ void emitSpineSerialTelemetry() {
   if (millis() - lastSpineSerialTelemetryMs < 100UL) return;
   lastSpineSerialTelemetryMs = millis();
   long tofAgeMs = lastTofValidSampleMs == 0 ? -1L : (long)(millis() - lastTofValidSampleMs);
-  Serial.printf("@TEL1,%lu,%lu,%u,%u,%u,%u,%d,%u,%lu,%u,%lu,%.6f,%.6f,%.3f,%.3f,%s,%u,%d,%u,%u,%lu,%lu,%ld,%u,%lu,%lu,%lu,%lu,%lu,%.2f,%lu,%u,%u,%.1f,%.1f,%u,%u,%u,%s\n",
+  Serial.printf("@TEL1,%lu,%lu,%u,%u,%u,%u,%d,%u,%lu,%u,%lu,%.6f,%.6f,%.3f,%.3f,%s,%u,%d,%u,%u,%lu,%lu,%ld,%u,%lu,%lu,%lu,%lu,%lu,%lu,%.2f,%lu,%u,%u,%.1f,%.1f,%u,%u,%u,%s\n",
                 (unsigned long)spineSerialSequence++,
                 (unsigned long)millis(),
                 pcaRightOnline ? 1U : 0U,
