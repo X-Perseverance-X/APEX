@@ -1,0 +1,1 @@
+"""Offline-capable responsive dashboard."""

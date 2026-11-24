@@ -1,0 +1,19 @@
+[Unit]
+Description=APEX wlan0 static IP for hostapd AP
+After=sys-subsystem-net-devices-wlan0.device
+Wants=sys-subsystem-net-devices-wlan0.device
+Before=hostapd.service dnsmasq.service apex-meta1.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/ip addr flush dev wlan0
+ExecStart=/sbin/ip addr add 192.168.7.1/24 dev wlan0
+ExecStart=/sbin/ip link set wlan0 up
+ExecStart=/usr/sbin/iw dev wlan0 set power_save off
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

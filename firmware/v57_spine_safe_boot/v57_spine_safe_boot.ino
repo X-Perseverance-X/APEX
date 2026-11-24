@@ -35,11 +35,8 @@
 #include "DFRobotDFPlayerMini.h"
 #include "Adafruit_VL53L1X.h"
 
-#define APEX_FIRMWARE_VERSION "v57.9-mounted-vector-gait"
+#define APEX_FIRMWARE_VERSION "v57.29-smooth-crawl-gait"
 #define APEX_BUILD_PROFILE    "esp32s3-n16r8-generic"
-
-const char* ssid = "APEX-HUB";
-const char* password = "apex_secure_2025";
 
 WebServer server(80);
 
@@ -53,6 +50,55 @@ Preferences preferences;
 #define SCL_PIN 9
 #define GPS_RX_PIN 16
 #define GPS_TX_PIN 17
+#define LASER_PIN 14
+const uint32_t LASER_PWM_HZ = 5000;
+const uint8_t LASER_PWM_BITS = 8;
+bool laserOn = false;
+uint8_t laserPowerPct = 0;
+
+// --- KASA TERMAL YONETIMI ---
+// Fan GPIO'dan BESLENMEZ. GPIO18 yalnizca logic-level N-MOSFET gate'ini surer.
+// 10K NTC bolucu: 3V3 -> sabit 10K -> GPIO15 -> NTC 10K/B3950 -> GND.
+#define FAN_PWM_PIN 18
+#define NTC_ADC_PIN 15
+const uint32_t FAN_PWM_HZ = 25000;
+const uint8_t FAN_PWM_BITS = 8;
+const float NTC_FIXED_OHM = 10000.0f;
+const float NTC_NOMINAL_OHM = 10000.0f;
+const float NTC_BETA_K = 3950.0f;
+const float NTC_NOMINAL_K = 25.0f + 273.15f;
+const unsigned long THERMAL_SAMPLE_MS = 250UL;
+// GPIO18 ayni zamanda dusuk guclu durum isigi icin de kullanilabilir. Bu
+// nedenle boot'ta ve 0->N gecisinde %100 kick/boost YOKTUR: ani yuk akimi
+// besleme ripple'i uretiyordu. Hedef duty'ye lineer rampa ile cikilir.
+// 0->100 gecisi yaklasik 2.5 saniyedir. Fan tepki suresi icin yeterince hizli,
+// ortak besleme/ground uzerindeki DFPlayer gibi hassas cevre birimleri icin
+// onceki 1 saniyelik rampadan daha yumusaktir.
+const unsigned long FAN_RAMP_INTERVAL_MS = 50UL;
+const uint8_t FAN_RAMP_STEP_PCT = 2U;
+float internalTempC = -127.0f;
+bool ntcValid = false;
+float ntcCandidateC = -127.0f;
+uint8_t ntcStableSamples = 0;
+bool fanAutoMode = false;
+uint8_t fanPowerPct = 0;
+uint8_t fanRequestedPct = 0;
+unsigned long lastThermalSampleMs = 0;
+unsigned long lastFanRampMs = 0;
+
+// --- AYAK TEMAS MİKROSWITCHLERİ ---
+// Bacak sırası bütün sistemle aynıdır: RF, RM, RR, LF, LM, LR.
+// Her switch: C -> ortak GND, NO -> ilgili GPIO, NC boş.
+// INPUT_PULLUP nedeniyle fiziksel basış LOW/true olarak okunur.
+const uint8_t FOOT_CONTACT_PINS[6] = {6, 7, 10, 11, 12, 13};
+const char* FOOT_CONTACT_NAMES[6] = {"RF", "RM", "RR", "LF", "LM", "LR"};
+const unsigned long FOOT_CONTACT_DEBOUNCE_MS = 10UL;
+bool footContactRaw[6] = {false, false, false, false, false, false};
+bool footContactStable[6] = {false, false, false, false, false, false};
+unsigned long footContactRawChangedMs[6] = {0, 0, 0, 0, 0, 0};
+uint8_t footContactMask = 0;
+uint32_t footContactSequence = 0;
+uint32_t footSerialSequence = 0;
 
 // --- BATARYA VOLTAJ MONITORU (ESP32-S3 ADC1) ---
 // Sağ 3S LiPo voltage divider çıkışı -> GPIO1
@@ -73,6 +119,8 @@ Adafruit_VL53L1X tof400c;
 bool tofReady = false;
 int16_t tofDistanceMm = -1;
 unsigned long lastTofUpdateMs = 0;
+unsigned long lastTofValidSampleMs = 0;
+uint32_t tofSampleSequence = 0;
 
 // Batarya telemetrisi
 float batteryRightV = 0.0f;
@@ -95,6 +143,14 @@ const unsigned long I2C_RECOVERY_INTERVAL_MS = 2000UL;
 HardwareSerial dfSerial(1);
 DFRobotDFPlayerMini dfPlayer;
 bool dfReady    = false;
+bool dfLinkConfirmed = false;
+bool dfShouldPlay = false;
+// Fan hedefi degistiginde DFPlayer fiziksel olarak brown-out yasamis olabilir;
+// dfReady kutuphane nesnesinin durumudur ve bu fiziksel reseti tek basina
+// goremez. Kontrol dongusunu bloklamamak icin yeniden el sikismayi fan
+// handler'inda degil, bir sonraki ses komutundan hemen once yapariz.
+bool dfRecheckRequired = false;
+unsigned long dfLastPlayCommandMs = 0;
 int  dfVolume   = 15;
 int  dfTrack    = 1;
 
@@ -110,6 +166,14 @@ String bootDiagLog = "";  // Kalıcı boot tanısı — sysLogs gibi 2000 karakt
 bool gimbalActive = false;
 float mpuPitch = 0.0, mpuRoll = 0.0, mpuYaw = 0.0;
 float s_mpuPitch = 0.0, s_mpuRoll = 0.0;
+// Mapping/diagnostics telemetry. These values are measurements only; they are
+// never fed back into PWM outside the existing gimbal path below.
+float mpuAccelXG = 0.0f, mpuAccelYG = 0.0f, mpuAccelZG = 0.0f;
+float mpuGyroXDps = 0.0f, mpuGyroYDps = 0.0f, mpuGyroZDps = 0.0f;
+uint32_t imuSerialSequence = 0;
+uint32_t spineSerialSequence = 0;
+unsigned long lastSpineSerialTelemetryMs = 0;
+String usbCommandBuffer;
 unsigned long lastMpuTime = 0;
 
 float gimbalFilterLevel = 20.0f;  // eski: 80 (yavaş/yumuşak ucuna yakın) — bu,
@@ -131,12 +195,20 @@ const uint8_t legPins[6][3] = {
   {0, 1, 2},    {4, 5, 6},    {8, 9, 10}
 };
 
+// Mekanik spline'i sokmeden yapilan saha sifir duzeltmesi. Yalnizca sag coxa
+// elektriksel komutuna eklenir; hedef/IK acilari kanonik ve aynali kalir.
+// RF 4 derece, RM/RR 5 derece servo 0 yonune kaydirilir.
+const float COXA_SOFTWARE_TRIM_DEG[6] = {-6.0f, -7.0f, -7.0f, 0.0f, 0.0f, 0.0f};
+
 const float legPhase[6] = {0.0, 0.5, 0.0, 0.5, 0.0, 0.5};
 
 // ROBOT BODY FRAME: +X ileri, +Y sol, +Z yukarı.
 // Bacak sırası: RF, RM, RR, LF, LM, LR.
-const float bodyOffsetX[6] = {120.0, 0.0, -120.0, 120.0, 0.0, -120.0};
-const float bodyOffsetY[6] = {-80.0, -90.0, -80.0, 80.0, 90.0, 80.0};
+// Olculmus 2026-11 mekanik revizyonu. Coxa merkezleri tamamen aynalidir:
+// RF/RM/RR = +X ileri gorunuste sag taraf (-Y); LF/LM/LR sol taraf (+Y).
+// Arka coxalar, kullanicinin "arkada ayni" tanimina gore onlerin X-aynasidir.
+const float bodyOffsetX[6] = {125.0, 0.0, -125.0, 125.0, 0.0, -125.0};
+const float bodyOffsetY[6] = {-98.0, -98.0, -98.0, 98.0, 98.0, 98.0};
 
 // IK geometrik açısını elektriksel servo açısına çeviren yön haritası.
 // +1: servo = IK, -1: servo = 180 - IK (90 derece etrafında ayna).
@@ -157,19 +229,19 @@ static inline float mapIkToServoDeg(int leg, int joint, float ikDeg) {
 
 
 // --- 4 EKSEN ROBOT KOL (PCA9685 0x40 / SAĞ PCA BOŞ KANALLAR) ---
-// Bacak kanallarına DOKUNULMADI. Sağ PCA (0x40) üzerinde bacaklar 0,1,2 / 4,5,6 / 8,9,10
-// kullanıyor; 12-15 bloğu kol için ayrıldı.
+// Kamera pan/tilt son iki soketi kullandığı için kolun J2/GRIPPER kanalları
+// bacakların kullanmadığı CH3/CH7'ye taşındı. BASE/J1 CH12/CH13'te kaldı.
 // Kanal eşlemesi:
 //   BASE    -> PCA 0x40 CH12  (90° = robot/kamera önü merkez, 0/180 sağ-sol uç)
 //   JOINT1  -> PCA 0x40 CH13  (0° = örümceğin önüne, 180° = arkaya/gövde üstüne)
-//   JOINT2  -> PCA 0x40 CH14  (0° = bekleme/katlı, 180° = dışarı açılma)
-//   GRIPPER -> PCA 0x40 CH15  (varsayılan dar ve güvenli; kullanıcı ayarlar)
+//   JOINT2  -> PCA 0x40 CH3   (0° = bekleme/katlı, 180° = dışarı açılma)
+//   GRIPPER -> PCA 0x40 CH7   (varsayılan dar ve güvenli; kullanıcı ayarlar)
 const uint8_t ARM_JOINT_COUNT = 4;
 const uint8_t ARM_BASE    = 0;
 const uint8_t ARM_JOINT1  = 1;
 const uint8_t ARM_JOINT2  = 2;
 const uint8_t ARM_GRIPPER = 3;
-const uint8_t armPins[ARM_JOINT_COUNT] = {12, 13, 14, 15};
+const uint8_t armPins[ARM_JOINT_COUNT] = {12, 13, 3, 7};
 const char*   armNames[ARM_JOINT_COUNT] = {"base", "joint1", "joint2", "gripper"};
 
 // Ana eklemler için kullanıcının istediği mutlak güvenli aralık: [5,175].
@@ -192,6 +264,42 @@ float armCurrentAngle[ARM_JOINT_COUNT] = {90.0f, 90.0f, 90.0f, 90.0f};
 bool  armOutputEnabled = false;   // İlk komut gelene kadar kol servolarına PWM basılmaz.
 unsigned long lastArmUpdateMs = 0;
 const float ARM_MAX_STEP_DEG = 1.2f;  // 20ms döngüde ~60°/s; ani vuruş/dişli zorlamasını azaltır.
+
+// --- KAMERA PAN/TILT (PCA9685 0x40) ---
+// Kart soketleri 1'den sayılıyorsa: soket 16 = CH15 (alttaki PAN),
+// soket 15 = CH14 (üstteki TILT). Her iki eksen de mekanik olarak 45..135°.
+// PAN elektriksel açı arttıkça sola; azaldıkça sağa döner.
+// TILT 0° yukarı, 180° aşağı yönündedir.
+const uint8_t CAMERA_PAN_CHANNEL = 15;
+const uint8_t CAMERA_TILT_CHANNEL = 14;
+const float CAMERA_GIMBAL_MIN_DEG = 45.0f;
+const float CAMERA_GIMBAL_MAX_DEG = 135.0f;
+const float CAMERA_GIMBAL_CENTER_DEG = 90.0f;
+const int CAMERA_GIMBAL_MIN_US = 500;
+const int CAMERA_GIMBAL_MAX_US = 2500;
+const float CAMERA_GIMBAL_SPEED_DEG_S = 60.0f;
+// MPU6050 has no magnetometer, so absolute yaw inevitably drifts.  Preserve
+// fast chicken-head compensation but bleed the yaw reference toward the
+// current heading over a few seconds so an idle camera cannot wander sideways.
+const float CAMERA_GIMBAL_YAW_RECENTER_S = 6.0f;
+const float CAMERA_GIMBAL_MAX_YAW_CORRECTION_DEG = 20.0f;
+enum CameraGimbalMode : uint8_t {
+  CAMERA_GIMBAL_CENTER = 0,
+  CAMERA_GIMBAL_STABILIZE = 1,
+  CAMERA_GIMBAL_TRACK = 2,
+  CAMERA_GIMBAL_MANUAL = 3
+};
+float cameraPanCurrentDeg = CAMERA_GIMBAL_CENTER_DEG;
+float cameraTiltCurrentDeg = CAMERA_GIMBAL_CENTER_DEG;
+float cameraPanTargetDeg = CAMERA_GIMBAL_CENTER_DEG;
+float cameraTiltTargetDeg = CAMERA_GIMBAL_CENTER_DEG;
+bool cameraGimbalEnabled = true;
+bool cameraGimbalNeedsReinit = true;
+CameraGimbalMode cameraGimbalMode = CAMERA_GIMBAL_STABILIZE;
+bool cameraStabilizeRefValid = false;
+float cameraStabilizeRefPitch = 0.0f;
+float cameraStabilizeRefYaw = 0.0f;
+unsigned long lastCameraGimbalUpdateMs = 0;
 
 float armGripperOpenDeg  = 90.0f;
 float armGripperCloseDeg = 120.0f;
@@ -257,6 +365,11 @@ const float STAND_MAX_SPEED_DEG_S = 30.0f;
 // önler; aşağıdaki phase governor bütün tripodu en yavaş ekleme senkronlar.
 const float LEG_TRACK_MAX_SPEED_DEG_S_BY_JOINT[3] = {145.0f, 100.0f, 125.0f};
 const float SAFE_TRANSITION_MAX_SPEED_DEG_S = 60.0f;
+// Servo Lab fiziksel montaj/poz dogrulamasi icindir. Tek bacak testlerinde
+// normal yuruyus slew rate'lerini kullanmak gereksiz ve tehlikelidir.
+const float MANUAL_LAB_MAX_SPEED_DEG_S = 24.0f;
+const float MANUAL_LAB_MAX_ACCEL_DEG_S2 = 60.0f;
+float manualJointVelocityDegS[6][3] = {{0.0f}};
 const float MIN_DYNAMIC_GAIT_CYCLE_MS = 900.0f;
 const float GAIT_LAG_SOFT_DEG = 2.5f;
 const float GAIT_LAG_HARD_DEG = 9.0f;
@@ -376,6 +489,95 @@ void addLog(String msg) {
   if (sysLogs.length() > 2000) sysLogs = sysLogs.substring(sysLogs.length() - 2000);
 }
 
+void initFootContactSensors() {
+  footContactMask = 0;
+  for (uint8_t i = 0; i < 6; i++) {
+    pinMode(FOOT_CONTACT_PINS[i], INPUT_PULLUP);
+    const bool pressed = digitalRead(FOOT_CONTACT_PINS[i]) == LOW;
+    footContactRaw[i] = pressed;
+    footContactStable[i] = pressed;
+    footContactRawChangedMs[i] = millis();
+    if (pressed) footContactMask |= (uint8_t)(1U << i);
+  }
+  addLog("[FOOT] 6x temas girisi hazir (GPIO 6,7,10,11,12,13).\n");
+  bootDiagLog += "[FOOT] CONTACT INPUTS: RF6 RM7 RR10 LF11 LM12 LR13\n";
+}
+
+void pollFootContactSensors() {
+  const unsigned long now = millis();
+  for (uint8_t i = 0; i < 6; i++) {
+    const bool pressed = digitalRead(FOOT_CONTACT_PINS[i]) == LOW;
+    if (pressed != footContactRaw[i]) {
+      footContactRaw[i] = pressed;
+      footContactRawChangedMs[i] = now;
+    }
+    if (pressed != footContactStable[i] &&
+        now - footContactRawChangedMs[i] >= FOOT_CONTACT_DEBOUNCE_MS) {
+      footContactStable[i] = pressed;
+      if (pressed) footContactMask |= (uint8_t)(1U << i);
+      else footContactMask &= (uint8_t)~(1U << i);
+      footContactSequence++;
+    }
+  }
+}
+
+bool initDFPlayerPeripheral(bool appendBootLog = false) {
+  // Reinitialisation is only requested explicitly over the local USB link;
+  // never retry this blocking UART handshake inside the gait loop.
+  // A large number of DFPlayer-compatible boards accept the documented UART
+  // frames but do not return the DFRobot ACK/card-online frame. ACK waiting
+  // therefore produced a false OFFLINE state despite correct wiring. Use the
+  // library's supported no-ACK mode; commands remain ordinary UART frames.
+  // No-ACK keeps ordinary playback commands non-blocking.  Unlike the old
+  // implementation, do not call that alone proof of a physical module: ask
+  // for its current volume and require a valid UART reply for ONLINE status.
+  // Boot may reset the module; an operator INIT must stay below the USB
+  // bridge timeout and therefore rebinds without another two-second reset.
+  dfReady = dfPlayer.begin(dfSerial, false, appendBootLog);
+  const int reportedVolume = dfReady ? dfPlayer.readVolume() : -1;
+  dfLinkConfirmed = reportedVolume >= 0 && reportedVolume <= 30;
+  if (dfReady) dfPlayer.volume(dfVolume);
+  if (dfLinkConfirmed) {
+    addLog("[AUDIO] DFPlayer UART CIFT YON DOGRULANDI. Vol=" + String(dfVolume) + "\n");
+    if (appendBootLog) bootDiagLog += "[+] DFPLAYER UART: ONLINE (TX+RX CONFIRMED)\n";
+  } else {
+    addLog("[AUDIO] DFPlayer KOMUT HATTI HAZIR; MODULDEN CEVAP YOK (ESP TX4 / RX5).\n");
+    if (appendBootLog) bootDiagLog += "[-] DFPLAYER UART: NO REPLY (CHECK GPIO4/GPIO5/GND)\n";
+  }
+  return dfReady;
+}
+
+void startDFPlayerTrack(int requestedTrack) {
+  dfTrack = constrain(requestedTrack, 1, 999);
+  dfShouldPlay = true;
+  dfLastPlayCommandMs = millis();
+  dfPlayer.playMp3Folder(dfTrack);
+  // PLAY means "keep playing until DUR" in the operator console.  The module
+  // handles the ordinary case; the event fallback below covers clones that
+  // ignore the repeat-current-track command.
+  dfPlayer.enableLoop();
+}
+
+void pollDFPlayerEvents() {
+  if (!dfReady || !dfPlayer.available()) return;
+  const uint8_t eventType = dfPlayer.readType();
+  const int eventValue = (int)dfPlayer.read();
+  if (eventType == DFPlayerPlayFinished) {
+    addLog("[AUDIO] PARCA BITTI track=" + String(eventValue) + "\n");
+    if (dfShouldPlay) startDFPlayerTrack(dfTrack);
+  } else if (eventType == DFPlayerCardRemoved) {
+    dfLinkConfirmed = false;
+    addLog("[AUDIO] SD KART CIKARILDI / TEMAS KESILDI\n");
+  } else if (eventType == DFPlayerCardInserted || eventType == DFPlayerCardOnline) {
+    dfLinkConfirmed = true;
+    addLog("[AUDIO] SD KART ONLINE\n");
+    dfPlayer.volume(dfVolume);
+    if (dfShouldPlay) startDFPlayerTrack(dfTrack);
+  } else if (eventType == DFPlayerError) {
+    addLog("[AUDIO] DFPLAYER HATA code=" + String(eventValue) + "\n");
+  }
+}
+
 void markMotionCommand() {
   lastMotionCommandMs = millis();
   motionCommandSeen = true;
@@ -434,7 +636,11 @@ void updateTOF400C() {
   lastTofUpdateMs = millis();
   if (tof400c.dataReady()) {
     int16_t d = tof400c.distance();
-    if (d >= 0) tofDistanceMm = d;
+    if (d >= 0) {
+      tofDistanceMm = d;
+      lastTofValidSampleMs = millis();
+      tofSampleSequence++;
+    }
     tof400c.clearInterrupt();
   }
 }
@@ -508,6 +714,15 @@ void setManualTarget(int leg, int joint, float angle) {
   currentMode = MANUAL;
 }
 
+void setManualPoseTarget(int leg, float coxa, float femur, float tibia) {
+  if (leg < 0 || leg >= 6) return;
+  if (currentMode != MANUAL || !manualTargetsInitialized) initManualTargetsFromCurrent();
+  manualTargetAngle[leg][0] = constrain(coxa, MIN_DEGREE, MAX_DEGREE);
+  manualTargetAngle[leg][1] = constrain(femur, MIN_DEGREE, MAX_DEGREE);
+  manualTargetAngle[leg][2] = constrain(tibia, MIN_DEGREE, MAX_DEGREE);
+  currentMode = MANUAL;
+}
+
 void setLegMountTargets(int leg) {
   if (currentMode != MANUAL || !manualTargetsInitialized) initManualTargetsFromCurrent();
   int startLeg = (leg < 0) ? 0 : leg;
@@ -536,6 +751,7 @@ void disableLegPwm(int leg, int joint) {
     int jointEnd   = (joint < 0) ? 2 : joint;
     for (int j = jointStart; j <= jointEnd; j++) {
       legPwmEnabled[i][j] = false;
+      manualJointVelocityDegS[i][j] = 0.0f;
       uint8_t ch = legPins[i][j];
       if (i < 3) pwmRight.setPWM(ch, 0, 0);
       else       pwmLeft.setPWM(ch, 0, 0);
@@ -668,11 +884,18 @@ void readMPU6050() {
   float gyF = gy - gyroOffsetY;
   float gzF = gz - gyroOffsetZ;
 
-  float gyroPitchRate = gyF / 131.0;  // Y ekseni etrafında dönüş = pitch hızı (DOĞRUYDU, değişmedi)
+  mpuAccelXG = ax / 16384.0f;
+  mpuAccelYG = ay / 16384.0f;
+  mpuAccelZG = az / 16384.0f;
+  mpuGyroXDps = gxF / 131.0f;
+  mpuGyroYDps = gyF / 131.0f;
+  mpuGyroZDps = gzF / 131.0f;
+
+  float gyroPitchRate = mpuGyroYDps;  // Y ekseni etrafında dönüş = pitch hızı (DOĞRUYDU, değişmedi)
   // DÜZELTME: roll hızı eskiden gz (DİKEY/yaw eksen) kullanıyordu. Roll, İLERİ
   // eksen (X) etrafında dönüştür — bu yüzden gx kullanılmalı, gz değil.
-  float gyroRollRate  = gxF / 131.0;
-  float gyroYawRate   = gzF / 131.0;
+  float gyroRollRate  = mpuGyroXDps;
+  float gyroYawRate   = mpuGyroZDps;
 
   unsigned long now = millis();
   float dt = (now - lastMpuTime) / 1000.0;
@@ -688,6 +911,555 @@ void readMPU6050() {
   mpuYaw += gyroYawRate * dt;
   while (mpuYaw > 180.0f) mpuYaw -= 360.0f;
   while (mpuYaw < -180.0f) mpuYaw += 360.0f;
+}
+
+void emitImuSerialTelemetry() {
+  // Stable, machine-readable, read-only packet for mapping on the Pi.
+  // Frame: @IMU1,seq,micros,online,ax,ay,az,gx,gy,gz,roll,pitch,yaw
+  Serial.printf("@IMU1,%lu,%lu,%u,%.5f,%.5f,%.5f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f\n",
+                (unsigned long)imuSerialSequence++,
+                (unsigned long)micros(),
+                mpuOnline ? 1U : 0U,
+                mpuAccelXG, mpuAccelYG, mpuAccelZG,
+                mpuGyroXDps, mpuGyroYDps, mpuGyroZDps,
+                mpuRoll, mpuPitch, mpuYaw);
+}
+
+void emitFootContactSerialTelemetry() {
+  // Small dedicated 50 Hz packet. Contact feedback must not wait for the
+  // larger 10 Hz health frame; otherwise short switch taps disappear between
+  // samples. Frame: @FOOT1,packet_seq,millis,mask,change_seq
+  Serial.printf("@FOOT1,%lu,%lu,%u,%lu\n",
+                (unsigned long)footSerialSequence++,
+                (unsigned long)millis(),
+                (unsigned int)footContactMask,
+                (unsigned long)footContactSequence);
+}
+
+void emitSpineSerialTelemetry() {
+  // Compact 10 Hz health packet. Together with @IMU1 this remains below the
+  // practical 115200-baud payload ceiling. USB commands are allow-listed to
+  // no command can arm leg PWM. Only the dedicated camera CH14/15 gimbal
+  // commands are allowed to move servos while the spine remains DISARMED.
+  if (millis() - lastSpineSerialTelemetryMs < 100UL) return;
+  lastSpineSerialTelemetryMs = millis();
+  long tofAgeMs = lastTofValidSampleMs == 0 ? -1L : (long)(millis() - lastTofValidSampleMs);
+  Serial.printf("@TEL1,%lu,%lu,%u,%u,%u,%u,%d,%u,%lu,%u,%lu,%.6f,%.6f,%.3f,%.3f,%s,%u,%d,%u,%u,%lu,%lu,%ld,%u,%lu,%lu,%lu,%lu,%lu,%.2f,%lu,%u,%u,%.1f,%.1f,%u,%u,%u,%s\n",
+                (unsigned long)spineSerialSequence++,
+                (unsigned long)millis(),
+                pcaRightOnline ? 1U : 0U,
+                pcaLeftOnline ? 1U : 0U,
+                mpuOnline ? 1U : 0U,
+                tofReady ? 1U : 0U,
+                (int)tofDistanceMm,
+                dfLinkConfirmed ? 1U : 0U,
+                (unsigned long)gps.charsProcessed(),
+                gpsHasFix ? 1U : 0U,
+                (unsigned long)gps.satellites.value(),
+                currentLat, currentLng,
+                batteryRightV, batteryLeftV,
+                spineStateName(),
+                legOutputsArmed ? 1U : 0U,
+                (int)currentMode,
+                configValid ? 1U : 0U,
+                laserOn ? 1U : 0U,
+                (unsigned long)laserPowerPct,
+                (unsigned long)tofSampleSequence,
+                tofAgeMs,
+                (unsigned int)footContactMask,
+                (unsigned long)footContactSequence,
+                (unsigned long)gps.passedChecksum(),
+                (unsigned long)gps.failedChecksum(),
+                (unsigned long)gps.sentencesWithFix(),
+                (unsigned long)gps.location.age(),
+                (unsigned long)(gps.hdop.isValid() ? gps.hdop.value() : 0UL),
+                internalTempC,
+                (unsigned long)fanPowerPct,
+                fanAutoMode ? 1U : 0U,
+                ntcValid ? 1U : 0U,
+                cameraPanCurrentDeg,
+                cameraTiltCurrentDeg,
+                cameraGimbalEnabled ? 1U : 0U,
+                (unsigned int)cameraGimbalMode,
+                homeSet ? 1U : 0U,
+                APEX_FIRMWARE_VERSION);
+}
+
+void usbAck(const String& id, bool ok, const String& message) {
+  String safe = message;
+  safe.replace(",", ";");
+  Serial.println("@ACK1," + id + "," + (ok ? "OK" : "ERR") + "," + safe);
+}
+
+void setLaserPower(int requestedPct) {
+  laserPowerPct = (uint8_t)constrain(requestedPct, 0, 100);
+  laserOn = laserPowerPct > 0;
+  const uint32_t duty = map(laserPowerPct, 0, 100, 0, 255);
+  ledcWrite(LASER_PIN, duty);
+  addLog("[LASER] GPIO14 PWM=" + String(laserPowerPct) + "%\n");
+}
+
+void applyFanDuty(uint8_t requestedPct) {
+  fanPowerPct = (uint8_t)constrain((int)requestedPct, 0, 100);
+  const uint32_t duty = map(fanPowerPct, 0, 100, 0, 255);
+  ledcWrite(FAN_PWM_PIN, duty);
+}
+
+void requestFanPower(int requestedPct) {
+  const uint8_t nextTarget = (uint8_t)constrain(requestedPct, 0, 100);
+  if (nextTarget != fanRequestedPct) dfRecheckRequired = true;
+  fanRequestedPct = nextTarget;
+}
+
+void serviceFanRamp() {
+  if (millis() - lastFanRampMs < FAN_RAMP_INTERVAL_MS) return;
+  lastFanRampMs = millis();
+  if (fanPowerPct < fanRequestedPct) {
+    applyFanDuty(min((int)fanRequestedPct, (int)fanPowerPct + (int)FAN_RAMP_STEP_PCT));
+  } else if (fanPowerPct > fanRequestedPct) {
+    applyFanDuty(max((int)fanRequestedPct, (int)fanPowerPct - (int)FAN_RAMP_STEP_PCT));
+  }
+}
+
+float readNtcTemperatureC(bool &valid) {
+  uint32_t rawSum = 0;
+  uint16_t rawMin = 4095;
+  uint16_t rawMax = 0;
+  const uint8_t sampleCount = 16;
+  for (uint8_t i = 0; i < sampleCount; i++) {
+    const uint16_t sample = analogRead(NTC_ADC_PIN);
+    rawSum += sample;
+    rawMin = min(rawMin, sample);
+    rawMax = max(rawMax, sample);
+  }
+  const float raw = rawSum / (float)sampleCount;
+  if (raw < 30.0f || raw > 4065.0f || (rawMax - rawMin) > 80U) {
+    valid = false;  // kisa devre, acik sensor veya yuzecek kadar gurultulu ADC
+    return -127.0f;
+  }
+  const float ntcOhm = NTC_FIXED_OHM * raw / (4095.0f - raw);
+  const float invKelvin = (1.0f / NTC_NOMINAL_K) + logf(ntcOhm / NTC_NOMINAL_OHM) / NTC_BETA_K;
+  const float measuredC = (1.0f / invKelvin) - 273.15f;
+  valid = isfinite(measuredC) && measuredC >= 0.0f && measuredC <= 100.0f;
+  return valid ? measuredC : -127.0f;
+}
+
+uint8_t autoFanPercent(float tempC) {
+  if (tempC < 35.0f) return 0;
+  if (tempC < 45.0f) return (uint8_t)roundf(30.0f + (tempC - 35.0f) * 2.5f);
+  if (tempC < 60.0f) return (uint8_t)roundf(55.0f + (tempC - 45.0f) * 3.0f);
+  return 100;
+}
+
+void initThermalManager() {
+  analogReadResolution(12);
+  analogSetPinAttenuation(NTC_ADC_PIN, ADC_11db);
+  ledcAttach(FAN_PWM_PIN, FAN_PWM_HZ, FAN_PWM_BITS);
+  // GPIO18 boot'ta kapali tutulur; sonraki manuel/auto talep rampa ile gelir.
+  applyFanDuty(0);
+  fanRequestedPct = 0;
+  fanAutoMode = false;
+}
+
+void updateThermalManager() {
+  if (millis() - lastThermalSampleMs < THERMAL_SAMPLE_MS) return;
+  lastThermalSampleMs = millis();
+  bool sampleValid = false;
+  const float measuredC = readNtcTemperatureC(sampleValid);
+  if (sampleValid) {
+    if (!ntcValid) {
+      if (ntcStableSamples == 0 || fabsf(measuredC - ntcCandidateC) > 2.0f) {
+        ntcCandidateC = measuredC;
+        ntcStableSamples = 1;
+      } else {
+        ntcCandidateC = ntcCandidateC * 0.75f + measuredC * 0.25f;
+        ntcStableSamples++;
+      }
+      if (ntcStableSamples >= 8) {
+        internalTempC = ntcCandidateC;
+        ntcValid = true;
+      }
+    } else if (fabsf(measuredC - internalTempC) <= 8.0f) {
+      internalTempC = internalTempC * 0.80f + measuredC * 0.20f;
+    } else {
+      // Ic hava 250 ms'de 8 C degisemez: kopuk/temassiz NTC kabul et.
+      internalTempC = -127.0f;
+      ntcValid = false;
+      ntcStableSamples = 0;
+    }
+  } else {
+    internalTempC = -127.0f;
+    ntcValid = false;
+    ntcStableSamples = 0;
+  }
+  if (ntcValid && internalTempC >= 65.0f) {
+    // Kritik sıcaklık, MANUEL modda dahi fiziksel önceliklidir.
+    applyFanDuty(100);
+  } else if (fanAutoMode) {
+    // AUTO sensörsüz çalışmaz; güvenli tarafta tam soğutmaya geçer.
+    requestFanPower(ntcValid ? autoFanPercent(internalTempC) : 100);
+  } else {
+    // Operatörün açık MANUEL seçimi, NTC henüz takılı değilken de geçerlidir.
+    requestFanPower(fanRequestedPct);
+  }
+}
+
+int cameraGimbalAngleToTick(float angleDeg) {
+  const float safe = constrain(angleDeg, CAMERA_GIMBAL_MIN_DEG, CAMERA_GIMBAL_MAX_DEG);
+  const int pulseUs = CAMERA_GIMBAL_MIN_US +
+    (int)((safe / 180.0f) * (CAMERA_GIMBAL_MAX_US - CAMERA_GIMBAL_MIN_US));
+  return (int)(pulseUs / 4.8828125f);
+}
+
+void cameraGimbalWriteNow() {
+  if (!pcaRightOnline || !cameraGimbalEnabled) return;
+  pwmRight.setPWM(CAMERA_PAN_CHANNEL, 0, cameraGimbalAngleToTick(cameraPanCurrentDeg));
+  pwmRight.setPWM(CAMERA_TILT_CHANNEL, 0, cameraGimbalAngleToTick(cameraTiltCurrentDeg));
+}
+
+void initCameraGimbal() {
+  cameraPanCurrentDeg = CAMERA_GIMBAL_CENTER_DEG;
+  cameraTiltCurrentDeg = CAMERA_GIMBAL_CENTER_DEG;
+  cameraPanTargetDeg = CAMERA_GIMBAL_CENTER_DEG;
+  cameraTiltTargetDeg = CAMERA_GIMBAL_CENTER_DEG;
+  cameraGimbalEnabled = true;
+  cameraGimbalMode = CAMERA_GIMBAL_STABILIZE;
+  cameraStabilizeRefValid = false;
+  cameraGimbalNeedsReinit = false;
+  cameraGimbalWriteNow();
+  addLog("[CAM-GIMBAL] PCA0x40 CH15 PAN / CH14 TILT merkez 90 derece.\n");
+}
+
+void setCameraGimbalTarget(bool panAxis, float requestedDeg) {
+  const float safe = constrain(requestedDeg, CAMERA_GIMBAL_MIN_DEG, CAMERA_GIMBAL_MAX_DEG);
+  cameraGimbalEnabled = true;
+  cameraGimbalMode = CAMERA_GIMBAL_MANUAL;
+  if (panAxis) cameraPanTargetDeg = safe;
+  else cameraTiltTargetDeg = safe;
+}
+
+void setCameraGimbalTrackingTarget(float panDeg, float tiltDeg) {
+  cameraGimbalEnabled = true;
+  cameraGimbalMode = CAMERA_GIMBAL_TRACK;
+  cameraPanTargetDeg = constrain(panDeg, CAMERA_GIMBAL_MIN_DEG, CAMERA_GIMBAL_MAX_DEG);
+  cameraTiltTargetDeg = constrain(tiltDeg, CAMERA_GIMBAL_MIN_DEG, CAMERA_GIMBAL_MAX_DEG);
+}
+
+void centerCameraGimbal() {
+  cameraGimbalEnabled = true;
+  cameraGimbalMode = CAMERA_GIMBAL_CENTER;
+  cameraPanTargetDeg = CAMERA_GIMBAL_CENTER_DEG;
+  cameraTiltTargetDeg = CAMERA_GIMBAL_CENTER_DEG;
+}
+
+void stabilizeCameraGimbal() {
+  cameraGimbalEnabled = true;
+  cameraGimbalMode = CAMERA_GIMBAL_STABILIZE;
+  cameraStabilizeRefValid = false;
+  cameraPanTargetDeg = CAMERA_GIMBAL_CENTER_DEG;
+  cameraTiltTargetDeg = CAMERA_GIMBAL_CENTER_DEG;
+}
+
+void disableCameraGimbal() {
+  pwmRight.setPWM(CAMERA_PAN_CHANNEL, 0, 0);
+  pwmRight.setPWM(CAMERA_TILT_CHANNEL, 0, 0);
+  cameraGimbalEnabled = false;
+}
+
+void updateCameraGimbal() {
+  if (!pcaRightOnline) return;
+  if (cameraGimbalNeedsReinit) {
+    initCameraGimbal();
+    return;
+  }
+  if (!cameraGimbalEnabled) return;
+  const unsigned long now = millis();
+  if (now - lastCameraGimbalUpdateMs < 20UL) return;
+  const float dt = min(now - lastCameraGimbalUpdateMs, 40UL) / 1000.0f;
+  lastCameraGimbalUpdateMs = now;
+  if (cameraGimbalMode == CAMERA_GIMBAL_CENTER) {
+    cameraPanTargetDeg = CAMERA_GIMBAL_CENTER_DEG;
+    cameraTiltTargetDeg = CAMERA_GIMBAL_CENTER_DEG;
+  } else if (cameraGimbalMode == CAMERA_GIMBAL_STABILIZE) {
+    if (mpuOnline) {
+      if (!cameraStabilizeRefValid) {
+        cameraStabilizeRefPitch = mpuPitch;
+        cameraStabilizeRefYaw = mpuYaw;
+        cameraStabilizeRefValid = true;
+      }
+      float yawDelta = mpuYaw - cameraStabilizeRefYaw;
+      while (yawDelta > 180.0f) yawDelta -= 360.0f;
+      while (yawDelta < -180.0f) yawDelta += 360.0f;
+      const float yawRecenterAlpha = constrain(
+        dt / CAMERA_GIMBAL_YAW_RECENTER_S, 0.0f, 1.0f);
+      cameraStabilizeRefYaw += yawDelta * yawRecenterAlpha;
+      while (cameraStabilizeRefYaw > 180.0f) cameraStabilizeRefYaw -= 360.0f;
+      while (cameraStabilizeRefYaw < -180.0f) cameraStabilizeRefYaw += 360.0f;
+      yawDelta *= (1.0f - yawRecenterAlpha);
+      yawDelta = constrain(yawDelta,
+                           -CAMERA_GIMBAL_MAX_YAW_CORRECTION_DEG,
+                           CAMERA_GIMBAL_MAX_YAW_CORRECTION_DEG);
+      const float pitchDelta = mpuPitch - cameraStabilizeRefPitch;
+      // Mekanik tarif: PAN açısı artarken sola, TILT açısı artarken aşağı gider.
+      // Gövde yaw/pitch hareketinin tersini uygulayarak bakış doğrultusunu tut.
+      cameraPanTargetDeg = constrain(CAMERA_GIMBAL_CENTER_DEG - yawDelta,
+                                     CAMERA_GIMBAL_MIN_DEG, CAMERA_GIMBAL_MAX_DEG);
+      cameraTiltTargetDeg = constrain(CAMERA_GIMBAL_CENTER_DEG - pitchDelta,
+                                      CAMERA_GIMBAL_MIN_DEG, CAMERA_GIMBAL_MAX_DEG);
+    } else {
+      cameraStabilizeRefValid = false;
+      cameraPanTargetDeg = CAMERA_GIMBAL_CENTER_DEG;
+      cameraTiltTargetDeg = CAMERA_GIMBAL_CENTER_DEG;
+    }
+  }
+  const float maxStep = CAMERA_GIMBAL_SPEED_DEG_S * dt;
+  cameraPanCurrentDeg += constrain(cameraPanTargetDeg - cameraPanCurrentDeg, -maxStep, maxStep);
+  cameraTiltCurrentDeg += constrain(cameraTiltTargetDeg - cameraTiltCurrentDeg, -maxStep, maxStep);
+  cameraGimbalWriteNow();
+}
+
+bool beginStandupSequence(String &reason);
+void handleUsbPeripheralCommand(const String& line) {
+  if (!line.startsWith("@CMD1,")) return;
+  String fields[8];
+  int count = 0;
+  int start = 0;
+  while (count < 8) {
+    int comma = line.indexOf(',', start);
+    if (comma < 0) {
+      fields[count++] = line.substring(start);
+      break;
+    }
+    fields[count++] = line.substring(start, comma);
+    start = comma + 1;
+  }
+  if (count < 4) return;
+  const String id = fields[1];
+  String device = fields[2]; device.toUpperCase();
+  String action = fields[3]; action.toUpperCase();
+
+  if (device == "SPINE") {
+    if (action != "STAND" || count != 4) {
+      usbAck(id, false, "SPINE_ACTION");
+      return;
+    }
+    String reason;
+    if (!beginStandupSequence(reason)) {
+      usbAck(id, false, reason);
+      return;
+    }
+    usbAck(id, true, "CAPTURE_STARTED");
+    return;
+  }
+
+  if (device == "LASER") {
+    if (action == "ON") {
+      setLaserPower(100);
+      usbAck(id, true, "LASER_PWM_100");
+    } else if (action == "OFF") {
+      setLaserPower(0);
+      usbAck(id, true, "LASER_OFF");
+    } else if (action == "SET") {
+      int value = count > 4 ? fields[4].toInt() : 0;
+      setLaserPower(value);
+      usbAck(id, true, "LASER_PWM_" + String(laserPowerPct));
+    } else {
+      usbAck(id, false, "LASER_ACTION");
+    }
+    return;
+  }
+
+  if (device == "FAN") {
+    if (action == "AUTO") {
+      fanAutoMode = true;
+      requestFanPower(ntcValid ? autoFanPercent(internalTempC) : 100);
+      usbAck(id, true, "FAN_AUTO");
+    } else if (action == "OFF") {
+      fanAutoMode = false;
+      requestFanPower(0);
+      usbAck(id, true, "FAN_OFF");
+    } else if (action == "SET") {
+      fanAutoMode = false;
+      int value = count > 4 ? fields[4].toInt() : 0;
+      requestFanPower(value);
+      usbAck(id, true, "FAN_PWM_" + String(fanRequestedPct));
+    } else {
+      usbAck(id, false, "FAN_ACTION");
+    }
+    return;
+  }
+
+  if (device == "CAM_PAN" || device == "CAM_TILT") {
+    if (action != "SET") {
+      usbAck(id, false, "CAM_AXIS_ACTION");
+      return;
+    }
+    const float value = count > 4 ? fields[4].toFloat() : CAMERA_GIMBAL_CENTER_DEG;
+    setCameraGimbalTarget(device == "CAM_PAN", value);
+    usbAck(id, true, device + "_" + String(constrain(value, CAMERA_GIMBAL_MIN_DEG, CAMERA_GIMBAL_MAX_DEG), 1));
+    return;
+  }
+
+  if (device == "CAM_GIMBAL") {
+    if (action == "CENTER" || action == "ON") {
+      centerCameraGimbal();
+      usbAck(id, true, "CAM_GIMBAL_CENTER");
+    } else if (action == "STABILIZE") {
+      stabilizeCameraGimbal();
+      usbAck(id, true, mpuOnline ? "CAM_GIMBAL_STABILIZE" : "CAM_GIMBAL_CENTER_IMU_OFFLINE");
+    } else if (action == "SET") {
+      const float pan = count > 4 ? fields[4].toFloat() : CAMERA_GIMBAL_CENTER_DEG;
+      const float tilt = count > 5 ? fields[5].toFloat() : CAMERA_GIMBAL_CENTER_DEG;
+      setCameraGimbalTrackingTarget(pan, tilt);
+      usbAck(id, true, "CAM_GIMBAL_TRACK_" + String(cameraPanTargetDeg, 1) + "_" + String(cameraTiltTargetDeg, 1));
+    } else if (action == "OFF") {
+      disableCameraGimbal();
+      usbAck(id, true, "CAM_GIMBAL_OFF");
+    } else {
+      usbAck(id, false, "CAM_GIMBAL_ACTION");
+    }
+    return;
+  }
+
+  if (device == "AUDIO") {
+    if (action == "INIT") {
+      const bool initialised = initDFPlayerPeripheral(false);
+      dfRecheckRequired = !dfLinkConfirmed;
+      usbAck(id, initialised,
+             dfLinkConfirmed ? "DFPLAYER_LINK_CONFIRMED" : "DFPLAYER_TX_ONLY_UNCONFIRMED");
+      return;
+    }
+    // Fan duty degisikliginden sonra modul resetlenmis olsa bile kullanicinin
+    // tum robotu yeniden baslatmasi gerekmez. STOP fiziksel modul kapali olsa
+    // da yerel play niyetini temizleyebilmeli; diger komutlar once UART'i
+    // yeniden baglar ve kayitli ses seviyesini tekrar uygular.
+    if (action != "STOP" && (dfRecheckRequired || !dfReady || !dfLinkConfirmed)) {
+      const bool initialised = initDFPlayerPeripheral(false);
+      dfRecheckRequired = !dfLinkConfirmed;
+      if (!initialised) {
+        usbAck(id, false, "DFPLAYER_RECOVERY_FAILED");
+        return;
+      }
+    }
+    if (!dfReady) {
+      usbAck(id, false, "DFPLAYER_MISSING");
+      return;
+    }
+    int value = count > 4 ? fields[4].toInt() : 0;
+    if (action == "PLAY") {
+      // play() follows the FAT copy/index order, so track 1 is not
+      // necessarily /MP3/0001.mp3. 0x12 (playMp3Folder) addresses the
+      // zero-padded filename deterministically.
+      startDFPlayerTrack(value);
+    } else if (action == "STOP") {
+      if (dfShouldPlay && millis() - dfLastPlayCommandMs < 900UL) {
+        usbAck(id, true, "AUDIO_STOP_DEBOUNCED");
+        return;
+      }
+      dfShouldPlay = false;
+      dfPlayer.disableLoop();
+      dfPlayer.stop();
+    } else if (action == "NEXT") {
+      startDFPlayerTrack(value > 0 ? value : dfTrack + 1);
+    } else if (action == "PREV") {
+      startDFPlayerTrack(value > 0 ? value : dfTrack - 1);
+    } else if (action == "VOL") {
+      dfVolume = constrain(value, 0, 30);
+      dfPlayer.volume(dfVolume);
+    } else {
+      usbAck(id, false, "AUDIO_ACTION");
+      return;
+    }
+    addLog("[AUDIO] USB " + action + " value=" + String(value) + "\n");
+    usbAck(id, true, "AUDIO_" + action);
+    return;
+  }
+
+  // USB Servo Lab is deliberately narrower than the robot motion protocol:
+  // one explicitly selected joint can receive a bounded MANUAL target and be
+  // enabled/disabled. Walking, all-leg arming and gait commands remain locked.
+  if (device == "LEG_LAB") {
+    const int leg = count > 4 ? fields[4].toInt() : -2;
+    const int joint = count > 5 ? fields[5].toInt() : -2;
+    if (action == "OFF" && leg == -1 && joint == -1) {
+      disableLegPwm(-1, -1);
+      usbAck(id, true, "LEG_LAB_ALL_OFF");
+      return;
+    }
+    if (action == "POSE") {
+      if (leg < 0 || leg > 5 || count < 8) {
+        usbAck(id, false, "LEG_LAB_POSE_RANGE");
+        return;
+      }
+      if ((leg < 3 && !pcaRightOnline) || (leg >= 3 && !pcaLeftOnline)) {
+        usbAck(id, false, "LEG_LAB_PCA_OFFLINE");
+        return;
+      }
+      const float coxa = constrain(fields[5].toFloat(), MIN_DEGREE, MAX_DEGREE);
+      const float femur = constrain(fields[6].toFloat(), MIN_DEGREE, MAX_DEGREE);
+      const float tibia = constrain(fields[7].toFloat(), MIN_DEGREE, MAX_DEGREE);
+      setManualPoseTarget(leg, coxa, femur, tibia);
+      usbAck(id, true, "LEG_LAB_POSE_" + String(leg) + "_" +
+             String(coxa, 1) + "_" + String(femur, 1) + "_" + String(tibia, 1));
+      return;
+    }
+    if (leg < 0 || leg > 5 || joint < -1 || joint > 2) {
+      usbAck(id, false, "LEG_LAB_RANGE");
+      return;
+    }
+    if ((leg < 3 && !pcaRightOnline) || (leg >= 3 && !pcaLeftOnline)) {
+      usbAck(id, false, "LEG_LAB_PCA_OFFLINE");
+      return;
+    }
+    if (action == "SET") {
+      if (count < 7) {
+        usbAck(id, false, "LEG_LAB_ANGLE_MISSING");
+        return;
+      }
+      const float angle = constrain(fields[6].toFloat(), MIN_DEGREE, MAX_DEGREE);
+      setManualTarget(leg, joint, angle);
+      usbAck(id, true, "LEG_LAB_TARGET_" + String(leg) + "_" + String(joint) + "_" + String(angle, 1));
+    } else if (action == "ON") {
+      if (currentMode != MANUAL) {
+        usbAck(id, false, "LEG_LAB_SET_TARGET_FIRST");
+        return;
+      }
+      // Safe capture: PWM daha once kapaliyken yazilim fiziksel servo acisini
+      // bilemez. Operatorun once sectigi hedefi ilk darbe olarak kullan; eski
+      // NVS/home acisina bir frame dahi sicrama yapma.
+      const int firstJoint = joint < 0 ? 0 : joint;
+      const int lastJoint = joint < 0 ? 2 : joint;
+      for (int j = firstJoint; j <= lastJoint; j++) {
+        currentPhysicalAngle[leg][j] = manualTargetAngle[leg][j];
+        manualJointVelocityDegS[leg][j] = 0.0f;
+        lastLegPwmTick[leg][j] = -1;
+      }
+      enableLegPwm(leg, joint);
+      usbAck(id, true, "LEG_LAB_ON_" + String(leg) + "_" + String(joint));
+    } else if (action == "OFF") {
+      disableLegPwm(leg, joint);
+      usbAck(id, true, "LEG_LAB_OFF_" + String(leg) + "_" + String(joint));
+    } else {
+      usbAck(id, false, "LEG_LAB_ACTION");
+    }
+    return;
+  }
+
+  usbAck(id, false, "DEVICE_NOT_ALLOWED");
+}
+
+void pollUsbPeripheralCommands() {
+  while (Serial.available() > 0) {
+    char c = (char)Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (usbCommandBuffer.length() > 0) handleUsbPeripheralCommand(usbCommandBuffer);
+      usbCommandBuffer = "";
+    } else if (c >= 32 && c <= 126 && usbCommandBuffer.length() < 120) {
+      usbCommandBuffer += c;
+    } else if (usbCommandBuffer.length() >= 120) {
+      usbCommandBuffer = "";
+    }
+  }
 }
 
 void scanI2C() {
@@ -746,6 +1518,7 @@ void recoverLateI2CDevices() {
       lastLegPwmTick[leg][joint] = -1;
     }
     armOutputEnabled = false;
+    cameraGimbalNeedsReinit = true;
     addLog("[RECOVERY] SAG PCA 0x40 sonradan bulundu; tum kanallar guvenli OFF.\n");
   }
   if (leftNow && !pcaLeftOnline) {
@@ -1297,15 +2070,17 @@ void send_to_PCA9685(int leg, int joint, float target_angle) {
   }
   // currentPhysicalAngle is always a mechanical/command angle. Calibration
   // offset is applied exactly once, only while converting that angle to PWM.
-  const float minPhysical = max(MIN_DEGREE, MIN_DEGREE - offset[leg][joint]);
-  const float maxPhysical = min(MAX_DEGREE, MAX_DEGREE - offset[leg][joint]);
+  const float softwareTrim = (joint == 0) ? COXA_SOFTWARE_TRIM_DEG[leg] : 0.0f;
+  const float totalOffset = (float)offset[leg][joint] + softwareTrim;
+  const float minPhysical = max(MIN_DEGREE, MIN_DEGREE - totalOffset);
+  const float maxPhysical = min(MAX_DEGREE, MAX_DEGREE - totalOffset);
   const float safe_angle = constrain(target_angle, minPhysical, maxPhysical);
 
   if (firstRun) {
     if (homeSet) {
       // Home pozisyonuna doğrudan git — softStart buradan başlar
       currentPhysicalAngle[leg][joint] = homeAngles[leg][joint];
-      float ang = constrain(homeAngles[leg][joint] + offset[leg][joint], MIN_DEGREE, MAX_DEGREE);
+      float ang = constrain(homeAngles[leg][joint] + totalOffset, MIN_DEGREE, MAX_DEGREE);
       int us  = pwmMin[leg][joint] + (int)((ang / 180.0f) * (pwmMax[leg][joint] - pwmMin[leg][joint]));
       int tick = (int)(us / 4.8828f);
       writeLegPwmTick(leg, joint, tick);
@@ -1335,7 +2110,25 @@ void send_to_PCA9685(int leg, int joint, float target_angle) {
                                    maxStep = 120.0f * controlFrameDtS;
   else                             maxStep = LEG_TRACK_MAX_SPEED_DEG_S_BY_JOINT[joint] * controlFrameDtS;
 
-  if (currentMode == HOME_RISE && homeRisePhase == 1) {
+  if (currentMode == MANUAL) {
+    // Acceleration-limited trapezoidal motion with a braking-distance cap.
+    // This removes the instant velocity step that made high-torque servos
+    // twitch at the start/end of each lab pose while keeping the test faster.
+    const float stopLimitedSpeed = sqrtf(2.0f * MANUAL_LAB_MAX_ACCEL_DEG_S2 * absDiff);
+    const float desiredMagnitude = min(MANUAL_LAB_MAX_SPEED_DEG_S, stopLimitedSpeed);
+    const float desiredVelocity = (diff >= 0.0f) ? desiredMagnitude : -desiredMagnitude;
+    const float maxVelocityChange = MANUAL_LAB_MAX_ACCEL_DEG_S2 * controlFrameDtS;
+    float &velocity = manualJointVelocityDegS[leg][joint];
+    velocity += constrain(desiredVelocity - velocity, -maxVelocityChange, maxVelocityChange);
+    const float step = velocity * controlFrameDtS;
+    if (absDiff < 0.04f || fabsf(step) >= absDiff) {
+      currentPhysicalAngle[leg][joint] = safe_angle;
+      velocity = 0.0f;
+    } else {
+      currentPhysicalAngle[leg][joint] += step;
+    }
+  }
+  else if (currentMode == HOME_RISE && homeRisePhase == 1) {
     // Quintic minimum-jerk interpolation: zero speed/acceleration at endpoints.
     // Do not stack an exponential low-pass filter onto this trajectory.
     const float t = constrain(bootMotionBlend, 0.0f, 1.0f);
@@ -1352,7 +2145,7 @@ void send_to_PCA9685(int leg, int joint, float target_angle) {
 
   int min_us = pwmMin[leg][joint];
   int max_us = pwmMax[leg][joint];
-  const float electricalAngle = constrain(currentPhysicalAngle[leg][joint] + offset[leg][joint], MIN_DEGREE, MAX_DEGREE);
+  const float electricalAngle = constrain(currentPhysicalAngle[leg][joint] + totalOffset, MIN_DEGREE, MAX_DEGREE);
   int us = min_us + (int)((electricalAngle / 180.0) * (max_us - min_us));
   int tick = (int)(us / 4.8828f);
 
@@ -1364,7 +2157,8 @@ void writeLegAngleImmediate(int leg, int joint, float targetAngle) {
   if (!legPwmEnabled[leg][joint]) return;
 
   const float physical = constrain(targetAngle, MIN_DEGREE, MAX_DEGREE);
-  const float electrical = constrain(physical + offset[leg][joint], MIN_DEGREE, MAX_DEGREE);
+  const float softwareTrim = (joint == 0) ? COXA_SOFTWARE_TRIM_DEG[leg] : 0.0f;
+  const float electrical = constrain(physical + offset[leg][joint] + softwareTrim, MIN_DEGREE, MAX_DEGREE);
   const int us = pwmMin[leg][joint] +
                  (int)((electrical / 180.0f) * (pwmMax[leg][joint] - pwmMin[leg][joint]));
   const int tick = (int)(us / 4.8828f);
@@ -1679,7 +2473,7 @@ String armStatusJson() {
   String json = "{";
   json += "\"enabled\":" + String(armOutputEnabled ? "true" : "false") + ",";
   json += "\"pca\":\"0x40\",";
-  json += "\"channels\":{\"base\":12,\"joint1\":13,\"joint2\":14,\"gripper\":15},";
+  json += "\"channels\":{\"base\":12,\"joint1\":13,\"joint2\":3,\"gripper\":7},";
   json += "\"current\":{";
   for (uint8_t j = 0; j < ARM_JOINT_COUNT; j++) {
     if (j) json += ",";
@@ -1705,6 +2499,12 @@ String armStatusJson() {
 // ================= HTTP SERVER HANDLERS =================
 void setup() {
   Serial.begin(115200);
+  initFootContactSensors();
+  initThermalManager();
+  ledcAttach(LASER_PIN, LASER_PWM_HZ, LASER_PWM_BITS);
+  ledcWrite(LASER_PIN, 0);
+  laserOn = false;
+  laserPowerPct = 0;
   setStatusLed(0, 0, 5);
   Serial.println("[APEX] " APEX_FIRMWARE_VERSION " / " APEX_BUILD_PROFILE);
 
@@ -1717,15 +2517,7 @@ void setup() {
 
   dfSerial.begin(9600, SERIAL_8N1, DF_RX_PIN, DF_TX_PIN);
   delay(200);
-  if (dfPlayer.begin(dfSerial)) {
-    dfReady = true;
-    dfPlayer.volume(dfVolume);
-    addLog("[AUDIO] DFPlayer HAZIR. Vol=" + String(dfVolume) + "\n");
-    bootDiagLog += "[AUDIO] DFPlayer HAZIR\n";
-  } else {
-    addLog("[-] DFPlayer BULUNAMADI (Pin TX:4 RX:5)\n");
-    bootDiagLog += "[-] DFPlayer BULUNAMADI\n";
-  }
+  initDFPlayerPeripheral(true);
 
   // Probe first. Some third-party sensor initializers contain unbounded waits
   // when their board is unpowered; safe boot must remain operational with the
@@ -1741,6 +2533,7 @@ void setup() {
   // channel OFF before loading any stored pose or accepting network traffic.
   disableLegPwm(-1, -1);
   armDisablePwm();
+  initCameraGimbal();
   loadMemory();
   configValid = validateLegConfiguration();
   loadArmMemory();
@@ -1763,25 +2556,15 @@ void setup() {
   legOutputsArmed  = false;
   addLog("[SAFETY] SAFE BOOT: tum servo PWM cikislari kapali; operator komutu bekleniyor.\n");
 
-  // APEX-HUB üzerinde sabit IP — DHCP'den bağımsız, MAC rezervasyonuna gerek yok.
-  IPAddress staticIP(192, 168, 7, 50);
-  IPAddress gateway(192, 168, 7, 1);
-  IPAddress subnet(255, 255, 255, 0);
-  WiFi.config(staticIP, gateway, subnet);
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);
-  WiFi.setAutoReconnect(true);
-  WiFi.begin(ssid, password);
-  unsigned long t = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t < 10000) { delay(500); }
-
-  if(WiFi.status() == WL_CONNECTED) {
-      addLog("[WIFI] UPLINK ESTABLISHED. IP: " + WiFi.localIP().toString() + "\n");
-      Serial.println("[WIFI] connected ip=" + WiFi.localIP().toString());
-  } else {
-      addLog("[-] WIFI UPLINK YOK; yerel kontrol sunucusu acik kalacak.\n");
-      Serial.println("[WIFI] offline status=" + String((int)WiFi.status()));
-  }
+  // ESP<->Pi transport is the dedicated FT232 USB cable. Keep the ESP radio
+  // fully disabled: telemetry and allow-listed commands share Serial at
+  // 115200 baud, avoiding a second network and its reconnect latency.
+  WiFi.persistent(false);
+  WiFi.disconnect(true, true);
+  WiFi.mode(WIFI_OFF);
+  addLog("[USB] FT232 OMURILIK HATTI AKTIF; ESP WIFI KAPALI.\n");
+  bootDiagLog += "[USB] FT232 115200 8N1 ONLINE; WIFI OFF\n";
+  Serial.println("[USB] wired transport active; wifi=off");
 
   server.on("/", []() { server.send(200, "text/html", INDEX_HTML); });
 
@@ -2138,7 +2921,7 @@ void setup() {
     if (cmd == "play") {
       // Sadece OYNAT butonu çalmayı başlatır
       dfTrack = constrain(server.arg("t").toInt(), 1, 99);
-      dfPlayer.play(dfTrack);
+      dfPlayer.playMp3Folder(dfTrack);
       addLog("[AUDIO] Parca " + String(dfTrack) + " oynatiliyor.\n");
     } else if (cmd == "next" || cmd == "prev") {
       // Parça numarası güncellenir; çalma BAŞLATILMAZ
@@ -2284,7 +3067,7 @@ void setup() {
 
 
   // ARM UYUMLULUK ALIAS'LARI — RPi/UI tarafı slash'li yol kullanırsa da 404 vermesin.
-  // Aynı handler mantığı, aynı PCA 0x40 CH12-15. Bacak kanallarına dokunmaz.
+  // Aynı handler mantığı, PCA 0x40 CH12/13/3/7. Kamera CH14/15 ve bacak kanallarına dokunmaz.
   server.on("/arm/status", []() {
     server.send(200, "application/json", armStatusJson());
   });
@@ -2352,8 +3135,7 @@ void setup() {
     server.send(200, "application/json", armStatusJson());
   });
 
-  server.begin();
-  // SAFE BOOT invariant: server başlasa da motor rampası başlamaz. Yalnızca
+  // SAFE BOOT invariant: USB başlasa da motor rampası başlamaz. Yalnızca
   // açık operator onaylı /goHome?confirm=start CAPTURE sekansını başlatabilir.
   bootStartMs     = 0;
   bootSoftStart   = false;
@@ -2367,9 +3149,14 @@ void setup() {
 }
 
 void loop() {
-  server.handleClient();
+  pollUsbPeripheralCommands();
+  pollDFPlayerEvents();
+  pollFootContactSensors();
+  serviceFanRamp();
+  updateThermalManager();
   updateStatusLed();
   armUpdate();
+  updateCameraGimbal();
   recoverLateI2CDevices();
   updateTOF400C();
   updateBatteryMonitor();
@@ -2432,6 +3219,9 @@ void loop() {
     }
 
     readMPU6050();
+    emitImuSerialTelemetry();
+    emitFootContactSerialTelemetry();
+    emitSpineSerialTelemetry();
 
     // GELİŞMİŞ GİMBAL: 4 aşamalı filtre
     // gimbalFilterLevel: 0=hızlı/keskin  100=yavaş/yumuşak

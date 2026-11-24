@@ -1,0 +1,24 @@
+convention: x_forward_y_left_z_up
+handedness: right
+
+base_link:
+  origin: robot_body_geometric_center
+
+lidar_link:
+  parent: base_link
+  translation_m: {x: 0.135, y: 0.0, z: 0.108}
+  rotation_quaternion_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+imu_link:
+  parent: base_link
+  translation_m:
+    x: 0.115
+    y: 0.015
+    z: 0.048
+  translation_measurement:
+    x: measured_115_mm_ahead_from_body_center_2026_11
+    y: measured_15_mm_left_from_body_center_2026_11
+    z_nominal_m: 0.048
+    precision: x_y_measured_z_retained_from_previous_bracket_record
+  orientation: verified_identity_from_mounted_pitch_roll_yaw_test_2026_10_07
+  axis_map_raw_to_base: ['+x', '+y', '+z']

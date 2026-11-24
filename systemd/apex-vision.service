@@ -1,0 +1,32 @@
+[Unit]
+Description=APEX Hailo-10H low-latency vision HUD
+After=network-online.target apex-command-center.service
+Wants=network-online.target
+Conflicts=apex-camera-test.service
+
+[Service]
+Type=simple
+User=perseverance
+Group=perseverance
+SupplementaryGroups=video render
+WorkingDirectory=/opt/apex/control_station
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/apex/vendor/hailo-apps:/opt/apex/control_station
+Environment=APEX_HUD_BACKEND=direct
+Environment=APEX_HUD_WIDTH=1280
+Environment=APEX_HUD_HEIGHT=720
+Environment=APEX_HUD_FPS=30
+Environment=APEX_HUD_JPEG_QUALITY=58
+Environment=APEX_HUD_SCORE_THRESHOLD=0.30
+Environment=APEX_HUD_MAX_BOXES=100
+Environment=APEX_HUD_HEF=/usr/local/hailo/resources/models/hailo10h/yolov6n.hef
+ExecStart=/opt/apex/vendor/hailo-apps/venv_hailo_apps/bin/python /opt/apex/control_station/vision/detection_hud.py
+Restart=always
+RestartSec=3
+TimeoutStopSec=8
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

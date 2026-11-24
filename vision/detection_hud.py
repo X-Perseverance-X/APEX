@@ -34,20 +34,42 @@ import urllib.request
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 faulthandler.enable()
-import gi
-gi.require_version('Gst', '1.0')
-from gi.repository import Gst
-import hailo
-from hailo_apps.python.core.gstreamer.gstreamer_app import app_callback_class, get_caps_from_pad, get_numpy_from_buffer
-from hailo_apps.python.pipeline_apps.detection.detection_pipeline import GStreamerDetectionApp
+# Raspberry Pi OS Trixie uses Python 3.13.  TAPPAS 5.1 ships its ARM Python
+# metadata binding only up to CPython 3.11, while PyHailoRT itself is available
+# for 3.13.  Keep the proven GStreamer path for older images, but allow the same
+# HUD to run on the direct asynchronous HailoRT API on the new SD image.
+try:
+    import gi
+    gi.require_version('Gst', '1.0')
+    from gi.repository import Gst
+    import hailo
+    from hailo_apps.python.core.gstreamer.gstreamer_app import (
+        app_callback_class, get_caps_from_pad, get_numpy_from_buffer,
+    )
+    from hailo_apps.python.pipeline_apps.detection.detection_pipeline import GStreamerDetectionApp
+    GST_HAILO_AVAILABLE = True
+except (ImportError, OSError) as exc:
+    GST_HAILO_AVAILABLE = False
+    GST_HAILO_IMPORT_ERROR = exc
+    hailo = None
+
+    class app_callback_class:
+        pass
 
 # ─── Konfigürasyon ────────────────────────────────────────────────────────────
 STREAM_PORT      = 8888   # camera_stream.py ile AYNI port — apex_ui.html'in
                            # <img> etiketi zaten buraya bağlı, değişiklik gerekmiyor.
 JPEG_QUALITY     = int(os.environ.get("APEX_HUD_JPEG_QUALITY", "62"))
 APEX_SERVER_URL  = "http://localhost:8080/telemetry"  # gerçek telemetri kaynağı
-APEX_JOY_URL     = "http://localhost:8080/joy"        # hareket komutu (proxy üzerinden, ESP32'ye DOĞRUDAN değil)
 APEX_VISION_CONTROL_URL = "http://localhost:8080/api/vision/control"
+APEX_GIMBAL_URL = "http://localhost:8080/cameraGimbal"
+
+# Kamera fiziksel olarak yeni pan/tilt kafasına dik yerleştirildi. Eski montaj
+# için kullanılan 180° dönüş (hflip+vflip) artık görüntüyü baş aşağı yapıyordu.
+# Değerler systemd ortamından değiştirilebilir; varsayılan gerçek/non-mirror
+# görüntüdür ve seçim koordinatlarıyla Hailo kutuları aynı piksel düzlemindedir.
+CAMERA_HFLIP = os.environ.get("APEX_CAMERA_HFLIP", "0") == "1"
+CAMERA_VFLIP = os.environ.get("APEX_CAMERA_VFLIP", "0") == "1"
 
 # AI TAKİP parametreleri — GÜVENLİK İÇİN KASITLI OLARAK MUHAFAZAKAR ama artık
 # İKİ FAKTÖRE göre ADAPTİF: (1) merkeze olan ofset büyüklüğü (çapraz çizginin
@@ -66,6 +88,17 @@ MAX_TRACK_TURN     = 0.85   # mutlak güvenlik tavanı — boost ne olursa olsun
 SEARCH_TURN_SPEED  = 0.25   # hedef kaybolunca arama dönüş hızı (sabit, küçük — değişmedi)
 SEARCH_TIMEOUT_S   = 4.0    # kaybolduktan sonra en fazla bu kadar saniye ara, sonra dur
 COMMAND_HZ         = 8      # hareket komutu gönderme sıklığı (video FPS'inden BAĞIMSIZ)
+
+# Pan/tilt visual-servo kontrolü. Bacak hareketi üretmez. Mekanik yönler:
+# PAN açısı artarken sola, TILT açısı artarken aşağı gider.
+GIMBAL_COMMAND_HZ = 10.0
+GIMBAL_MIN_DEG = 45.0
+GIMBAL_MAX_DEG = 135.0
+GIMBAL_CENTER_DEG = 90.0
+GIMBAL_PAN_RATE_DPS = 42.0
+GIMBAL_TILT_RATE_DPS = 34.0
+GIMBAL_X_DEADBAND = 0.045
+GIMBAL_Y_DEADBAND = 0.055
 
 # İLERİ HAREKET (yaklaşma) — daha önce SADECE dönüş (joyR) gönderiliyordu,
 # hiç ileri/geri yoktu ("ileri gelmiyor" şikayeti tam buradan). GÜVENLİK İÇİN
@@ -92,6 +125,8 @@ telemetry={
     'battery_r_v': None, 'battery_l_v': None,
     'tof_mm': None, 'tof_online': False,
     'mode':'IDLE', 'connected':False, 'ai_track':False, 'sel':None,
+    'mpu_online':False, 'mpu_pitch':0.0, 'mpu_yaw':0.0,
+    'camera_pan_deg':90.0, 'camera_tilt_deg':90.0,
 }
 vision_control_seen_at = [0.0]
 latest_frame=[None]
@@ -106,6 +141,7 @@ frame_ready=threading.Condition(frame_lock)
 stream_stats={
     'encoded_frames': 0, 'encode_ms': 0.0, 'jpeg_bytes': 0,
     'stream_clients': 0, 'stream_clients_peak': 0,
+    'detections': 0, 'detection_labels': [], 'inference_ms': 0.0,
 }
 
 # Donma koruması: Hailo/GStreamer pipeline yeni kare üretmeyi keserse eski
@@ -126,8 +162,16 @@ _raw_frame_queue: "queue.Queue" = queue.Queue(maxsize=1)
 # (ayrı, video hızından bağımsız bir thread) okuyup hareket komutu üretir.
 # Bu ayrım BİLEREK yapıldı: HTTP isteği video callback'ini asla bloklamasın
 # (aynı SLAM/LiDAR ayrıştırmasında kullanılan desen — bu projede zaten kanıtlanmış).
-tracking_state = {'visible': False, 'bx': None, 'dm': None, 'frame_w': 640, 'last_seen': 0.0}
+tracking_state = {
+    'visible': False, 'bx': None, 'by': None, 'dm': None,
+    'frame_w': 640, 'frame_h': 480, 'last_seen': 0.0,
+}
 tracking_lock = threading.Lock()
+gimbal_control_lock = threading.Lock()
+gimbal_control_state = {
+    'mode': 'stabilize', 'pan': GIMBAL_CENTER_DEG, 'tilt': GIMBAL_CENTER_DEG,
+    'last_error_x': 0.0, 'last_error_y': 0.0, 'last_command': 0.0,
+}
 
 # Hedef SEÇİMİ — kullanıcı arayüzde bir kişiye tıklayınca o kişinin Hailo
 # track_id'si buraya kilitlenir. None = henüz kimse seçilmedi (bu durumda
@@ -158,6 +202,11 @@ def telemetry_poller():
             telemetry['tof_online'] = bool(data.get('tofOnline', False))
             tof_mm = data.get('tofMm')
             telemetry['tof_mm'] = tof_mm if telemetry['tof_online'] and isinstance(tof_mm, (int, float)) and 0 <= tof_mm < 65535 else None
+            telemetry['mpu_online'] = bool(data.get('mpuOnline', False))
+            telemetry['mpu_pitch'] = float(data.get('mpuP', 0.0) or 0.0)
+            telemetry['mpu_yaw'] = float(data.get('mpuY', 0.0) or 0.0)
+            telemetry['camera_pan_deg'] = float(data.get('cameraPanDeg', GIMBAL_CENTER_DEG) or GIMBAL_CENTER_DEG)
+            telemetry['camera_tilt_deg'] = float(data.get('cameraTiltDeg', GIMBAL_CENTER_DEG) or GIMBAL_CENTER_DEG)
             telemetry['connected'] = True
             if not was_connected:
                 print('[HUD] Telemetri bağlantısı aktif.', flush=True)
@@ -201,15 +250,22 @@ def vision_control_poller():
             was_connected = False
         time.sleep(0.1)
 
-def send_joy(x, y, r):
-    """Hareket komutu — apex_server.py /joy proxy'si üzerinden (ESP32'ye
-    DOĞRUDAN değil, sıraya alma/kilitleme zaten orada var). Asla çökmesin —
-    ağ hatası olursa sessizce loglar, devam eder."""
+def send_gimbal_target(pan, tilt):
+    """Atomik pan/tilt hedefi; yalnız PCA 0x40 CH15/CH14 hareket eder."""
     try:
-        url = f"{APEX_JOY_URL}?x={x:.2f}&y={y:.2f}&r={r:.2f}&source=ai"
+        pan = max(GIMBAL_MIN_DEG, min(GIMBAL_MAX_DEG, float(pan)))
+        tilt = max(GIMBAL_MIN_DEG, min(GIMBAL_MAX_DEG, float(tilt)))
+        url = f"{APEX_GIMBAL_URL}?pan={pan:.1f}&tilt={tilt:.1f}"
         urllib.request.urlopen(url, timeout=0.8).read()
     except Exception as e:
-        print('[AI-TRACK] Komut gonderilemedi:', e)
+        print('[AI-TRACK] Gimbal hedefi gonderilemedi:', e)
+
+def send_gimbal_mode(action):
+    """CENTER/STABILIZE geçişi; bacak hareket kanalına erişmez."""
+    try:
+        urllib.request.urlopen(f"{APEX_GIMBAL_URL}?action={action}", timeout=0.8).read()
+    except Exception as e:
+        print('[AI-TRACK] Gimbal modu gonderilemedi:', e)
 
 def compute_forward(dm, err, tof_mm=None):
     """Mesafeye göre ileri hız — SADECE yaklaşma, ASLA geri gitme (robot
@@ -265,70 +321,73 @@ def compute_turn(err, dm):
     return max(-MAX_TRACK_TURN, min(MAX_TRACK_TURN, turn))
 
 def tracking_commander():
-    """Video FPS'inden bağımsız, sabit hızda (COMMAND_HZ) çalışır. AI TAKİP
-    kapalıyken (varsayılan) HİÇBİR hareket komutu göndermez — sadece
-    telemetry['ai_track'] kontrolü yapıp uyur."""
-    last_side = 0       # +1=sağ, -1=sol, 0=henüz bilinmiyor
-    was_tracking = False
-    filtered_dm = None
-    command_fwd = 0.0
-    command_turn = 0.0
+    """Seçili kişiyi pan/tilt ile görüntü merkezinde tutar.
+
+    Bu iş parçacığı bilinçli olarak /joy kullanmaz; robot bacakları DISARMED
+    durumda kalabilir. Takip kapalıyken firmware STABILIZE moduna geçirilir:
+    IMU varsa tavuk-kafası pitch/yaw telafisi, yoksa 90°/90° merkez uygulanır.
+    """
+    command_pan = GIMBAL_CENTER_DEG
+    command_tilt = GIMBAL_CENTER_DEG
+    last_mode = None
     last_command_at = time.monotonic()
     while True:
-        time.sleep(1.0 / COMMAND_HZ)
-        if not telemetry.get('ai_track', False):
-            was_tracking = False
-            filtered_dm = None
-            command_fwd = command_turn = 0.0
-            last_command_at = time.monotonic()
-            continue
+        time.sleep(1.0 / GIMBAL_COMMAND_HZ)
+        tracking_enabled = bool(telemetry.get('ai_track', False))
         with tracking_lock:
             visible   = tracking_state['visible']
             bx        = tracking_state['bx']
-            dm        = tracking_state['dm']
+            by        = tracking_state['by']
             frame_w   = tracking_state['frame_w']
+            frame_h   = tracking_state['frame_h']
             last_seen = tracking_state['last_seen']
-        now = time.time()
-        frame_fresh = bool(last_seen and (now - last_seen) <= TRACK_FRAME_MAX_AGE_S)
+        frame_fresh = bool(last_seen and (time.time() - last_seen) <= TRACK_FRAME_MAX_AGE_S)
         control_fresh = (time.monotonic() - vision_control_seen_at[0]) <= CONTROL_MAX_AGE_S
-        if visible and bx is not None and frame_fresh and control_fresh:
+
+        if tracking_enabled and visible and bx is not None and by is not None and frame_fresh and control_fresh:
+            if last_mode != 'track':
+                command_pan = max(GIMBAL_MIN_DEG, min(
+                    GIMBAL_MAX_DEG, float(telemetry.get('camera_pan_deg', GIMBAL_CENTER_DEG))))
+                command_tilt = max(GIMBAL_MIN_DEG, min(
+                    GIMBAL_MAX_DEG, float(telemetry.get('camera_tilt_deg', GIMBAL_CENTER_DEG))))
             tick = time.monotonic()
-            dt = max(0.02, min(0.35, tick - last_command_at))
+            dt = max(0.02, min(0.20, tick - last_command_at))
             last_command_at = tick
-            err = (bx - frame_w/2) / (frame_w/2)   # -1..1, sağ pozitif
-            last_side = 1 if err > 0.02 else (-1 if err < -0.02 else last_side)
-            if isinstance(dm, (int, float)) and dm > 0:
-                filtered_dm = dm if filtered_dm is None else (
-                    filtered_dm + DISTANCE_EMA_ALPHA * (dm - filtered_dm)
-                )
-            target_turn = compute_turn(err, filtered_dm)
-            tof_mm = telemetry.get('tof_mm') if telemetry.get('tof_online') else None
-            target_fwd = compute_forward(filtered_dm, err, tof_mm)
-            command_fwd = slew_towards(
-                command_fwd, target_fwd, FORWARD_ACCEL_PER_S, FORWARD_DECEL_PER_S, dt
-            )
-            command_turn = slew_towards(
-                command_turn, target_turn, TURN_SLEW_PER_S, TURN_SLEW_PER_S, dt
-            )
-            send_joy(0, command_fwd, command_turn)  # doğrulanmış +Y ileri yönü
-            was_tracking = True
-        elif last_seen and (now - last_seen) < SEARCH_TIMEOUT_S and last_side != 0:
-            # Hedef az önce kayboldu — son görüldüğü yöne doğru aramaya devam.
-            # İLERİ HAREKET YOK — görünmeyen bir hedefe doğru kör kör
-            # yaklaşmak güvenli değil, sadece dönerek arar.
-            # Endüstriyel güvenli davranış: görünmeyen hedef için kör dönüş yok.
-            # Hedef tekrar görünür olduğunda kilit aynı track üzerinde sürer.
-            if was_tracking:
-                send_joy(0, 0, 0)
-                was_tracking = False
-                command_fwd = command_turn = 0.0
-                filtered_dm = None
+            err_x = (bx - frame_w * 0.5) / max(1.0, frame_w * 0.5)
+            err_y = (by - frame_h * 0.5) / max(1.0, frame_h * 0.5)
+            if abs(err_x) < GIMBAL_X_DEADBAND:
+                err_x = 0.0
+            if abs(err_y) < GIMBAL_Y_DEADBAND:
+                err_y = 0.0
+            # Hedef görüntüde sağdaysa mekanizma sağa dönmeli: PAN açısı azalır.
+            # Hedef aşağıdaysa TILT açısı artar.
+            command_pan = max(GIMBAL_MIN_DEG, min(
+                GIMBAL_MAX_DEG, command_pan - err_x * GIMBAL_PAN_RATE_DPS * dt))
+            command_tilt = max(GIMBAL_MIN_DEG, min(
+                GIMBAL_MAX_DEG, command_tilt + err_y * GIMBAL_TILT_RATE_DPS * dt))
+            send_gimbal_target(command_pan, command_tilt)
+            last_mode = 'track'
+            with gimbal_control_lock:
+                gimbal_control_state.update({
+                    'mode': 'track', 'pan': command_pan, 'tilt': command_tilt,
+                    'last_error_x': err_x, 'last_error_y': err_y,
+                    'last_command': time.time(),
+                })
         else:
-            if was_tracking:
-                send_joy(0, 0, 0)  # arama süresi bitti — güvenlik için dur
-                was_tracking = False
-                command_fwd = command_turn = 0.0
-                filtered_dm = None
+            # Takip kapalı veya hedef kayıp: baş merkezde, IMU varsa dünya
+            # doğrultusunu tutacak STABILIZE modu. Aynı komutu sürekli yollama.
+            if last_mode != 'stabilize':
+                send_gimbal_mode('stabilize')
+                command_pan = GIMBAL_CENTER_DEG
+                command_tilt = GIMBAL_CENTER_DEG
+                last_mode = 'stabilize'
+                with gimbal_control_lock:
+                    gimbal_control_state.update({
+                        'mode': 'stabilize', 'pan': command_pan, 'tilt': command_tilt,
+                        'last_error_x': 0.0, 'last_error_y': 0.0,
+                        'last_command': time.time(),
+                    })
+            last_command_at = time.monotonic()
 
 def bracket(img,x1,y1,x2,y2,col,ln=30,th=3):
     for bx,by,dx,dy in [(x1,y1,1,1),(x2,y1,-1,1),(x1,y2,1,-1),(x2,y2,-1,-1)]:
@@ -410,7 +469,7 @@ def process_target_selection(dets, sel):
                 'processed_ts': time.time(), 'last_seen': 0.0, 'bbox': None,
             })
         with tracking_lock:
-            tracking_state.update({'visible': False, 'bx': None, 'dm': None, 'last_seen': 0.0})
+            tracking_state.update({'visible': False, 'bx': None, 'by': None, 'dm': None, 'last_seen': 0.0})
         return None, True
 
     click_x, click_y = float(sel.get('x', 0.0)), float(sel.get('y', 0.0))
@@ -436,7 +495,7 @@ def process_target_selection(dets, sel):
                 'processed_ts': time.time(), 'last_seen': 0.0, 'bbox': None,
             })
             with tracking_lock:
-                tracking_state.update({'visible': False, 'bx': None, 'dm': None, 'last_seen': 0.0})
+                tracking_state.update({'visible': False, 'bx': None, 'by': None, 'dm': None, 'last_seen': 0.0})
             return None, True
         candidate = min(candidates, key=lambda item: item[0])[1]
         selected_track_id = candidate.get('track_id')
@@ -562,8 +621,10 @@ def draw_hud(frame,dets,fps):
         if best_person is not None:
             tracking_state['visible']   = True
             tracking_state['bx']        = best_person['bx']
+            tracking_state['by']        = best_person['by']
             tracking_state['dm']        = best_person['dm']
             tracking_state['frame_w']   = w
+            tracking_state['frame_h']   = h
             tracking_state['last_seen'] = time.time()
         else:
             tracking_state['visible'] = False
@@ -762,6 +823,8 @@ class HUDStreamHandler(BaseHTTPRequestHandler):
         elif path == "/tracking/status":
             with selection_lock:
                 data = dict(selection_status)
+            with gimbal_control_lock:
+                data['gimbal'] = dict(gimbal_control_state)
             data['selected'] = data.get('state') in {'locked', 'lost'}
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -863,20 +926,253 @@ def pipeline_watchdog():
         else:
             warned = False
 
-def run_stream_server():
-    server = ThreadingHTTPServer(("0.0.0.0", STREAM_PORT), HUDStreamHandler)
-    server.daemon_threads = True
-    print(f"[HUD] MJPEG yayını -> http://0.0.0.0:{STREAM_PORT}/stream")
-    server.serve_forever()
+class ReusableThreadingHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
 
-if __name__=='__main__':
+
+def run_stream_server():
+    # systemd restart sırasında eski MJPEG socket'i birkaç saniye TIME_WAIT/
+    # kapanış durumunda kalabilir. Tek bind hatası thread'i sessizce öldürmesin.
+    while True:
+        try:
+            server = ReusableThreadingHTTPServer(("0.0.0.0", STREAM_PORT), HUDStreamHandler)
+            server.daemon_threads = True
+            server.request_queue_size = 16
+            print(f"[HUD] MJPEG yayını -> http://0.0.0.0:{STREAM_PORT}/stream", flush=True)
+            server.serve_forever()
+        except OSError as exc:
+            print(f"[HUD] 8888 bind bekliyor: {exc}", flush=True)
+            time.sleep(1.0)
+
+
+def _put_latest_render_frame(frame, detections, fps):
+    """Never let rendering or a slow browser build a video backlog."""
+    item = (frame, detections, fps)
+    try:
+        _raw_frame_queue.put_nowait(item)
+    except queue.Full:
+        try:
+            _raw_frame_queue.get_nowait()
+        except queue.Empty:
+            pass
+        try:
+            _raw_frame_queue.put_nowait(item)
+        except queue.Full:
+            pass
+
+
+def run_direct_hailort():
+    """Python 3.13 compatible Hailo-10H backend for the new Raspberry Pi OS.
+
+    Camera acquisition, inference and HUD/JPEG rendering are three independent
+    stages with one-frame queues.  If any stage is briefly slower, an old frame
+    is discarded instead of being displayed seconds later.
+    """
+    from functools import partial
+    from pathlib import Path
+    from types import SimpleNamespace
+    from libcamera import Transform
+    from picamera2 import Picamera2
+    from hailo_platform import HEF
+    from hailo_apps.python.core.common.hailo_inference import HailoInfer
+    from hailo_apps.python.core.common.toolbox import default_preprocess, get_labels
+    from hailo_apps.python.core.tracker.byte_tracker import BYTETracker
+    from hailo_apps.python.standalone_apps.object_detection.object_detection_post_process import extract_detections
+
+    model_path = Path(os.environ.get(
+        "APEX_HUD_HEF",
+        "/usr/local/hailo/resources/models/hailo10h/yolov5m_wo_spp.hef",
+    ))
+    if not model_path.is_file():
+        raise FileNotFoundError(f"Hailo HEF bulunamadı: {model_path}")
+
+    capture_width = int(os.environ.get("APEX_HUD_WIDTH", "1280"))
+    capture_height = int(os.environ.get("APEX_HUD_HEIGHT", "720"))
+    capture_fps = int(os.environ.get("APEX_HUD_FPS", "30"))
+    labels = get_labels(None)
+    detection_config = {
+        "visualization_params": {
+            "score_thres": float(os.environ.get("APEX_HUD_SCORE_THRESHOLD", "0.30")),
+            "max_boxes_to_draw": int(os.environ.get("APEX_HUD_MAX_BOXES", "100")),
+        }
+    }
+    person_tracker = BYTETracker(SimpleNamespace(
+        track_thresh=0.10,
+        track_buffer=30,
+        match_thresh=0.90,
+        aspect_ratio_thresh=2.0,
+        min_box_area=500,
+        mot20=False,
+    ))
+
+    hef = HEF(str(model_path))
+    output_count = len(hef.get_output_vstream_infos())
+    engine = HailoInfer(
+        str(model_path), batch_size=1,
+        output_type="FLOAT32" if output_count > 1 else None,
+    )
+    model_height, model_width, _ = engine.get_input_shape()
+    capture_queue = queue.Queue(maxsize=1)
+    stop_event = threading.Event()
+    counters = {"captured": 0, "inferred": 0, "started": time.monotonic()}
+
+    camera = Picamera2(0)
+    camera_config = camera.create_video_configuration(
+        main={"size": (capture_width, capture_height), "format": "RGB888"},
+        controls={"FrameRate": capture_fps},
+        transform=Transform(hflip=CAMERA_HFLIP, vflip=CAMERA_VFLIP),
+        buffer_count=4,
+    )
+    camera.configure(camera_config)
+
+    def capture_loop():
+        camera.start()
+        print(
+            f"[HUD] CSI0 direct capture: {capture_width}x{capture_height} @{capture_fps} FPS, "
+            f"hflip={int(CAMERA_HFLIP)} vflip={int(CAMERA_VFLIP)}",
+            flush=True,
+        )
+        try:
+            while not stop_event.is_set():
+                frame = camera.capture_array("main")
+                counters["captured"] += 1
+                try:
+                    capture_queue.put_nowait(frame)
+                except queue.Full:
+                    try:
+                        capture_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    try:
+                        capture_queue.put_nowait(frame)
+                    except queue.Full:
+                        pass
+        finally:
+            camera.stop()
+
+    def completed(completion_info, bindings_list, original_frame, submitted_at):
+        if completion_info.exception:
+            print("[HUD] Hailo inference hatası:", completion_info.exception, flush=True)
+            return
+        bindings = bindings_list[0]
+        if len(bindings._output_names) == 1:
+            result = bindings.output().get_buffer()
+        else:
+            result = {
+                name: np.expand_dims(bindings.output(name).get_buffer(), axis=0)
+                for name in bindings._output_names
+            }
+        parsed = extract_detections(original_frame, result, detection_config)
+        h, w = original_frame.shape[:2]
+        detections = []
+        for box, class_id, confidence in zip(
+            parsed["detection_boxes"],
+            parsed["detection_classes"],
+            parsed["detection_scores"],
+        ):
+            x1, y1, x2, y2 = map(float, box)
+            class_id = int(class_id)
+            label = labels[class_id] if 0 <= class_id < len(labels) else f"class-{class_id}"
+            detections.append({
+                "label": label,
+                "confidence": float(confidence),
+                "track_id": None,
+                "bbox": (
+                    max(0.0, min(1.0, x1 / w)),
+                    max(0.0, min(1.0, y1 / h)),
+                    max(0.0, min(1.0, x2 / w)),
+                    max(0.0, min(1.0, y2 / h)),
+                ),
+            })
+
+        # Preserve stable person IDs across frames.  Target selection in the
+        # browser can therefore stay attached to one person when several people
+        # cross or briefly overlap, just like the former GStreamer tracker.
+        person_indices = [i for i, det in enumerate(detections) if det["label"] == "person"]
+        tracker_input = np.asarray([
+            [
+                detections[i]["bbox"][0] * w,
+                detections[i]["bbox"][1] * h,
+                detections[i]["bbox"][2] * w,
+                detections[i]["bbox"][3] * h,
+                detections[i]["confidence"],
+            ]
+            for i in person_indices
+        ], dtype=np.float32)
+        if not len(tracker_input):
+            tracker_input = np.empty((0, 5), dtype=np.float32)
+        for track in person_tracker.update(tracker_input):
+            tx1, ty1, tx2, ty2 = map(float, track.tlbr)
+            best_index = None
+            best_overlap = 0.0
+            for index in person_indices:
+                det = detections[index]
+                dx1, dy1, dx2, dy2 = det["bbox"]
+                overlap = bbox_iou(
+                    (tx1, ty1, tx2, ty2),
+                    (dx1 * w, dy1 * h, dx2 * w, dy2 * h),
+                )
+                if overlap > best_overlap:
+                    best_index, best_overlap = index, overlap
+            if best_index is not None and best_overlap >= 0.10:
+                detections[best_index]["track_id"] = int(track.track_id)
+
+        with frame_lock:
+            stream_stats["detections"] = len(detections)
+            stream_stats["detection_labels"] = [d["label"] for d in detections[:12]]
+            stream_stats["inference_ms"] = (time.perf_counter() - submitted_at) * 1000.0
+
+        counters["inferred"] += 1
+        now = time.time()
+        fps_state["count"] += 1
+        if now - fps_state["last"] >= 1.0:
+            fps_state["fps"] = fps_state["count"] / (now - fps_state["last"])
+            fps_state["count"] = 0
+            fps_state["last"] = now
+        _put_latest_render_frame(original_frame, detections, fps_state["fps"])
+
+    capture_thread = threading.Thread(target=capture_loop, name="csi-capture", daemon=True)
+    capture_thread.start()
+    print(
+        f"[HUD] Direct HailoRT backend: {model_path.name}, model {model_width}x{model_height}",
+        flush=True,
+    )
+    try:
+        while True:
+            frame = capture_queue.get()
+            prepared = default_preprocess(frame, model_width, model_height)
+            job = engine.run([
+                prepared
+            ], partial(
+                completed,
+                original_frame=frame,
+                submitted_at=time.perf_counter(),
+            ))
+            # A single in-flight frame is intentional: the capture queue keeps
+            # only the newest image, so latency stays bounded to one inference.
+            job.wait(10000)
+    finally:
+        stop_event.set()
+        engine.close()
+
+
+def start_hud_threads():
     threading.Thread(target=telemetry_poller, daemon=True).start()
     threading.Thread(target=vision_control_poller, daemon=True).start()
     threading.Thread(target=tracking_commander, daemon=True).start()
     threading.Thread(target=hud_render_worker, daemon=True).start()
     threading.Thread(target=run_stream_server, daemon=True).start()
     threading.Thread(target=pipeline_watchdog, daemon=True).start()
-    user_data=HUDData()
-    app=GStreamerDetectionApp(hud_callback,user_data)
-    app.video_sink='fakesink'
-    app.run()   # GLib/GStreamer ana döngüsü — bloklar, programın canlı kalmasını sağlar
+
+if __name__=='__main__':
+    start_hud_threads()
+    force_direct = os.environ.get("APEX_HUD_BACKEND", "auto").lower() == "direct"
+    if GST_HAILO_AVAILABLE and not force_direct:
+        user_data=HUDData()
+        app=GStreamerDetectionApp(hud_callback,user_data)
+        app.video_sink='fakesink'
+        app.run()   # GLib/GStreamer ana döngüsü — bloklar, programın canlı kalmasını sağlar
+    else:
+        if not GST_HAILO_AVAILABLE:
+            print(f"[HUD] TAPPAS Python binding kullanılamıyor ({GST_HAILO_IMPORT_ERROR}); direct HailoRT seçildi.", flush=True)
+        run_direct_hailort()

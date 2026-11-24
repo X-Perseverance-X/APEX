@@ -12,9 +12,33 @@ from object_scan.core import (
     lidar_polar_to_camera,
     transform_points,
 )
+from object_scan.config import camera_distortion, camera_from_lidar, camera_matrix, load_sensor_rig, with_translation_overrides
 
 
 class ObjectScanGeometryTests(unittest.TestCase):
+    def test_user_measured_camera_translation_builds_expected_optical_transform(self):
+        rig = load_sensor_rig()
+        transform = camera_from_lidar(rig)
+        expected = np.asarray(
+            ((0.0, -1.0, 0.0, 0.0),
+             (0.0, 0.0, -1.0, -0.058),
+             (1.0, 0.0, 0.0, -0.078),
+             (0.0, 0.0, 0.0, 1.0)),
+        )
+        np.testing.assert_allclose(transform, expected, atol=1e-9)
+
+    def test_translation_overrides_do_not_mutate_saved_rig(self):
+        rig = load_sensor_rig()
+        updated = with_translation_overrides(rig, {"camera_x": 0.08, "imu_z": -0.12})
+        self.assertEqual(rig["camera"]["translation_m"]["x"], 0.078)
+        self.assertEqual(updated["camera"]["translation_m"]["x"], 0.08)
+        self.assertEqual(updated["imu"]["translation_m"]["z"], -0.12)
+
+    def test_intrinsics_fall_back_until_checkerboard_calibration_exists(self):
+        rig = load_sensor_rig()
+        self.assertIsNone(camera_matrix(rig, 1920, 1080))
+        self.assertIsNone(camera_distortion(rig))
+
     def test_kabsch_recovers_known_rigid_transform(self):
         source = np.asarray([
             [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],

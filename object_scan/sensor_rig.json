@@ -1,0 +1,39 @@
+{
+  "schema": "apex-sensor-rig-v1",
+  "reference_frame": "lidar_link",
+  "coordinate_convention": "x_forward_y_left_z_up",
+  "lidar": {
+    "translation_m": {"x": 0.0, "y": 0.0, "z": 0.0},
+    "rotation_rpy_deg": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0}
+  },
+  "camera": {
+    "translation_m": {"x": 0.078, "y": 0.0, "z": -0.058},
+    "rotation_rpy_deg": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+    "horizontal_fov_deg": 78.0,
+    "intrinsics": {
+      "status": "approximate_fov_pending_checkerboard_calibration",
+      "calibration_width_px": null,
+      "calibration_height_px": null,
+      "fx": null,
+      "fy": null,
+      "cx": null,
+      "cy": null,
+      "distortion_model": "unknown",
+      "distortion_coefficients": []
+    }
+  },
+  "imu": {
+    "translation_m": {"x": -0.020, "y": 0.015, "z": -0.060},
+    "rotation_rpy_deg": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+    "rigidly_mounted": true,
+    "transport": "esp32_usb_to_pi",
+    "status": "mounted_for_pi4_mapping_test"
+  },
+  "notes": [
+    "All translations are sensor origins expressed in lidar_link coordinates.",
+    "Translations are derived from the 2026-11 robot-center survey: lidar=(135,0,108) mm, camera=(213,0,50) mm.",
+    "IMU X/Y are measured; its retained Z=48 mm should be verified during the final bracket survey.",
+    "Change only translation_m and rotation_rpy_deg after moving a sensor.",
+    "Set imu.rigidly_mounted=true only after the IMU is physically fixed to the same rigid head."
+  ]
+}

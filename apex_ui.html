@@ -1,0 +1,3068 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>APEX COMMAND CENTER</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <style>
+        /* İLK TASARIMIN KUSURSUZ SİYAH/GRİ/KIRMIZI TEMASI (Kızıllık tamamen silindi) */
+        :root {
+            --primary: #e60000;
+            --bg-dark: #080808;
+            --panel-bg: #151515;
+            --panel-border: #333333;
+            --text-main: #aaaaaa;
+            --text-hl: #ffffff;
+            --font-main: 'Share Tech Mono', 'Courier New', monospace;
+            --font-header: 'Orbitron', sans-serif;
+            
+            /* Özel Slider Renkleri */
+            --c-cyan: #00e5b0;
+            --c-orange: #ffa500;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+
+        body, html {
+            width: 100vw; height: 100vh;
+            background-color: var(--bg-dark);
+            font-family: var(--font-main);
+            color: var(--text-main);
+            overflow: hidden;
+        }
+
+        /* NİHAİ TAKTİK GRID (Sol: Kontrol/Harita, Orta: Görüntü, Sağ: Parametre/Dev Terminal) */
+        .cockpit-grid {
+            width: 100vw; height: 100vh;
+            padding: 8px;
+            display: grid;
+            grid-template-columns: clamp(280px, 16vw, 330px) minmax(620px, 1fr) clamp(350px, 20vw, 410px);
+            grid-template-rows: 34px 1fr;
+            gap: 10px;
+        }
+
+        .col { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; overflow: hidden;}
+
+        .pnl {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
+            border-top: 3px solid var(--primary);
+        }
+
+        .panel-header {
+            font-family: var(--font-header); font-size: 12px; color: var(--primary);
+            display: flex; justify-content: space-between; align-items: center;
+            background: #0a0a0a; border-bottom: 1px solid var(--panel-border); 
+            padding: 8px 12px; cursor: pointer; letter-spacing: 1px;
+        }
+        .panel-header:hover { color: #fff; background: #111; }
+        .toggle-btn { color: #888; font-size: 14px; font-family: var(--font-main); font-weight: bold;}
+        .content { padding: 12px; display: flex; flex-direction: column; gap: 8px; height: 100%; overflow-y: auto;}
+        
+        .pnl.collapsed .content { display: none !important; }
+
+        .lbl { font-size: 10px; color: #888; letter-spacing: 1px; display: block; margin-bottom: 4px; text-transform: uppercase; font-weight: bold;}
+        .val-text { color: var(--text-hl); float: right; font-weight: bold; font-size: 12px;}
+        
+        input[type=range] { width: 100%; margin-bottom: 8px; background:#222; height:4px; outline:none; border-radius:2px; cursor: pointer; -webkit-appearance: none;}
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 2px; cursor: pointer; }
+        
+        .s-red { accent-color: var(--primary); } .s-red::-webkit-slider-thumb { background: var(--primary); }
+        .s-cyan { accent-color: var(--c-cyan); } .s-cyan::-webkit-slider-thumb { background: var(--c-cyan); }
+        .s-orange { accent-color: var(--c-orange); } .s-orange::-webkit-slider-thumb { background: var(--c-orange); }
+
+        button { background: #222; color: #ccc; border: 1px solid #444; padding: 10px; font-size: 12px; border-radius: 3px; cursor: pointer; font-family: var(--font-main); font-weight: bold; transition: 0.2s; width: 100%; text-transform: uppercase;}
+        button:hover { border-color: var(--primary); color: #fff; }
+        button:active, .btn-active { background: var(--primary) !important; color: #fff !important; border-color: #ff3333 !important; }
+
+        /* ÜST HEADER (DAĞ GİBİ APEX COMMAND CENTER) */
+        .top-ticker-bar {
+            grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center;
+            background: #0a0a0a; border: 1px solid var(--panel-border); padding: 0 15px; border-radius: 4px;
+        }
+        .ticker-logo { font-family: var(--font-header); font-size: 18px; font-weight: bold; color: var(--primary); letter-spacing: 2px;}
+        .ticker-logo span { color: #fff; font-size: 12px;}
+        .ticker-meta-grid { display: flex; align-items:center; gap: 14px; font-size: 11px; }
+        .val { color: var(--text-hl); font-weight: bold; }
+
+        /* KÜÇÜLTÜLMÜŞ MOTOR MATRİSİ VE GROUND STATUS */
+        .servo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 9px; max-height: 110px;}
+        .leg-box { background: #0a0a0a; border: 1px solid #222; padding: 4px; border-radius: 2px; }
+        .leg-name { color: var(--primary); font-weight: bold; margin-bottom: 2px; }
+        .joint-row { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
+        .joint-lbl { width: 10px; color: #777; }
+        .joint-bar { flex-grow: 1; height: 3px; background: #222; position: relative; }
+        .joint-fill { height: 100%; background: var(--text-main); width: 50%; }
+
+        .ground-status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 2px; }
+        .g-leg { background: #111; border: 1px solid #333; text-align: center; padding: 4px 0; font-size: 9px; font-weight: bold; border-radius:2px;}
+        .g-leg.planted { color: #00ff00; border-color: #00ff00; background: rgba(0,255,0,0.1); }
+        .g-leg.swing { color: var(--primary); border-color: var(--primary); background: rgba(230,0,0,0.1); }
+        .foot-contact-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; margin-top:6px; }
+        .foot-contact { padding:5px 3px; text-align:center; color:#666; border:1px solid #292929; background:#090909; font-size:9px; font-weight:bold; transition:background .08s,border-color .08s,color .08s,box-shadow .08s; }
+        .foot-contact.pressed { color:#001b10; border-color:#00ff88; background:#00ff88; box-shadow:0 0 10px rgba(0,255,136,.55); }
+
+        /* SOL SÜTUN - ALT ALTA OMNI VE YAW (KUSURSUZ DİZİLİM) */
+        .movement-panel { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; padding: 10px 0;}
+        #joyArea { width: 130px; height: 130px; background: #111; border-radius: 50%; position: relative; border: 2px solid var(--panel-border); box-shadow: inset 0 0 15px #000;}
+        #joyKnob { width: 44px; height: 44px; background: var(--primary); border-radius: 50%; position: absolute; top: 43px; left: 43px; pointer-events: none;}
+        
+        #joyAreaR { width: 160px; height: 44px; background: #111; border-radius: 22px; position: relative; border: 2px solid var(--panel-border); }
+        #joyKnobR { width: 44px; height: 44px; background: var(--primary); border-radius: 50%; position: absolute; top: -2px; left: 58px; pointer-events: none;}
+
+        /* HARİTA (SOL ALT - OLAĞANÜSTÜ YERİ KORUNDU) */
+        .gps-map-wrap { position:relative; width:100%; flex:1 1 0; min-height:180px; overflow:hidden; }
+        #map { position:absolute; inset:0; width:100%; height:100%; border-radius: 3px; border: 1px solid var(--panel-border); filter: grayscale(1) invert(1) contrast(1.2) sepia(1) hue-rotate(300deg); }
+        .gps-live-panel { position:absolute; z-index:500; left:7px; bottom:7px; right:7px; pointer-events:none; background:rgba(2,5,6,.88); border:1px solid #344148; border-left:3px solid var(--c-orange); padding:6px 8px; font-size:8px; line-height:1.4; color:#8d989d; }
+        .gps-live-panel .gps-state { color:var(--c-orange); font-family:var(--font-header); font-size:10px; letter-spacing:.7px; }
+        .gps-live-panel.fix { border-left-color:var(--c-cyan); }
+        .gps-live-panel.fix .gps-state { color:var(--c-cyan); }
+        .gps-live-panel .gps-coords { color:#fff; overflow-wrap:anywhere; }
+
+        /* ORTA SÜTUN — kamera ayrı konsolda; merkezde aynı verinin 2D/3D LiDAR görünümleri */
+        .lidar-map-panel { flex:1; min-height:0; position:relative; overflow:hidden; background:#030607; border:1px solid var(--panel-border); border-top:3px solid var(--primary); border-radius:4px; }
+        .lidar-view-layer { position:absolute; inset:0; visibility:hidden; opacity:0; pointer-events:none; transition:opacity .18s ease; }
+        .lidar-view-layer.active { visibility:visible; opacity:1; pointer-events:auto; }
+        #LidarMapCanvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+        #PointCloudMap { position:absolute; inset:0; width:100%; height:100%; background:radial-gradient(circle at 50% 55%,#071012 0,#030607 58%,#010202 100%); }
+        #PointCloudMap canvas { width:100% !important; height:100% !important; display:block; }
+        #NavigationCanvas { position:absolute; inset:0; width:100%; height:100%; display:block; cursor:crosshair; background:#030607; }
+        #Navigation3DMap { position:absolute; inset:0; width:100%; height:100%; display:none; background:radial-gradient(circle at 50% 48%,#081315 0,#030607 62%,#010202 100%); }
+        #Navigation3DMap canvas { width:100% !important; height:100% !important; display:block; }
+        #NavigationView.nav-perspective #NavigationCanvas { display:none; }
+        #NavigationView.nav-perspective #Navigation3DMap { display:block; }
+        .lidar-3d-hint { position:absolute; left:10px; bottom:10px; z-index:9; color:#718087; background:rgba(3,7,8,.88); border:1px solid #26363c; padding:6px 8px; font-size:9px; pointer-events:none; }
+        .lidar-tag { position: absolute; top: 6px; left: 8px; font-family: var(--font-header); font-size: 10px; color: var(--primary); font-weight: bold; background: rgba(0,0,0,0.8); padding: 2px 6px; border: 1px solid var(--primary); z-index: 10;}
+        .lidar-readout { position:absolute; top:40px; left:10px; display:grid; grid-template-columns:repeat(3, minmax(95px,1fr)); gap:6px; z-index:8; pointer-events:none; }
+        .lidar-metric { background:rgba(3,7,8,.86); border:1px solid #26363c; border-left:3px solid var(--c-cyan); padding:7px 9px; min-width:96px; }
+        .lidar-metric .k { color:#738188; font-size:8px; letter-spacing:1px; }
+        .lidar-metric .v { color:#fff; font-family:var(--font-header); font-size:16px; margin-top:3px; }
+        .lidar-legend { position:absolute; right:10px; bottom:10px; z-index:8; background:rgba(3,7,8,.88); border:1px solid #26363c; padding:8px 10px; font-size:9px; line-height:1.55; color:#8b989e; pointer-events:none; }
+        .lidar-controls { position:absolute; right:10px; top:10px; display:flex; gap:5px; z-index:12; }
+        .lidar-controls button { width:auto; padding:6px 9px; font-size:10px; background:rgba(10,14,16,.92); }
+        .lidar-view-btn.active { color:#001b16 !important; background:var(--c-cyan) !important; border-color:var(--c-cyan) !important; }
+        #btnLidarNav.active { color:#1b0d00 !important; background:var(--c-orange) !important; border-color:#ffc15a !important; }
+        .lidar-map-panel.nav-mode .lidar-readout,
+        .lidar-map-panel.nav-mode .lidar-legend { display:none; }
+        .nav-lock-banner { position:absolute; left:10px; top:112px; z-index:9; padding:6px 10px; color:#ff4650; background:rgba(20,3,4,.94); border:1px solid #a51f27; font-family:var(--font-header); font-size:9px; letter-spacing:.7px; white-space:nowrap; pointer-events:none; }
+        .nav-status-card { position:absolute; right:10px; top:52px; z-index:9; width:250px; padding:9px; background:rgba(3,7,8,.92); border:1px solid #26363c; border-top:2px solid var(--primary); pointer-events:none; }
+        .nav-status-title { color:var(--primary); font-family:var(--font-header); font-size:9px; letter-spacing:.8px; margin-bottom:7px; }
+        .nav-status-grid { display:grid; grid-template-columns:1fr auto; gap:5px 10px; font-size:9px; }
+        .nav-status-grid span { color:#748188; }
+        .nav-status-grid strong { color:#fff; text-align:right; }
+        .nav-status-grid strong.orange { color:var(--c-orange); }
+        .nav-actions { position:absolute; left:50%; bottom:74px; transform:translateX(-50%); z-index:11; display:flex; gap:5px; padding:6px; background:rgba(3,7,8,.94); border:1px solid #26363c; white-space:nowrap; }
+        .nav-actions button { width:auto; padding:7px 9px; font-size:9px; }
+        .nav-actions button.nav-active { color:#1b0d00 !important; background:var(--c-orange) !important; border-color:#ffc15a !important; }
+        .nav-actions button:disabled { opacity:.35; cursor:not-allowed; }
+        .nav-dimension-toggle { position:absolute; left:10px; top:152px; z-index:11; display:flex; gap:5px; padding:5px; background:rgba(3,7,8,.94); border:1px solid #26363c; }
+        .nav-dimension-toggle button { width:auto; padding:6px 8px; font-size:9px; }
+        .nav-dimension-toggle button.nav-active { color:#001b16 !important; background:var(--c-cyan) !important; border-color:var(--c-cyan) !important; }
+        .nav-hint { position:absolute; left:10px; bottom:10px; z-index:9; max-width:220px; padding:7px 9px; color:#718087; background:rgba(3,7,8,.9); border:1px solid #26363c; font-size:9px; line-height:1.45; pointer-events:none; }
+        .nav-map-legend { position:absolute; right:10px; bottom:10px; z-index:9; padding:7px 9px; color:#839198; background:rgba(3,7,8,.9); border:1px solid #26363c; font-size:9px; line-height:1.5; pointer-events:none; }
+        .nav-event { position:absolute; left:10px; top:52px; z-index:9; max-width:270px; padding:7px 9px; color:#839198; background:rgba(3,7,8,.9); border:1px solid #26363c; border-left:3px solid var(--c-orange); font-size:9px; line-height:1.4; pointer-events:none; }
+        .vision-launch-card { border:1px solid #23443c; border-left:3px solid var(--c-cyan); background:#09110f; padding:9px; border-radius:3px; }
+        .vision-launch-card .title { color:var(--c-cyan); font-family:var(--font-header); font-size:10px; margin-bottom:6px; }
+        .vision-launch-card .sub { color:#75817d; font-size:9px; line-height:1.4; margin-bottom:7px; }
+
+        /* SAĞ SÜTUN KONTROLLER (İLK TASARIMDAKİ GİBİ NET VE BELİRGİN) */
+        .control-scroll-box { display:flex; flex-direction:column; gap:8px; overflow:hidden; padding-right:4px; min-height:0; }
+        .control-tabs { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; flex:0 0 auto; padding-bottom:4px; border-bottom:1px solid #262626; }
+        .control-tabs button { min-height:38px; padding:10px 5px; font-size:10px; font-weight:800; letter-spacing:.45px; color:#aeb8bc; }
+        .control-tabs button.active { color:#001b16; border-color:var(--c-cyan); background:var(--c-cyan); }
+        .control-section { display:none; flex:1 1 auto; min-height:0; overflow-y:auto; padding-right:3px; flex-direction:column; gap:8px; }
+        .control-section.active { display:flex; }
+        .panel-focus-btn { margin-left:auto; width:auto; min-width:28px; padding:2px 6px; font-size:9px; color:var(--c-cyan); border-color:#28534c; }
+        .pnl.panel-focus { position:fixed !important; left:calc(clamp(280px,16vw,330px) + 18px); right:calc(clamp(350px,20vw,410px) + 18px); top:46px; bottom:8px; z-index:1000; flex:none !important; min-height:0 !important; background:#070909; box-shadow:0 0 0 1px #143a34,0 0 24px rgba(0,0,0,.85); }
+        .pnl.panel-focus.collapsed { height:auto !important; bottom:auto; }
+        #armStatus { height:28px; min-height:28px; line-height:16px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+        #localStatus { height:30px; min-height:30px !important; line-height:13px; overflow:hidden; }
+
+        /* ORİJİNAL ESKİ SES SİSTEMİ (DROPDOWN YOK, TRACK İLERİ/GERİ VAR) */
+        .audio-controls { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 5px 0; }
+        .audio-controls button { width: 50px; padding: 10px 0; font-size: 16px; border-color: rgba(255,165,0,0.3); color: var(--c-orange); margin:0;}
+        .audio-controls button:active { background: rgba(255,165,0,0.2) !important; }
+        .track-display { text-align: center; color: var(--c-orange); font-size: 26px; font-weight: bold; line-height: 1; width: 60px;}
+
+        /* LEG SERVO LAB + POWER MONITOR */
+        .top-launch-btn { width:auto; padding:5px 10px; font-size:9px; color:var(--c-cyan); border-color:var(--c-cyan); background:#111; white-space:nowrap; }
+        .lab-card { background:#0a0a0a; border:1px solid #2b2b2b; border-left:3px solid var(--primary); padding:8px; border-radius:3px; }
+        .lab-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+        .lab-grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; }
+        .lab-select, .lab-number { width:100%; background:#0d0d0d; color:#ddd; border:1px solid #444; padding:7px 6px; font-family:var(--font-main); font-size:11px; border-radius:3px; }
+        .lab-mini { font-size:9px; color:#777; line-height:1.35; }
+        .lab-status { font-size:10px; padding:6px; background:#050505; border:1px solid #222; color:var(--c-cyan); white-space:pre-wrap; line-height:1.35; }
+        .joint-preset-row { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; }
+        .joint-preset-row button { padding:7px 4px; font-size:10px; }
+        .power-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; }
+        .power-card { background:#090909; border:1px solid #333; border-radius:3px; padding:7px 5px; text-align:center; }
+        .power-card .name { color:#777; font-size:8px; letter-spacing:1px; }
+        .power-card .big { font-family:var(--font-header); font-size:15px; color:var(--c-cyan); margin-top:3px; }
+        .power-card .sub { color:#666; font-size:8px; margin-top:2px; }
+        .power-card.warn { border-color:var(--c-orange); }
+        .power-card.warn .big { color:var(--c-orange); }
+        .power-card.crit { border-color:var(--primary); box-shadow:0 0 8px rgba(230,0,0,.25); }
+        .power-card.crit .big { color:var(--primary); }
+        .calib-table { display:grid; grid-template-columns:34px 1fr 1fr 1fr; gap:4px; align-items:center; font-size:9px; }
+        .calib-table input { min-width:0; background:#0d0d0d; color:#ddd; border:1px solid #333; padding:5px 3px; font-family:var(--font-main); }
+
+        /* TERMİNAL LOG (DİKEY OLARAK ŞAHA KALDIRILDI) */
+        .terminal { background: #000; color: #00ccee; font-family: var(--font-main); padding: 10px; flex: 1 1 0; min-height: 0; overflow-y: auto; border-radius: 3px; border: 1px solid var(--panel-border); font-size:11px; line-height: 1.4; white-space: pre-wrap; word-break: break-word;}
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius:2px;}
+        ::-webkit-scrollbar-track { background: #111; }
+    </style>
+</head>
+<body>
+
+    <div class="cockpit-grid">
+        
+        <div class="top-ticker-bar">
+            <div class="ticker-logo">APEX COMMAND CENTER <span>v41</span></div>
+            <div class="ticker-meta-grid">
+                <div>LINK: <span class="val" id="tickerLink" style="color:#888">BAĞLANIYOR...</span></div>
+                <div>MOD: <span class="val" id="tickerMode" style="color:#888">--</span></div>
+                <div>SYS: <span class="val" id="tickerSys" style="color:#888">--</span></div>
+                <button class="top-launch-btn" onclick="openCameraConsole()" style="color:#27a7ff;border-color:#27a7ff;">AI CAMERA ↗</button>
+                <button class="top-launch-btn" onclick="openKinematicsLab()">3D KINEMATICS ↗</button>
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="pnl" id="pnlSystemLog" style="flex: 1 1 0; min-height:0; padding:0;">
+                <div class="panel-header" onclick="togglePnl(this)" style="margin:0; padding:8px 12px; border-bottom:0;">
+                    <span>SYSTEM LOG</span><button class="panel-focus-btn" onclick="event.stopPropagation();togglePanelFocus('pnlSystemLog',this)">BÜYÜT</button><span class="toggle-btn">[-]</span>
+                </div>
+                <div id="bootDiagBox" style="background:#0a0a0a; color:#3a3; font-family: var(--font-main); font-size:10px; line-height:1.4; padding:6px 10px; border-bottom:1px solid var(--panel-border); white-space:pre-wrap; flex-shrink:0; max-height:90px; overflow-y:auto;">Donanım taraması bekleniyor...</div>
+                <div class="terminal" id="sysLogBox">Bağlantı bekleniyor...</div>
+            </div>
+
+            <div class="pnl">
+                <div class="panel-header" onclick="togglePnl(this)"><span>MOVEMENT CONTROL</span><span class="toggle-btn">[-]</span></div>
+                <div class="content movement-panel">
+                    <span class="lbl">OMNI MOVEMENT (X/Y)</span>
+                    <div id="joyArea"><div id="joyKnob"></div></div>
+                    
+                    <span class="lbl" style="margin-top:10px;">YAW ROTATION (R)</span>
+                    <div id="joyAreaR"><div id="joyKnobR"></div></div>
+                </div>
+            </div>
+
+            <div class="pnl" id="pnlGps" style="flex: 1 1 0; min-height:0; padding:0;">
+                <div class="panel-header" onclick="togglePnl(this)" style="margin:0; border-bottom:0;">
+                    <span>TACTICAL GPS MAP</span><button class="panel-focus-btn" onclick="event.stopPropagation();togglePanelFocus('pnlGps',this)">BÜYÜT</button><span class="toggle-btn">[-]</span>
+                </div>
+                <div class="gps-map-wrap">
+                    <div id="map"></div>
+                    <div id="gpsLivePanel" class="gps-live-panel">
+                        <div id="gpsState" class="gps-state">GPS BEKLENİYOR</div>
+                        <div id="gpsCoords" class="gps-coords">-- / --</div>
+                        <div id="gpsUpdate">CANLI TELEMETRİ BEKLENİYOR</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="lidar-map-panel">
+                <div id="Lidar2DView" class="lidar-view-layer">
+                    <canvas id="LidarMapCanvas"></canvas>
+                </div>
+                <div id="Lidar3DView" class="lidar-view-layer active">
+                    <div id="PointCloudMap"></div>
+                    <div class="lidar-3d-hint">SÜRÜKLE: DÖNDÜR · TEKERLEK: YAKINLAŞ<br>A1M8 GERÇEK YATAY TARAMA DÜZLEMİ</div>
+                </div>
+                <div id="NavigationView" class="lidar-view-layer">
+                    <canvas id="NavigationCanvas"></canvas>
+                    <div id="Navigation3DMap"></div>
+                    <div class="nav-lock-banner">LIDAR GÜVENLİKLİ · DÜŞÜK HIZLI ROTA YÜRÜTME</div>
+                    <div id="navigationEvent" class="nav-event">Navigasyon veri kanalı bekleniyor.</div>
+                    <div class="nav-status-card">
+                        <div class="nav-status-title">HEDEF & ROTA TELEMETRİSİ</div>
+                        <div class="nav-status-grid">
+                            <span>HARİTA</span><strong id="navigationMapMode">--</strong>
+                            <span>HEDEF X/Y</span><strong id="navigationGoalText">--</strong>
+                            <span>ROTA</span><strong id="navigationRouteStatus">--</strong>
+                            <span>UZUNLUK</span><strong id="navigationRouteLength">--</strong>
+                            <span>BİLİNMEYEN</span><strong id="navigationUnknownRatio">--</strong>
+                            <span>IMU R/P/Y</span><strong id="navigationImuText">--</strong>
+                            <span>TOF ÖN</span><strong id="navigationTofText">--</strong>
+                            <span>KARAR</span><strong id="navigationDecision" class="orange">NO_GOAL</strong>
+                            <span>YÜRÜTME</span><strong id="navigationExecutionState" style="color:#ff9d22">HAZIR</strong>
+                        </div>
+                    </div>
+                    <div class="nav-dimension-toggle">
+                        <button id="navigation2DBtn" class="nav-active" onclick="setNavigationDimension('2d')">2B PLAN</button>
+                        <button id="navigation3DBtn" onclick="setNavigationDimension('3d')">3B PERSPEKTİF</button>
+                    </div>
+                    <div id="navigationHint" class="nav-hint">HARİTADA HEDEF NOKTAYA TIKLA<br>Manuel onay veya otonom kararla tüm waypointler izlenir.</div>
+                    <div class="nav-actions">
+                        <button id="navigationManualBtn" class="nav-active" onclick="setNavigationMode('manual')">MANUEL</button>
+                        <button id="navigationAutoBtn" onclick="setNavigationMode('auto')">OTONOM</button>
+                        <button id="navigationApproveBtn" onclick="approveNavigationRoute()" style="color:var(--c-cyan);border-color:var(--c-cyan)" disabled>ROTAYI ONAYLA</button>
+                        <button onclick="clearNavigationGoal()" style="color:#ff4650;border-color:#8b1c22">TEMİZLE</button>
+                        <button onclick="openNavigationConsole()">DETAY ↗</button>
+                    </div>
+                    <div class="nav-map-legend"><span style="color:#53636a">■</span> BİLİNMEYEN<br><span style="color:#173036">■</span> BOŞ<br><span style="color:#ff4650">■</span> ENGEL<br><span style="color:#00e5b0">━</span> ROTA<br><span style="color:#ff9d22">◆</span> HEDEF</div>
+                </div>
+                <div class="lidar-tag">3D POINT CLOUD — RPLIDAR A1M8</div>
+                <div class="lidar-readout">
+                    <div class="lidar-metric"><div class="k">ÖN MESAFE</div><div class="v" id="lidarFront">--</div></div>
+                    <div class="lidar-metric"><div class="k">SOL MESAFE</div><div class="v" id="lidarLeft">--</div></div>
+                    <div class="lidar-metric"><div class="k">SAĞ MESAFE</div><div class="v" id="lidarRight">--</div></div>
+                </div>
+                <div class="lidar-controls">
+                    <button id="btnLidar2D" class="lidar-view-btn" onclick="setLidarViewMode('2d')">2D HARİTA</button>
+                    <button id="btnLidar3D" class="lidar-view-btn active" onclick="setLidarViewMode('3d')">3D BULUT</button>
+                    <button id="btnLidarNear" onclick="setLidarRange(-1)" style="display:none">YAKLAŞ +</button>
+                    <button id="btnLidarFar" onclick="setLidarRange(1)" style="display:none">UZAKLAŞ −</button>
+                    <button onclick="resetLidarView()">MERKEZLE</button>
+                    <button id="btnLidarNav" class="lidar-view-btn" onclick="setLidarViewMode('nav')" style="color:#ff9d22;border-color:#ff9d22;">ROTA</button>
+                </div>
+                <div class="lidar-legend">
+                    <div><span style="color:#ff3845">●</span> 0–0.6 m KRİTİK</div>
+                    <div><span style="color:#ffad21">●</span> 0.6–1.5 m YAKIN</div>
+                    <div><span style="color:#00e5b0">●</span> 1.5–3.0 m ORTA</div>
+                    <div><span style="color:#27a7ff">●</span> 3.0 m+ UZAK</div>
+                    <div style="margin-top:5px;color:#59666b">2D LiDAR yükseklik ölçmez; renk gerçek yatay mesafeyi gösterir.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col">
+            <div class="pnl" id="pnlCtrl">
+                <div class="panel-header" onclick="togglePnl(this)"><span>SYSTEM CONTROL</span><span class="toggle-btn">[-]</span></div>
+                <div class="content control-scroll-box">
+
+                    <span class="lbl">KONTROL MODU</span>
+                    <div id="armStatus" role="status" style="color:var(--c-orange,#ff9900);padding:6px 0;">SERVO: BAĞLANTI BEKLENİYOR</div>
+                    <div style="display:flex;gap:4px;margin-bottom:8px;">
+                        <button id="btnStandArm" onclick="startControlledStand()" style="background:#ff9900;color:#111;border-color:#ff9900;">KALKIŞ / ARM</button>
+                        <button onclick="cutStandPwm()" style="border-color:var(--primary);color:var(--primary);">PWM KES</button>
+                    </div>
+                    <div style="display:flex; gap:4px; margin-bottom:4px;">
+                        <button id="btnManual" class="btn-active" onclick="setControlMode('MANUAL')">MANUEL</button>
+                        <button id="btnOto" onclick="setControlMode('OTO')" style="border-color:var(--c-cyan); color:var(--c-cyan);">OTO (LIDAR)</button>
+                    </div>
+                    <div id="btnLidarMotor" style="border:1px solid #444; color:#888; padding:7px; text-align:center; font-size:11px; font-weight:bold; border-radius:3px;">LIDAR MOTOR: DURUM BEKLENİYOR</div>
+                    <div style="display:flex; gap:4px; margin-bottom:6px;">
+                        <button id="btnLidarStart" onclick="setLidarMotor(true)" style="border-color:var(--c-cyan); color:var(--c-cyan);">LIDAR BAŞLAT</button>
+                        <button id="btnLidarStop" onclick="setLidarMotor(false)" style="border-color:#777; color:#aaa;">LIDAR DURDUR</button>
+                    </div>
+                    <div class="vision-launch-card">
+                        <div class="title">AI CAMERA CONSOLE</div>
+                        <div class="sub" id="visionSummary">HD kamera, doğrulanmış kişi seçimi ve AI takip kontrolleri ayrı ekranda.</div>
+                        <button onclick="openCameraConsole()" style="border-color:#27a7ff;color:#27a7ff;">KAMERA + AI KONTROLLERİ ↗</button>
+                    </div>
+                    <div id="localStatus" style="font-size:10px; color:#666; margin-bottom:6px; min-height:12px;">Hazır.</div>
+
+                    <div class="lab-card" id="laserControlCard" style="border-left-color:#ff2d2d;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                            <div><span class="lbl" style="color:#ff4650;">LAZER PWM · GPIO14</span><div id="laserState" class="lab-mini">KAPALI · USB DURUMU BEKLENİYOR</div></div>
+                            <button id="btnLaserOff" onclick="setLaserPower(0,true)" style="width:auto;min-width:82px;border-color:#ff4650;color:#ff4650;">KAPAT</button>
+                        </div>
+                        <span class="lbl" style="margin-top:8px;">GÜÇ <span class="val-text" id="laserPowerVal">0%</span></span>
+                        <input id="laserPowerSlider" type="range" class="s-red" min="0" max="100" step="1" value="0" oninput="laserPowerInput(this.value)">
+                    </div>
+
+                    <div class="lab-card" id="fanControlCard" style="border-left-color:#27a7ff;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                            <div><span class="lbl" style="color:#27a7ff;">KASA FANI · GPIO18 PWM</span><div id="fanState" class="lab-mini">NTC / FAN DURUMU BEKLENİYOR</div></div>
+                            <button id="btnFanAuto" onclick="setFanAuto()" style="width:auto;min-width:82px;border-color:var(--c-cyan);color:var(--c-cyan);">AUTO</button>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;margin-top:7px;">
+                            <span class="lbl">İÇ SICAKLIK <span class="val-text" id="internalTempVal">--.-°C</span></span>
+                            <span class="lbl">GÜÇ <span class="val-text" id="fanPowerVal">100%</span></span>
+                        </div>
+                        <input id="fanPowerSlider" type="range" class="s-cyan" min="0" max="100" step="1" value="100" oninput="fanPowerInput(this.value)">
+                        <div class="lab-mini" style="margin-top:5px;">Slider MANUEL override · NTC yoksa yalnız AUTO %100 failsafe</div>
+                    </div>
+
+                    <div class="lab-card" id="cameraGimbalCard" style="border-left-color:var(--c-orange);">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                            <div><span class="lbl" style="color:var(--c-orange);">KAMERA PAN / TILT · PCA 0x40</span><div id="cameraGimbalState" class="lab-mini">CH15 PAN · CH14 TILT · DURUM BEKLENİYOR</div></div>
+                            <button onclick="centerCameraGimbal()" style="width:auto;min-width:82px;border-color:var(--c-orange);color:var(--c-orange);">MERKEZ 90°</button>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;margin-top:7px;">
+                            <span class="lbl">PAN <span class="val-text" id="cameraPanVal">90°</span></span>
+                            <span class="lab-mini">45° SAĞ · 135° SOL</span>
+                        </div>
+                        <input id="cameraPanSlider" type="range" class="s-orange" min="45" max="135" step="1" value="90" oninput="cameraGimbalInput('pan',this.value)">
+                        <div style="display:flex;justify-content:space-between;margin-top:7px;">
+                            <span class="lbl">TILT <span class="val-text" id="cameraTiltVal">90°</span></span>
+                            <span class="lab-mini">45° YUKARI · 135° AŞAĞI</span>
+                        </div>
+                        <input id="cameraTiltSlider" type="range" class="s-orange" min="45" max="135" step="1" value="90" oninput="cameraGimbalInput('tilt',this.value)">
+                        <div class="lab-grid-2" style="margin-top:6px;">
+                            <button onclick="stabilizeCameraGimbal()" style="border-color:var(--c-cyan);color:var(--c-cyan);">AUTO SABİT BAKIŞ</button>
+                            <button onclick="disableCameraGimbal()" style="border-color:#777;color:#aaa;">KAMERA PWM KES</button>
+                        </div>
+                        <div class="lab-mini" style="margin-top:5px;">Firmware sınırı her iki eksende 45°–135°; açılış merkezi 90°.</div>
+                    </div>
+
+                    <div style="border-top: 1px solid var(--panel-border); margin: 6px 0;"></div>
+
+                    <span class="lbl" style="color:var(--c-cyan);">LEG SERVO LAB — 18 SERVO TEST / MONTAJ</span>
+                    <div class="lab-card">
+                        <div class="lab-mini" style="margin-bottom:6px;">Bacaklar takılı değilken yön doğrulama için. Güvenli sınır 5°–175°. Coxa montaj merkezi 90°. Sağ F/T montaj pozu 5°, sol F/T 175°.</div>
+                        <div class="lab-grid-2">
+                            <label class="lbl">BACAK
+                                <select id="legLabLeg" class="lab-select" onchange="legLabSelectionChanged()">
+                                    <option value="0">RF — SAĞ ÖN</option><option value="1">RM — SAĞ ORTA</option><option value="2">RR — SAĞ ARKA</option>
+                                    <option value="3">LF — SOL ÖN</option><option value="4">LM — SOL ORTA</option><option value="5">LR — SOL ARKA</option>
+                                </select>
+                            </label>
+                            <label class="lbl">EKLEM
+                                <select id="legLabJoint" class="lab-select" onchange="legLabSelectionChanged()">
+                                    <option value="0">COXA</option><option value="1">FEMUR</option><option value="2">TIBIA</option>
+                                </select>
+                            </label>
+                        </div>
+                        <span class="lbl" style="margin-top:5px;">HEDEF AÇI <span class="val-text" id="legLabAngleVal">90°</span></span>
+                        <input id="legLabAngle" type="range" class="s-cyan" min="5" max="175" value="90" oninput="legLabAngleInput(this.value)">
+                        <div class="joint-preset-row">
+                            <button onclick="legLabSetAngle(5)">5°</button>
+                            <button onclick="legLabSetAngle(90)">90°</button>
+                            <button onclick="legLabSetAngle(175)">175°</button>
+                        </div>
+                        <div class="lab-grid-2" style="margin-top:5px;">
+                            <button onclick="legLabMountPose(false)" style="border-color:var(--c-orange);color:var(--c-orange);">SEÇİLİ MONTAJ POZU</button>
+                            <button onclick="legLabMountPose(true)" style="border-color:var(--primary);color:var(--primary);">TÜMÜ MONTAJ POZU</button>
+                        </div>
+                        <div class="lab-grid-2" style="margin-top:5px;">
+                            <button onclick="legLabHomePose(false)" style="border-color:var(--c-cyan);color:var(--c-cyan);">SEÇİLİ HOME/STAND</button>
+                            <button onclick="legLabHomePose(true)" style="border-color:var(--c-cyan);color:var(--c-cyan);">TÜMÜ HOME/STAND</button>
+                        </div>
+                        <div class="lab-grid-3" style="margin-top:5px;">
+                            <button onclick="legLabOff('joint')">EKLEM PWM KES</button>
+                            <button onclick="legLabOff('leg')">BACAK PWM KES</button>
+                            <button onclick="legLabOff('all')" style="border-color:var(--primary);color:var(--primary);">TÜM PWM KES</button>
+                        </div>
+                        <div id="legLabStatus" class="lab-status" style="margin-top:6px;">Servo bilgisi bekleniyor...</div>
+                    </div>
+
+                    <span class="lbl" style="color:var(--c-orange);">LEG PWM / OFFSET CALIBRATION</span>
+                    <div class="lab-card">
+                        <div class="lab-mini" style="margin-bottom:5px;">Seçili bacağın PCA pulse aralıkları ve trim offsetleri. Buradaki değerler NVS'ye kaydedilir.</div>
+                        <div class="calib-table">
+                            <div></div><div>MIN µs</div><div>MAX µs</div><div>OFFSET °</div>
+                            <div>C</div><input id="lcCMin" type="number"><input id="lcCMax" type="number"><input id="lcCOff" type="number">
+                            <div>F</div><input id="lcFMin" type="number"><input id="lcFMax" type="number"><input id="lcFOff" type="number">
+                            <div>T</div><input id="lcTMin" type="number"><input id="lcTMax" type="number"><input id="lcTOff" type="number">
+                        </div>
+                        <div class="lab-grid-2" style="margin-top:6px;">
+                            <button onclick="legLabLoadCalibration()">KALİBRASYON YÜKLE</button>
+                            <button onclick="legLabSaveCalibration()" style="border-color:var(--c-orange);color:var(--c-orange);">KAYDET</button>
+                        </div>
+                    </div>
+
+                    <div style="border-top: 1px solid var(--panel-border); margin: 6px 0;"></div>
+
+                    <span class="lbl" style="color:#ff2d2d;">ROBOT KOL KALİBRASYON</span>
+                    <div style="font-size:9px; color:#777; line-height:1.35; margin-bottom:4px;">
+                        Servo horn takarken önce <b>90° KALİBRE</b>: base önü görsün, joint1 orta, joint2 orta. Joint1 artık <b>5° gövde üstüne katlı</b>, <b>175° öne açılma</b>. Gripper rack-and-pinion: <b>90° açık</b>, kapatma 90°→180° yönünde; kapalı açı = MAX.
+                    </div>
+                    <div style="display:flex; gap:4px; margin-bottom:4px;">
+                        <button onclick="armCalibrate90()" style="border-color:#ff2d2d; color:#ff2d2d;">90° KALİBRE</button>
+                        <button onclick="armHomePose()" style="border-color:#777; color:#aaa;">KOL BEKLEME</button>
+                    </div>
+                    <span class="lbl">BASE — 90° ÖN MERKEZ <span class="val-text" id="vArmBase">90°</span></span>
+                    <input type="range" class="s-red" id="armBase" min="5" max="175" value="90" oninput="sendArmServoDebounced('base', this.value)">
+                    <span class="lbl">JOINT1 — 5° KATLI / 175° ÖNE <span class="val-text" id="vArmJ1">90°</span></span>
+                    <input type="range" class="s-red" id="armJ1" min="5" max="175" value="90" oninput="sendArmServoDebounced('joint1', this.value)">
+                    <span class="lbl">JOINT2 — 5° BEKLEME / 175° DIŞARI <span class="val-text" id="vArmJ2">90°</span></span>
+                    <input type="range" class="s-red" id="armJ2" min="5" max="175" value="90" oninput="sendArmServoDebounced('joint2', this.value)">
+                    <span class="lbl" style="color:#ffa500;">GRIPPER MANUEL <span class="val-text" style="color:#ffa500" id="vArmGrip">90°</span></span>
+                    <input type="range" class="s-orange" id="armGrip" min="90" max="120" value="90" oninput="sendArmServoDebounced('gripper', this.value)">
+                    <div style="display:flex; gap:4px; margin-bottom:4px;">
+                        <button onclick="armGripperPreset('open')" style="border-color:#ffa500; color:#ffa500;">GRIPPER AÇ</button>
+                        <button onclick="armGripperPreset('close')" style="border-color:#ffa500; color:#ffa500;">GRIPPER KAPAT</button>
+                    </div>
+                    <button onclick="armOff()" style="border-color:#555; color:#888; margin-bottom:4px;">KOL PWM KES / SERVOYU BOŞA AL</button>
+                    <button onclick="armDiagnose()" style="border-color:#00e5b0; color:#00e5b0; margin-bottom:4px;">KOL BAĞLANTI TESTİ</button>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; font-size:10px; margin-bottom:4px;">
+                        <label>Açık Sabit <input id="armGripMin" type="number" min="90" max="90" value="90" readonly style="width:100%; background:#111; color:#777; border:1px solid #333; padding:4px;"></label>
+                        <label>Kapalı / MAX <input id="armGripMax" type="number" min="90" max="175" value="120" oninput="applyGripperLimits(90, this.value)" style="width:100%; background:#111; color:#ccc; border:1px solid #333; padding:4px;"></label>
+                        <label>Açık <input id="armGripOpen" type="number" min="90" max="90" value="90" readonly style="width:100%; background:#111; color:#777; border:1px solid #333; padding:4px;"></label>
+                        <label>Kapalı <input id="armGripClose" type="number" min="90" max="175" value="120" readonly style="width:100%; background:#111; color:#777; border:1px solid #333; padding:4px;"></label>
+                    </div>
+                    <button onclick="saveArmGripperCalibration()" style="border-color:#ffa500; color:#ffa500; margin-bottom:6px;">GRIPPER ARALIĞINI KAYDET</button>
+
+                    <div style="border-top: 1px solid var(--panel-border); margin: 6px 0;"></div>
+
+                    <span class="lbl" style="color:var(--c-cyan);">POWER + TOF400C TELEMETRY</span>
+                    <div class="power-grid">
+                        <div class="power-card" id="batRCard"><div class="name">RIGHT 3S / 0x40</div><div class="big" id="batRVal">-- V</div><div class="sub" id="batRCellVal">-- V/CELL</div></div>
+                        <div class="power-card" id="batLCard"><div class="name">LEFT 3S / 0x41</div><div class="big" id="batLVal">-- V</div><div class="sub" id="batLCellVal">-- V/CELL</div></div>
+                        <div class="power-card" id="tofCard"><div class="name">TOF400C FRONT</div><div class="big" id="tofVal">-- mm</div><div class="sub" id="tofState">I2C 0x29</div><div class="sub" id="tofSampleState">SAMPLE --</div></div>
+                    </div>
+                    <div class="lab-mini" style="margin-bottom:6px;">ADC: sağ pil GPIO1, sol pil GPIO2. ToF: mevcut I²C SDA=8 / SCL=9. Pil renkleri yük altındaki anlık gerilime göre uyarı verir.</div>
+
+                    <div style="border-top: 1px solid var(--panel-border); margin: 6px 0;"></div>
+
+                    <span class="lbl">MPU6050 — GÖVDE EĞİMİ (CANLI)</span>
+                    <div style="display:flex; gap:4px; margin-bottom:6px; font-family:var(--font-main); font-size:11px;">
+                        <div style="flex:1; background:#0a0a0a; border:1px solid var(--panel-border); border-radius:3px; padding:4px 0; text-align:center;">
+                            <div style="color:#777; font-size:9px;">PITCH</div>
+                            <div id="mpuPitchVal" style="color:var(--primary); font-weight:bold;">--°</div>
+                        </div>
+                        <div style="flex:1; background:#0a0a0a; border:1px solid var(--panel-border); border-radius:3px; padding:4px 0; text-align:center;">
+                            <div style="color:#777; font-size:9px;">ROLL</div>
+                            <div id="mpuRollVal" style="color:var(--primary); font-weight:bold;">--°</div>
+                        </div>
+                        <div style="flex:1; background:#0a0a0a; border:1px solid #333; border-radius:3px; padding:4px 0; text-align:center;" title="REL YAW: MPU6050 gyro-Z entegrasyonu; mutlak pusula yönü değildir ve uzun sürede drift yapabilir.">
+                            <div style="color:#777; font-size:9px;">REL YAW</div>
+                            <div id="mpuYawVal" style="color:var(--primary); font-weight:bold;">--°</div>
+                        </div>
+                    </div>
+                    <span class="lbl" style="color:var(--c-cyan);">GİMBAL DÜZELTME (İÇSEL — TEŞHİS İÇİN)</span>
+                    <div style="display:flex; gap:4px; margin-bottom:6px; font-family:var(--font-main); font-size:11px;">
+                        <div style="flex:1; background:#0a0a0a; border:1px solid var(--c-cyan); border-radius:3px; padding:4px 0; text-align:center;">
+                            <div style="color:#777; font-size:9px;">GİMBAL PITCH</div>
+                            <div id="gimbalPVal" style="color:var(--c-cyan); font-weight:bold;">--°</div>
+                        </div>
+                        <div style="flex:1; background:#0a0a0a; border:1px solid var(--c-cyan); border-radius:3px; padding:4px 0; text-align:center;">
+                            <div style="color:#777; font-size:9px;">GİMBAL ROLL</div>
+                            <div id="gimbalRVal" style="color:var(--c-cyan); font-weight:bold;">--°</div>
+                        </div>
+                    </div>
+                    <div style="font-size:9px; color:#555; margin-bottom:6px;">±15° sınır — buna yakınsa veya hiç hareket etmiyorsa, mekanik/IK sınırı (özellikle yükseklik) şüphelidir.</div>
+
+                    <div style="border-top: 1px solid var(--panel-border); margin: 6px 0;"></div>
+
+                    <span class="lbl">AUDIO SYSTEM</span>
+                    <div class="audio-controls">
+                        <button onclick="audioCmd('prev')" style="border-color: rgba(255,165,0,0.3); color: var(--c-orange);">&#9664;&#9664;</button>
+                        <div style="text-align:center;">
+                            <div style="font-size:10px;color:#777;">PARÇA</div>
+                            <div class="track-display" id="trackDisp">1</div>
+                        </div>
+                        <button onclick="audioCmd('next')" style="border-color: rgba(255,165,0,0.3); color: var(--c-orange);">&#9654;&#9654;</button>
+                    </div>
+                    <label class="lbl" for="audioTrackSelect">PARÇA SEÇİMİ</label>
+                    <select id="audioTrackSelect" onchange="selectAudioTrack(this.value)" style="width:100%;margin-bottom:5px;padding:7px;background:#080808;color:var(--c-orange);border:1px solid rgba(255,165,0,.55);font-family:var(--font-main);">
+                        <option value="1">0001</option>
+                        <option value="2">0002</option>
+                        <option value="3">0003</option>
+                        <option value="4">0004</option>
+                        <option value="5">0005</option>
+                        <option value="6">0006</option>
+                        <option value="7">0007</option>
+                        <option value="8">0008</option>
+                        <option value="9">0009</option>
+                    </select>
+                    <div style="display:flex; gap:5px; margin-bottom:5px;">
+                        <button onclick="audioCmd('play')" style="color:var(--c-orange); border-color:var(--c-orange)">&#9654; OYNAT (DÖNGÜ)</button>
+                        <button onclick="audioCmd('stop')" style="border-color:#555;">&#9209; DUR</button>
+                    </div>
+                    <span class="lbl" style="color:var(--c-orange)">VOLUME <span class="val-text" style="color:var(--c-orange)" id="vVol">15</span></span>
+                    <input type="range" class="s-orange" id="volSlider" min="0" max="30" value="15" oninput="setVolume(this.value)">
+    
+                    <div style="border-top: 1px solid var(--panel-border); margin: 6px 0;"></div>
+    
+                    <span class="lbl">STABILIZATION</span>
+                    <button id="btnGimbal" onclick="toggleGimbal()">GIMBAL (OTO-DENGE): KAPALI</button>
+                    <span class="lbl" style="margin-top:4px;">GİMBAL TEPKİ <span class="val-text" id="vGimbalFilter">20</span> <span style="color:#555;">(0=keskin/hızlı, 100=yumuşak/yavaş)</span></span>
+                    <input type="range" class="s-cyan" id="gimbalFilterSlider" min="0" max="100" value="20" oninput="setGimbalFilterLevel(this.value)">
+                    <div style="display:flex; gap:4px; margin-bottom:4px;">
+                        <button onclick="sendMode('bezier_joy')" style="border-color:var(--primary); color:var(--primary);">▶ YÜRÜ</button>
+                        <button onclick="sendMode('idle')">■ STAND</button>
+                    </div>
+                    <div style="display:flex; gap:4px; margin-bottom:4px;">
+                        <button onclick="startControlledStand()" style="border-color:var(--c-cyan); color:var(--c-cyan);">CAPTURE → STAND</button>
+                    </div>
+                    <button onclick="sendMode('cal')" style="color:#888; border-color:#444;">CALIBRATION LOCK</button>
+    
+                    <div style="border-top: 1px solid var(--panel-border); margin: 6px 0;"></div>
+    
+                    <span class="lbl" style="color:var(--primary)">BODY IK PITCH <span class="val-text" id="vP">0&deg;</span></span>
+                    <input type="range" class="s-red" id="pitch" min="-35" max="35" value="0" oninput="sendIK()">
+                    <span class="lbl" style="color:var(--primary)">BODY IK ROLL <span class="val-text" id="vR">0&deg;</span></span>
+                    <input type="range" class="s-red" id="roll" min="-35" max="35" value="0" oninput="sendIK()">
+                    <span class="lbl" style="color:var(--primary)">BODY IK YAW <span class="val-text" id="vYw">0&deg;</span></span>
+                    <input type="range" class="s-red" id="yaw" min="-25" max="25" value="0" oninput="sendIK()">
+
+                    <div style="border-top: 1px solid var(--panel-border); margin: 6px 0;"></div>
+
+                    <span class="lbl" style="color:var(--c-cyan)">YERDEN YÜKSEKLİK (-Z) <span class="val-text" style="color:var(--c-cyan)" id="vGz">-100</span></span>
+                    <input type="range" class="s-cyan" id="gz" min="-250" max="-50" value="-100" oninput="sendParams()">
+                    <span class="lbl" style="color:var(--c-cyan)">ADIM UZUNLUĞU <span class="val-text" style="color:var(--c-cyan)" id="vSl">50</span></span>
+                    <input type="range" class="s-cyan" id="sl" min="10" max="150" value="50" oninput="sendParams()">
+                    <span class="lbl" style="color:var(--c-cyan)">ADIM YÜKSEKLİĞİ <span class="val-text" style="color:var(--c-cyan)" id="vSh">40</span></span>
+                    <input type="range" class="s-cyan" id="sh" min="10" max="150" value="40" oninput="sendParams()">
+                    <span class="lbl" style="color:var(--c-cyan)">MAKS HIZ (ms) <span class="val-text" style="color:var(--c-cyan)" id="vSp">2000</span></span>
+                    <input type="range" class="s-cyan" id="sp" min="500" max="4000" value="2000" oninput="sendParams()">
+
+                </div>
+            </div>
+
+            <div class="pnl" style="flex: none; padding: 0;">
+                <div class="panel-header" onclick="togglePnl(this)" style="margin:0; padding:8px 12px;">
+                    <span>LEG STATUS</span><span class="toggle-btn">[-]</span>
+                </div>
+                <div style="padding: 8px; background: #000;">
+                    <canvas id="legCanvas" style="width:100%; display:block; height:140px;"></canvas>
+                    <div class="foot-contact-grid" id="footContactGrid">
+                        <div class="foot-contact" id="footContact0">RF BOŞ</div>
+                        <div class="foot-contact" id="footContact1">RM BOŞ</div>
+                        <div class="foot-contact" id="footContact2">RR BOŞ</div>
+                        <div class="foot-contact" id="footContact3">LF BOŞ</div>
+                        <div class="foot-contact" id="footContact4">LM BOŞ</div>
+                        <div class="foot-contact" id="footContact5">LR BOŞ</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="/assets/three.min.js"></script>
+    <script>
+        let map, apexMarker, gpsTrail;
+        let gpsFiltered = null, gpsLastRaw = null, gpsMapCentered = false;
+        let gpsTrailPoints = [];
+        let pCloudScene, pCloudCamera, pCloudRenderer, pCloudPoints;
+        let gimbalActiveState = false;
+        let currentTrack = 1, volDebounce, audioCommandBusyUntil = 0;
+        let joyX = 0, joyY = 0, joyR = 0, paramTimer, debounceIK;
+        let latestBodyZ = -100;  // ESP32 telemetrisinden gelen gövde yüksekliği (mm) — LiDAR Y ekseni için
+        let latestMpuPitch = 0, latestMpuRoll = 0, latestMpuYaw = 0;
+        let latestMpuOnline = false, latestTofOnline = false, latestTofMm = -1;
+        let legLabDebounce = null;
+        let legLabSnapshot = null;
+        let lidarMapCanvas, lidarMapCtx;
+        let lidarViewRangeM = 6;
+        let lidarLatestPoints = [];
+        let lidarMapPoints = [];
+        let lidarPose = {x:0, y:0, theta:0};
+        let lidarMapMode = false;
+        let lidarOnlineState = false;
+        let lidarDisplayMode = '3d';
+        let pCloudResetView = null;
+        let navigationCanvas, navigationCtx, navigationPanel;
+        let navigationState = null;
+        let navigationCells = new Int8Array(0);
+        let navigationWs = null;
+        let navigationDimension = '2d';
+        let navigation3DContainer, navigation3DScene, navigation3DCamera, navigation3DRenderer;
+        let navigation3DFreePoints, navigation3DObstacles, navigation3DRoute, navigation3DGoal, navigation3DRobot;
+        let navigation3DFreePositions, navigation3DResetView = null;
+        const MAX_NAV_FREE_CELLS = 60000;
+        const MAX_NAV_OBSTACLE_CELLS = 12000;
+
+        window.addEventListener('DOMContentLoaded', () => {
+            // APEX-HUB'a bağlı başka PC/telefon internete çıkamayabilir; bu durumda
+            // Leaflet/Three CDN'leri yüklenmezse eski kod ilk satırda patlayıp
+            // kamera, joystick, telemetri ve WebSocket başlatmalarını da durduruyordu.
+            // Her modül artık izole başlatılır: harita/3D kütüphanesi yoksa sadece
+            // o panel pasif kalır, robot kontrolü ve kamera çalışmaya devam eder.
+            const safeStep = (name, fn) => {
+                try { fn(); }
+                catch (e) {
+                    console.warn('[APEX-UI]', name, 'başlatılamadı:', e);
+                    const stEl = document.getElementById('localStatus');
+                    if (stEl) {
+                        stEl.style.color = '#ffa500';
+                        stEl.innerText = name + ' pasif; ana kontrol çalışıyor.';
+                    }
+                }
+            };
+
+            safeStep('Harita', initLeafletMap);
+            safeStep('2D LiDAR haritası', initLidarMap);
+            safeStep('3D LiDAR nokta bulutu', init3DPointCloud);
+            safeStep('Rota haritası', initNavigationMap);
+            safeStep('3B rota perspektifi', initNavigation3DMap);
+            safeStep('LiDAR görünümü', () => setLidarViewMode('3d'));
+            safeStep('LiDAR WebSocket', connectLidarWS);
+            safeStep('Rota WebSocket', connectNavigationWS);
+            safeStep('AI kamera özeti', updateVisionSummary);
+            safeStep('Kontrol sekmeleri', initControlSections);
+            setInterval(updateVisionSummary, 3000);
+            safeStep('Kol kalibrasyon', loadArmCalibration);
+            safeStep('Leg Servo Lab', () => { legLabLoadStatus(); legLabLoadCalibration(); });
+            setInterval(legLabLoadStatus, 900);
+            safeStep('Sol joystick', () => setupJoystick('joyArea', 'joyKnob', (x, y) => { joyX = x; joyY = y; pushMotionData(); }, true));
+            safeStep('Yaw joystick', () => setupJoystick('joyAreaR', 'joyKnobR', (x, y) => { joyR = x; pushMotionData(); }, false));
+            // HTTP uyumluluk hattında 10 Hz heartbeat. nRF24 hattı 50 Hz olacak.
+            // Joystick sabit tutulduğunda pointermove kesilse bile firmware deadman'i beslenir.
+            setInterval(pushMotionData, 100);
+            window.addEventListener('blur', forceJoystickStop);
+            window.addEventListener('pagehide', forceJoystickStop);
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') forceJoystickStop();
+            });
+            setInterval(fetchCockpitTelemetry, 400);
+            setInterval(fetchFootContacts, 50);
+            safeStep('Bacak canvas', initLegCanvas);
+            setInterval(drawLegStatus, 80);
+            
+            window.addEventListener('resize', () => {
+                resizeLidarMap();
+                resizeLidar3D();
+                resizeNavigationMap();
+                resizeNavigation3D();
+                if(map) map.invalidateSize();
+            });
+        });
+
+        // PANELLERİ AÇIP KAPATMA
+        function togglePnl(el) {
+            let pnl = el.parentElement;
+            let btn = el.querySelector('.toggle-btn');
+            pnl.classList.toggle('collapsed');
+            if (pnl.classList.contains('collapsed')) {
+                btn.innerText = '[+]';
+            } else {
+                btn.innerText = '[-]';
+                setTimeout(() => { if(map) map.invalidateSize(); }, 350);
+            }
+        }
+
+        function togglePanelFocus(panelId, button) {
+            const panel = document.getElementById(panelId);
+            if (!panel) return;
+            const opening = !panel.classList.contains('panel-focus');
+            document.querySelectorAll('.pnl.panel-focus').forEach(p => {
+                p.classList.remove('panel-focus');
+                const b = p.querySelector('.panel-focus-btn');
+                if (b) b.innerText = 'BÜYÜT';
+            });
+            if (opening) {
+                panel.classList.remove('collapsed');
+                panel.classList.add('panel-focus');
+                button.innerText = 'KAPAT';
+            } else {
+                button.innerText = 'BÜYÜT';
+            }
+            setTimeout(() => { if (map) map.invalidateSize(); }, 80);
+        }
+
+        function selectControlSection(name) {
+            document.querySelectorAll('#pnlCtrl .control-section').forEach(s => s.classList.toggle('active', s.dataset.section === name));
+            document.querySelectorAll('#pnlCtrl .control-tabs button').forEach(b => b.classList.toggle('active', b.dataset.section === name));
+        }
+
+        function initControlSections() {
+            const box = document.querySelector('#pnlCtrl .control-scroll-box');
+            if (!box || box.dataset.sectioned === '1') return;
+            box.dataset.sectioned = '1';
+            const definitions = [
+                ['main','ANA'], ['legs','BACAK'], ['arm','KOL'],
+                ['sensors','SENSÖR'], ['audio','SES'], ['motion','HAREKET']
+            ];
+            const tabs = document.createElement('div');
+            tabs.className = 'control-tabs';
+            const sections = {};
+            definitions.forEach(([key,label]) => {
+                const button = document.createElement('button');
+                button.type = 'button'; button.dataset.section = key; button.innerText = label;
+                button.onclick = () => selectControlSection(key);
+                tabs.appendChild(button);
+                const section = document.createElement('div');
+                section.className = 'control-section'; section.dataset.section = key;
+                sections[key] = section;
+            });
+            const nodes = Array.from(box.children);
+            let current = 'main';
+            nodes.forEach(node => {
+                const text = (node.textContent || '').trim().toUpperCase();
+                if (node.matches('span.lbl') && text.includes('LEG SERVO LAB')) current = 'legs';
+                else if (node.matches('span.lbl') && text.includes('ROBOT KOL KALİBRASYON')) current = 'arm';
+                else if (node.matches('span.lbl') && text.includes('POWER + TOF')) current = 'sensors';
+                else if (node.matches('span.lbl') && text.includes('AUDIO SYSTEM')) current = 'audio';
+                else if (node.matches('span.lbl') && text.includes('STABILIZATION')) current = 'motion';
+                sections[current].appendChild(node);
+            });
+            box.appendChild(tabs);
+            definitions.forEach(([key]) => box.appendChild(sections[key]));
+            selectControlSection('main');
+        }
+
+        // MOTOR MATRİSİ
+        function buildServoMatrix() {
+            const container = document.getElementById('servoMatrixBox');
+            container.innerHTML = '';
+            const legNames = ["RF", "RM", "RR", "LF", "LM", "LR"];
+            legNames.forEach((name) => {
+                let html = `
+                    <div class="leg-box">
+                        <div class="leg-name">${name}</div>
+                        <div class="joint-row"><div class="joint-lbl">C</div><div class="joint-bar"><div class="joint-fill" style="width:${40+Math.random()*40}%"></div></div></div>
+                        <div class="joint-row"><div class="joint-lbl">F</div><div class="joint-bar"><div class="joint-fill" style="width:${40+Math.random()*40}%"></div></div></div>
+                        <div class="joint-row"><div class="joint-lbl">T</div><div class="joint-bar"><div class="joint-fill" style="width:${40+Math.random()*40}%"></div></div></div>
+                    </div>
+                `;
+                container.innerHTML += html;
+            });
+        }
+
+        function animateGroundStatus() {
+            for(let i=0; i<6; i++) {
+                let el = document.getElementById('g_' + i);
+                if(joyX !== 0 || joyY !== 0 || joyR !== 0) {
+                    el.className = (Math.random() > 0.5) ? "g-leg planted" : "g-leg swing";
+                } else {
+                    el.className = "g-leg planted"; 
+                }
+            }
+        }
+
+        // HARİTA
+        function initLeafletMap() {
+            const mapEl = document.getElementById('map');
+            if (typeof L === 'undefined') {
+                if (mapEl) mapEl.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#666;font-size:10px;text-align:center;padding:8px;">HARİTA CDN YÜKLENMEDİ<br>Kontrol sistemi aktif.</div>';
+                return;
+            }
+            // Gerçek GPS fix gelene kadar uydurma/sabit robot konumu gösterme.
+            // İlk geçerli fix haritayı robota taşır; sonraki örnekler işaretçiyi
+            // canlı günceller.
+            map = L.map('map', { attributionControl: false, zoomControl: false }).setView([39.0, 35.0], 5);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+            gpsTrail = L.polyline([], {color:'#00e5b0', weight:2, opacity:.75}).addTo(map);
+            setTimeout(() => map.invalidateSize(), 500);
+
+            // Container boyutu HERHANGİ bir nedenle değişirse (log büyümesi, panel
+            // açma/kapama, vs.) Leaflet'in iç render boyutunu otomatik düzelt.
+            // window resize event'ine bağlı kalmadan, gerçek container değişimini izler.
+            if (mapEl && window.ResizeObserver) {
+                const ro = new ResizeObserver(() => { if (map) map.invalidateSize(); });
+                ro.observe(mapEl);
+            }
+        }
+
+        function gpsDistanceM(a, b) {
+            if (!a || !b) return Infinity;
+            const rad = Math.PI / 180;
+            const dLat = (b[0]-a[0])*rad, dLng = (b[1]-a[1])*rad;
+            const lat1 = a[0]*rad, lat2 = b[0]*rad;
+            const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
+            return 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1-h));
+        }
+
+        function updateGpsTelemetry(data) {
+            const panel = document.getElementById('gpsLivePanel');
+            const stateEl = document.getElementById('gpsState');
+            const coordsEl = document.getElementById('gpsCoords');
+            const updateEl = document.getElementById('gpsUpdate');
+            const sats = Number.isFinite(Number(data.sats)) ? Number(data.sats) : 0;
+            const lat = Number(data.lat), lng = Number(data.lng);
+            const hasCoordinates = Number.isFinite(lat) && Number.isFinite(lng)
+                && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0);
+            // ESP firmware'ındaki gpsHasFix değeri bir kez true olduktan sonra
+            // uydu kilidi kaybolsa bile true kalabiliyor. 0 uyduyla eski konumu
+            // canlı fix gibi göstermemek için gerçek fix'i uydu sayısıyla doğrula.
+            const validFix = data.fix === true && sats >= 3 && hasCoordinates;
+
+            if (panel) panel.classList.toggle('fix', validFix);
+            if (stateEl) stateEl.textContent = validFix
+                ? `GPS FIX · ${sats} UYDU`
+                : data.fix === true ? `FIX KAYIP · ${sats} UYDU` : `FIX ARANIYOR · ${sats} UYDU`;
+            if (!validFix) {
+                if (coordsEl) coordsEl.textContent = hasCoordinates
+                    ? `SON KONUM · ${lat.toFixed(6)} / ${lng.toFixed(6)}` : '-- / --';
+                if (updateEl) updateEl.textContent = 'YENİ UYDU KİLİDİ BEKLENİYOR · İZ DONDURULDU';
+                return;
+            }
+
+            if (coordsEl) coordsEl.textContent = `${lat.toFixed(6)} / ${lng.toFixed(6)}`;
+            if (updateEl) updateEl.textContent = `CANLI · ${new Date().toLocaleTimeString('tr-TR')} · YUMUŞATILMIŞ İZ`;
+
+            const raw = [lat,lng];
+            const rawChanged = !gpsLastRaw || gpsDistanceM(gpsLastRaw, raw) > 0.15;
+            if (!rawChanged) return;
+            gpsLastRaw = raw;
+
+            if (!gpsFiltered) gpsFiltered = raw;
+            else {
+                // Az uydu varken sabit robotta görülen birkaç metrelik GPS
+                // gezinmesini bastır; uydu sayısı arttıkça gerçek harekete daha
+                // hızlı cevap ver.
+                const alpha = sats >= 8 ? 0.38 : sats >= 5 ? 0.24 : 0.14;
+                gpsFiltered = [
+                    gpsFiltered[0] + (lat-gpsFiltered[0])*alpha,
+                    gpsFiltered[1] + (lng-gpsFiltered[1])*alpha,
+                ];
+            }
+
+            if (!map || typeof L === 'undefined') return;
+            if (!apexMarker) {
+                const redIcon = L.icon({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png', iconSize:[20,32], iconAnchor:[10,32] });
+                apexMarker = L.marker(gpsFiltered, {icon:redIcon}).addTo(map);
+            } else apexMarker.setLatLng(gpsFiltered);
+
+            const lastTrail = gpsTrailPoints[gpsTrailPoints.length-1];
+            if (!lastTrail || gpsDistanceM(lastTrail, gpsFiltered) >= 1.5) {
+                gpsTrailPoints.push([...gpsFiltered]);
+                if (gpsTrailPoints.length > 120) gpsTrailPoints.shift();
+                if (gpsTrail) gpsTrail.setLatLngs(gpsTrailPoints);
+            }
+            if (!gpsMapCentered) {
+                map.setView(gpsFiltered, 18);
+                gpsMapCentered = true;
+            } else if (gpsDistanceM([map.getCenter().lat,map.getCenter().lng], gpsFiltered) > 35) {
+                map.panTo(gpsFiltered, {animate:true, duration:.5});
+            }
+        }
+
+        // CARTOGRAPHER-BENZERİ 2D LIDAR / LOCAL OCCUPANCY GÖRÜNÜMÜ
+        // A1M8 tek yatay düzlem ölçer; sahte Z/derinlik üretilmez. Engel mesafesi
+        // renk, nokta büyüklüğü, metrik ızgara ve sektör mesafeleriyle gösterilir.
+        function initLidarMap() {
+            lidarMapCanvas = document.getElementById('LidarMapCanvas');
+            if (!lidarMapCanvas) return;
+            lidarMapCtx = lidarMapCanvas.getContext('2d', { alpha:false });
+            if (window.ResizeObserver) new ResizeObserver(resizeLidarMap).observe(lidarMapCanvas.parentElement);
+            resizeLidarMap();
+        }
+
+        function resizeLidarMap() {
+            if (!lidarMapCanvas || !lidarMapCtx) return;
+            const rect = lidarMapCanvas.getBoundingClientRect();
+            if (rect.width < 2 || rect.height < 2) return;
+            const dpr = Math.min(2, window.devicePixelRatio || 1);
+            lidarMapCanvas.width = Math.round(rect.width * dpr);
+            lidarMapCanvas.height = Math.round(rect.height * dpr);
+            lidarMapCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            drawLidarMap();
+        }
+
+        function setLidarRange(direction) {
+            const ranges = [3, 4, 6, 8, 10];
+            let idx = ranges.indexOf(lidarViewRangeM);
+            if (idx < 0) idx = 2;
+            idx = Math.max(0, Math.min(ranges.length - 1, idx + direction));
+            lidarViewRangeM = ranges[idx];
+            drawLidarMap();
+            updateLidarTag();
+        }
+
+        function resetLidarView() {
+            lidarViewRangeM = 6;
+            drawLidarMap();
+            updateLidarTag();
+            if (pCloudResetView) pCloudResetView();
+            if (navigation3DResetView) navigation3DResetView();
+        }
+
+        function setLidarViewMode(mode) {
+            lidarDisplayMode = ['2d', '3d', 'nav'].includes(mode) ? mode : '3d';
+            const is2D = lidarDisplayMode === '2d';
+            const is3D = lidarDisplayMode === '3d';
+            const isNav = lidarDisplayMode === 'nav';
+            document.getElementById('Lidar2DView')?.classList.toggle('active', is2D);
+            document.getElementById('Lidar3DView')?.classList.toggle('active', is3D);
+            document.getElementById('NavigationView')?.classList.toggle('active', isNav);
+            document.getElementById('btnLidar2D')?.classList.toggle('active', is2D);
+            document.getElementById('btnLidar3D')?.classList.toggle('active', is3D);
+            document.getElementById('btnLidarNav')?.classList.toggle('active', isNav);
+            document.querySelector('.lidar-map-panel')?.classList.toggle('nav-mode', isNav);
+            const near = document.getElementById('btnLidarNear');
+            const far = document.getElementById('btnLidarFar');
+            if (near) near.style.display = is2D ? '' : 'none';
+            if (far) far.style.display = is2D ? '' : 'none';
+            updateLidarTag();
+            requestAnimationFrame(() => is2D ? resizeLidarMap() : isNav ? resizeNavigationView() : resizeLidar3D());
+        }
+
+        function updateLidarTag() {
+            const tag = document.querySelector('.lidar-tag');
+            if (!tag) return;
+            if (lidarDisplayMode === 'nav') {
+                const scans = Number(navigationState?.grid?.scan_count || 0);
+                const dimension = navigationDimension === '3d' ? '3B PERSPEKTİF' : '2B PLAN';
+                tag.innerText = `ROTA ${dimension} — ${navigationState?.map_mode || 'LOCAL_ONLY'} · ${scans} TARAMA`;
+            } else if (!lidarOnlineState) {
+                tag.innerText = `${lidarDisplayMode.toUpperCase()} LIDAR — BAĞLANTI YOK`;
+            } else if (lidarDisplayMode === '3d') {
+                tag.innerText = lidarMapMode
+                    ? `3D DÜNYA NOKTA BULUTU — ${lidarMapPoints.length} NOKTA`
+                    : `3D CANLI TARAMA DÜZLEMİ — ${lidarLatestPoints.length} NOKTA`;
+            } else {
+                tag.innerText = lidarMapMode
+                    ? `2D DÜNYA HARİTASI — ${lidarMapPoints.length} NOKTA`
+                    : `2D LOCAL OCCUPANCY — ${lidarLatestPoints.length} NOKTA — ${lidarViewRangeM}m`;
+            }
+        }
+
+        // ANA HUD İÇİ ROTA ÖNİZLEMESİ
+        // Bu katman yalnız harita hedefi/rota planı üretir. Hareket yürütme endpoint'i
+        // yoktur ve joystick, gait, gövde IK veya servo hatlarına komut göndermez.
+        function initNavigationMap() {
+            navigationPanel = document.getElementById('NavigationView');
+            navigationCanvas = document.getElementById('NavigationCanvas');
+            if (!navigationPanel || !navigationCanvas) return;
+            navigationCtx = navigationCanvas.getContext('2d', {alpha:false});
+            navigationCanvas.addEventListener('click', selectNavigationGoal);
+            if (window.ResizeObserver) new ResizeObserver(resizeNavigationMap).observe(navigationPanel);
+            resizeNavigationMap();
+        }
+
+        function resizeNavigationView() {
+            if (navigationDimension === '3d') resizeNavigation3D();
+            else resizeNavigationMap();
+        }
+
+        function setNavigationDimension(dimension) {
+            const requested3D = dimension === '3d';
+            if (requested3D && !navigation3DRenderer) {
+                setNavigationEvent('3B kütüphanesi yüklenemedi; güvenli 2B plan görünümü korunuyor.', 'warn');
+                dimension = '2d';
+            }
+            navigationDimension = dimension === '3d' ? '3d' : '2d';
+            navigationPanel?.classList.toggle('nav-perspective', navigationDimension === '3d');
+            document.getElementById('navigation2DBtn')?.classList.toggle('nav-active', navigationDimension === '2d');
+            document.getElementById('navigation3DBtn')?.classList.toggle('nav-active', navigationDimension === '3d');
+            const hint = document.getElementById('navigationHint');
+            if (hint) hint.innerHTML = navigationDimension === '3d'
+                ? 'SÜRÜKLE: EĞ / DÖNDÜR · TEKERLEK: YAKINLAŞ<br>Boş alana kısa tık: rota hedefi · kolonlar gerçek yükseklik değildir.'
+                : 'HARİTADA HEDEF NOKTAYA TIKLA<br>Rota hesaplanır; robota hareket komutu gönderilmez.';
+            if (navigationDimension === '3d') updateNavigation3DMap();
+            else drawNavigationMap();
+            updateLidarTag();
+            requestAnimationFrame(resizeNavigationView);
+        }
+
+        function initNavigation3DMap() {
+            navigation3DContainer = document.getElementById('Navigation3DMap');
+            if (!navigation3DContainer || typeof THREE === 'undefined') return;
+            const width = Math.max(2, navigation3DContainer.clientWidth || navigationPanel?.clientWidth || 2);
+            const height = Math.max(2, navigation3DContainer.clientHeight || navigationPanel?.clientHeight || 2);
+            navigation3DScene = new THREE.Scene();
+            navigation3DScene.fog = new THREE.Fog(0x030607, 9, 22);
+            navigation3DCamera = new THREE.PerspectiveCamera(48, width / height, .05, 80);
+            navigation3DRenderer = new THREE.WebGLRenderer({alpha:true, antialias:true, powerPreference:'high-performance'});
+            navigation3DRenderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
+            navigation3DRenderer.setSize(width, height, false);
+            navigation3DContainer.appendChild(navigation3DRenderer.domElement);
+
+            const ground = new THREE.Mesh(
+                new THREE.PlaneGeometry(12.05, 12.05),
+                new THREE.MeshBasicMaterial({color:0x061013, transparent:true, opacity:.88, side:THREE.DoubleSide})
+            );
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.y = -.015;
+            navigation3DScene.add(ground);
+            const grid = new THREE.GridHelper(12, 24, 0x2b5961, 0x153137);
+            grid.position.y = 0;
+            navigation3DScene.add(grid);
+
+            navigation3DFreePositions = new Float32Array(MAX_NAV_FREE_CELLS * 3);
+            const freeGeometry = new THREE.BufferGeometry();
+            freeGeometry.setAttribute('position', new THREE.BufferAttribute(navigation3DFreePositions, 3).setUsage(THREE.DynamicDrawUsage));
+            freeGeometry.setDrawRange(0, 0);
+            navigation3DFreePoints = new THREE.Points(
+                freeGeometry,
+                new THREE.PointsMaterial({color:0x1b4a52, size:.035, transparent:true, opacity:.85, sizeAttenuation:true})
+            );
+            navigation3DScene.add(navigation3DFreePoints);
+
+            navigation3DObstacles = new THREE.InstancedMesh(
+                new THREE.BoxGeometry(1, 1, 1),
+                new THREE.MeshBasicMaterial({color:0xff3845, transparent:true, opacity:.9}),
+                MAX_NAV_OBSTACLE_CELLS
+            );
+            navigation3DObstacles.count = 0;
+            navigation3DObstacles.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            navigation3DObstacles.frustumCulled = false;
+            navigation3DScene.add(navigation3DObstacles);
+
+            navigation3DRoute = new THREE.Line(
+                new THREE.BufferGeometry(),
+                new THREE.LineBasicMaterial({color:0x00e5b0})
+            );
+            navigation3DScene.add(navigation3DRoute);
+
+            navigation3DGoal = new THREE.Mesh(
+                new THREE.OctahedronGeometry(.15, 0),
+                new THREE.MeshBasicMaterial({color:0xff9d22})
+            );
+            navigation3DGoal.visible = false;
+            navigation3DScene.add(navigation3DGoal);
+
+            navigation3DRobot = new THREE.Group();
+            navigation3DRobot.rotation.order = 'YXZ';
+            const body = new THREE.Mesh(
+                new THREE.BoxGeometry(.34, .13, .45),
+                new THREE.MeshBasicMaterial({color:0xe60000})
+            );
+            body.position.y = .10;
+            navigation3DRobot.add(body);
+            const heading = new THREE.Mesh(
+                new THREE.ConeGeometry(.09, .30, 12),
+                new THREE.MeshBasicMaterial({color:0xffa500})
+            );
+            heading.rotation.x = -Math.PI / 2;
+            heading.position.set(0, .10, -.34);
+            navigation3DRobot.add(heading);
+            navigation3DScene.add(navigation3DRobot);
+
+            let azimuth = 0;
+            let polar = .72;
+            let radius = 10.5;
+            let dragging = false;
+            let lastX = 0, lastY = 0, dragDistance = 0;
+            function updateCamera() {
+                navigation3DCamera.position.set(
+                    radius * Math.sin(polar) * Math.sin(azimuth),
+                    radius * Math.cos(polar),
+                    radius * Math.sin(polar) * Math.cos(azimuth)
+                );
+                navigation3DCamera.lookAt(0, 0, 0);
+                renderNavigation3D();
+            }
+            navigation3DResetView = () => {
+                azimuth = 0;
+                polar = .72;
+                radius = 10.5;
+                updateCamera();
+            };
+            navigation3DResetView();
+
+            const dom = navigation3DRenderer.domElement;
+            dom.style.cursor = 'grab';
+            dom.addEventListener('pointerdown', event => {
+                if (event.button !== 0) return;
+                dragging = true; dragDistance = 0;
+                lastX = event.clientX; lastY = event.clientY;
+                dom.setPointerCapture?.(event.pointerId);
+                dom.style.cursor = 'grabbing';
+            });
+            dom.addEventListener('pointermove', event => {
+                if (!dragging) return;
+                const dx = event.clientX - lastX, dy = event.clientY - lastY;
+                lastX = event.clientX; lastY = event.clientY;
+                dragDistance += Math.abs(dx) + Math.abs(dy);
+                azimuth -= dx * .008;
+                polar = Math.max(.20, Math.min(1.42, polar - dy * .006));
+                updateCamera();
+            });
+            dom.addEventListener('pointerup', event => {
+                if (!dragging) return;
+                dragging = false;
+                dom.releasePointerCapture?.(event.pointerId);
+                dom.style.cursor = 'grab';
+                if (dragDistance < 5) selectNavigation3DGoal(event);
+            });
+            dom.addEventListener('pointercancel', () => { dragging = false; dom.style.cursor = 'grab'; });
+            dom.addEventListener('wheel', event => {
+                event.preventDefault();
+                radius = Math.max(3.2, Math.min(20, radius * (1 + event.deltaY * .001)));
+                updateCamera();
+            }, {passive:false});
+        }
+
+        function resizeNavigation3D() {
+            if (!navigation3DRenderer || !navigation3DCamera || !navigation3DContainer) return;
+            const rect = navigation3DContainer.getBoundingClientRect();
+            if (rect.width < 2 || rect.height < 2) return;
+            navigation3DRenderer.setSize(rect.width, rect.height, false);
+            navigation3DCamera.aspect = rect.width / rect.height;
+            navigation3DCamera.updateProjectionMatrix();
+            renderNavigation3D();
+        }
+
+        function renderNavigation3D() {
+            if (!navigation3DRenderer || !navigation3DScene || !navigation3DCamera) return;
+            navigation3DRenderer.render(navigation3DScene, navigation3DCamera);
+        }
+
+        function updateNavigation3DAttitude() {
+            if (!navigation3DRobot) return;
+            // Ham IMU roll/pitch yalnız robot simgesini eğer. Harita noktalarını
+            // dış kalibrasyon olmadan döndürmez; böylece sahte dünya yüksekliği üretilmez.
+            // META-1 MPU montajında burun yukarı hareketi negatif mpuP üretir.
+            // Three sahnesinde pozitif rotation.x burunu yukarı kaldırdığı için işareti çevir.
+            navigation3DRobot.rotation.x = latestMpuOnline ? THREE.MathUtils.degToRad(-latestMpuPitch) : 0;
+            navigation3DRobot.rotation.z = latestMpuOnline ? -THREE.MathUtils.degToRad(latestMpuRoll) : 0;
+            renderNavigation3D();
+        }
+
+        function updateNavigationLiveSensors() {
+            const imuEl = document.getElementById('navigationImuText');
+            const tofEl = document.getElementById('navigationTofText');
+            if (imuEl) imuEl.textContent = latestMpuOnline
+                ? `${latestMpuRoll.toFixed(1)} / ${latestMpuPitch.toFixed(1)} / ${latestMpuYaw.toFixed(1)}°`
+                : '--';
+            if (tofEl) tofEl.textContent = latestTofOnline && latestTofMm >= 0
+                ? `${Math.round(latestTofMm)} mm` : '--';
+            updateNavigation3DAttitude();
+        }
+
+        function updateNavigation3DMap() {
+            if (!navigationState?.grid || !navigation3DFreePoints || !navigation3DObstacles) return;
+            const grid = navigationState.grid;
+            const width = Number(grid.width || 0), height = Number(grid.height || 0);
+            const resolution = Number(grid.resolution_m || .05);
+            const pose = navigationState.pose || {x_m:0, y_m:0};
+            const px = Number(pose.x_m || 0), py = Number(pose.y_m || 0);
+            let freeCount = 0, obstacleCount = 0;
+            const matrix = new THREE.Object3D();
+            for (let gy = 0; gy < height; gy++) {
+                for (let gx = 0; gx < width; gx++) {
+                    const value = navigationCells[gy * width + gx];
+                    if (value < 0) continue;
+                    const worldX = Number(grid.origin_x_m) + gx * resolution;
+                    const worldY = Number(grid.origin_y_m) + gy * resolution;
+                    const sceneX = -(worldY - py);
+                    const sceneZ = -(worldX - px);
+                    if (value >= 100) {
+                        if (obstacleCount >= MAX_NAV_OBSTACLE_CELLS) continue;
+                        matrix.position.set(sceneX, .11, sceneZ);
+                        matrix.scale.set(resolution * .88, .22, resolution * .88);
+                        matrix.updateMatrix();
+                        navigation3DObstacles.setMatrixAt(obstacleCount++, matrix.matrix);
+                    } else if (freeCount < MAX_NAV_FREE_CELLS) {
+                        navigation3DFreePositions[freeCount * 3] = sceneX;
+                        navigation3DFreePositions[freeCount * 3 + 1] = .012;
+                        navigation3DFreePositions[freeCount * 3 + 2] = sceneZ;
+                        freeCount++;
+                    }
+                }
+            }
+            navigation3DFreePoints.geometry.setDrawRange(0, freeCount);
+            navigation3DFreePoints.geometry.attributes.position.needsUpdate = true;
+            navigation3DObstacles.count = obstacleCount;
+            navigation3DObstacles.instanceMatrix.needsUpdate = true;
+
+            const routePoints = Array.isArray(navigationState.route)
+                ? navigationState.route.map(point => new THREE.Vector3(
+                    -(Number(point[1]) - py), .17, -(Number(point[0]) - px)
+                )) : [];
+            navigation3DRoute.geometry.dispose();
+            navigation3DRoute.geometry = new THREE.BufferGeometry().setFromPoints(routePoints);
+            if (navigationState.goal) {
+                navigation3DGoal.position.set(
+                    -(Number(navigationState.goal.y_m) - py), .20,
+                    -(Number(navigationState.goal.x_m) - px)
+                );
+                navigation3DGoal.visible = true;
+            } else {
+                navigation3DGoal.visible = false;
+            }
+            updateNavigation3DAttitude();
+        }
+
+        function selectNavigation3DGoal(event) {
+            if (navigationDimension !== '3d' || !navigationState?.grid || !navigation3DRenderer) return;
+            const rect = navigation3DRenderer.domElement.getBoundingClientRect();
+            const mouse = new THREE.Vector2(
+                ((event.clientX - rect.left) / rect.width) * 2 - 1,
+                -((event.clientY - rect.top) / rect.height) * 2 + 1
+            );
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, navigation3DCamera);
+            const hit = new THREE.Vector3();
+            if (!raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit)) return;
+            const pose = navigationState.pose || {x_m:0, y_m:0};
+            submitNavigationGoal(Number(pose.x_m || 0) - hit.z, Number(pose.y_m || 0) - hit.x);
+        }
+
+        function decodeNavigationRle(encoded, expected) {
+            const out = new Int8Array(expected);
+            out.fill(-1);
+            let offset = 0;
+            for (const pair of encoded || []) {
+                const value = Number(pair[0]);
+                const count = Math.max(0, Number(pair[1]) || 0);
+                out.fill(value, offset, Math.min(expected, offset + count));
+                offset += count;
+                if (offset >= expected) break;
+            }
+            return out;
+        }
+
+        function resizeNavigationMap() {
+            if (!navigationCanvas || !navigationCtx || !navigationPanel) return;
+            const rect = navigationPanel.getBoundingClientRect();
+            if (rect.width < 2 || rect.height < 2) return;
+            const dpr = Math.min(2, window.devicePixelRatio || 1);
+            navigationCanvas.width = Math.max(2, Math.round(rect.width * dpr));
+            navigationCanvas.height = Math.max(2, Math.round(rect.height * dpr));
+            navigationCanvas.style.width = `${rect.width}px`;
+            navigationCanvas.style.height = `${rect.height}px`;
+            navigationCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            drawNavigationMap();
+        }
+
+        function navigationTransform() {
+            if (!navigationState?.grid || !navigationPanel) return null;
+            const rect = navigationPanel.getBoundingClientRect();
+            const grid = navigationState.grid;
+            const mapW = Number(grid.width) * Number(grid.resolution_m);
+            const mapH = Number(grid.height) * Number(grid.resolution_m);
+            const pose = navigationState.pose || {x_m:0, y_m:0};
+            return {
+                w: rect.width,
+                h: rect.height,
+                scale: Math.max(1, Math.min((rect.width - 36) / mapW, (rect.height - 36) / mapH)),
+                pose: {x_m:Number(pose.x_m || 0), y_m:Number(pose.y_m || 0)}
+            };
+        }
+
+        function navigationWorldToScreen(x, y, tr) {
+            return [tr.w / 2 - (y - tr.pose.y_m) * tr.scale, tr.h / 2 - (x - tr.pose.x_m) * tr.scale];
+        }
+
+        function drawNavigationMap() {
+            if (!navigationCtx || !navigationPanel) return;
+            const rect = navigationPanel.getBoundingClientRect();
+            const w = rect.width, h = rect.height;
+            navigationCtx.fillStyle = '#030607';
+            navigationCtx.fillRect(0, 0, w, h);
+            if (!navigationState?.grid) return;
+            const grid = navigationState.grid;
+            const tr = navigationTransform();
+            if (!tr) return;
+            const cellPx = Math.max(1, Number(grid.resolution_m) * tr.scale);
+
+            for (let gy = 0; gy < Number(grid.height); gy++) {
+                for (let gx = 0; gx < Number(grid.width); gx++) {
+                    const value = navigationCells[gy * Number(grid.width) + gx];
+                    if (value < 0) continue;
+                    const x = Number(grid.origin_x_m) + gx * Number(grid.resolution_m);
+                    const y = Number(grid.origin_y_m) + gy * Number(grid.resolution_m);
+                    const [sx, sy] = navigationWorldToScreen(x, y, tr);
+                    navigationCtx.fillStyle = value >= 100 ? '#ff3845' : '#102429';
+                    navigationCtx.fillRect(sx - cellPx / 2, sy - cellPx / 2, cellPx + .4, cellPx + .4);
+                }
+            }
+
+            const [cx, cy] = navigationWorldToScreen(tr.pose.x_m, tr.pose.y_m, tr);
+            navigationCtx.strokeStyle = 'rgba(72,102,112,.35)';
+            navigationCtx.lineWidth = 1;
+            for (let metres = 1; metres <= 6; metres++) {
+                navigationCtx.beginPath();
+                navigationCtx.arc(cx, cy, metres * tr.scale, 0, Math.PI * 2);
+                navigationCtx.stroke();
+            }
+
+            if (Array.isArray(navigationState.route) && navigationState.route.length > 1) {
+                navigationCtx.strokeStyle = '#00e5b0';
+                navigationCtx.lineWidth = 3;
+                navigationCtx.shadowColor = '#00e5b0';
+                navigationCtx.shadowBlur = 8;
+                navigationCtx.beginPath();
+                navigationState.route.forEach((point, index) => {
+                    const [sx, sy] = navigationWorldToScreen(Number(point[0]), Number(point[1]), tr);
+                    if (index) navigationCtx.lineTo(sx, sy); else navigationCtx.moveTo(sx, sy);
+                });
+                navigationCtx.stroke();
+                navigationCtx.shadowBlur = 0;
+            }
+
+            if (navigationState.goal) {
+                const [gx, gy] = navigationWorldToScreen(Number(navigationState.goal.x_m), Number(navigationState.goal.y_m), tr);
+                navigationCtx.save();
+                navigationCtx.translate(gx, gy);
+                navigationCtx.rotate(Math.PI / 4);
+                navigationCtx.fillStyle = '#ff9d22';
+                navigationCtx.fillRect(-7, -7, 14, 14);
+                navigationCtx.restore();
+            }
+
+            navigationCtx.fillStyle = '#e60000';
+            navigationCtx.beginPath();
+            navigationCtx.moveTo(cx, cy - 15);
+            navigationCtx.lineTo(cx - 10, cy + 10);
+            navigationCtx.lineTo(cx + 10, cy + 10);
+            navigationCtx.closePath();
+            navigationCtx.fill();
+            navigationCtx.strokeStyle = '#ff9d22';
+            navigationCtx.lineWidth = 2;
+            navigationCtx.beginPath();
+            navigationCtx.moveTo(cx, cy - 18);
+            navigationCtx.lineTo(cx, cy - 30);
+            navigationCtx.stroke();
+        }
+
+        function renderNavigationState(state) {
+            navigationState = state;
+            const grid = state.grid || {};
+            navigationCells = decodeNavigationRle(grid.cells_rle, Number(grid.width || 0) * Number(grid.height || 0));
+            const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+            setText('navigationMapMode', `${state.map_mode || '--'} · ${Number(grid.observed_cells || 0)} HÜCRE`);
+            setText('navigationGoalText', state.goal ? `${Number(state.goal.x_m).toFixed(2)} / ${Number(state.goal.y_m).toFixed(2)} m` : '--');
+            setText('navigationRouteStatus', state.route_status || '--');
+            setText('navigationRouteLength', state.route_ok ? `${Number(state.route_length_m).toFixed(2)} m` : '--');
+            setText('navigationUnknownRatio', state.route_ok ? `${Math.round(Number(state.unknown_ratio) * 100)}%` : '--');
+            setText('navigationDecision', state.decision || '--');
+            const platformTest = state.platform_test || {};
+            setText('navigationExecutionState', platformTest.active ? 'ÇALIŞIYOR' : (platformTest.state || 'HAZIR'));
+            document.getElementById('navigationManualBtn')?.classList.toggle('nav-active', state.approval_mode === 'manual');
+            document.getElementById('navigationAutoBtn')?.classList.toggle('nav-active', state.approval_mode === 'auto');
+            const approve = document.getElementById('navigationApproveBtn');
+            if (approve) approve.disabled = !(state.route_ok && !platformTest.active);
+            if (platformTest.active) motionModeActive = false;
+            const sensors = state.sensors || {};
+            const imu = sensors.imu || {};
+            const tof = sensors.tof || {};
+            if (imu.valid) {
+                setText('navigationImuText', `${Number(imu.roll_deg || 0).toFixed(1)} / ${Number(imu.pitch_deg || 0).toFixed(1)} / ${Number(imu.yaw_deg || 0).toFixed(1)}°`);
+            } else if (!latestMpuOnline) {
+                setText('navigationImuText', '--');
+            }
+            if (tof.valid) setText('navigationTofText', `${Math.round(Number(tof.distance_mm))} mm`);
+            else if (!latestTofOnline) setText('navigationTofText', '--');
+            const sensorLine = [
+                sensors.lidar?.fresh ? 'LIDAR CANLI' : 'LIDAR BEKLENİYOR',
+                imu.valid ? 'IMU CANLI' : 'IMU YOK',
+                tof.valid ? `TOF ${Math.round(Number(tof.distance_mm))} mm` : 'TOF YOK',
+                sensors.camera?.healthy ? 'KAMERA CANLI' : 'KAMERA YOK'
+            ].join(' · ');
+            setNavigationEvent(platformTest.message || state.route_message || sensorLine,
+                ['BLOCKED','ABORTED'].includes(platformTest.state) ? 'bad' : (state.route_ok ? 'ok' : 'normal'));
+            updateLidarTag();
+            if (navigationDimension === '3d') updateNavigation3DMap();
+            else drawNavigationMap();
+        }
+
+        function setNavigationEvent(text, tone='normal') {
+            const el = document.getElementById('navigationEvent');
+            if (!el) return;
+            el.textContent = text;
+            el.style.color = tone === 'bad' ? '#ff4650' : tone === 'ok' ? 'var(--c-cyan)' : tone === 'warn' ? 'var(--c-orange)' : '#839198';
+        }
+
+        async function postNavigationJson(url, payload={}) {
+            const response = await fetch(url, {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify(payload), cache:'no-store'
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+            return data;
+        }
+
+        async function selectNavigationGoal(event) {
+            if (lidarDisplayMode !== 'nav' || !navigationState?.grid) return;
+            const rect = navigationCanvas.getBoundingClientRect();
+            const tr = navigationTransform();
+            if (!tr) return;
+            const x = tr.pose.x_m + (tr.h / 2 - (event.clientY - rect.top)) / tr.scale;
+            const y = tr.pose.y_m + (tr.w / 2 - (event.clientX - rect.left)) / tr.scale;
+            submitNavigationGoal(x, y);
+        }
+
+        async function submitNavigationGoal(x, y) {
+            try {
+                const data = await postNavigationJson('/api/navigation/goal', {x_m:x, y_m:y});
+                setNavigationEvent(data.route_ok ? 'Hedef seçildi · ROTAYI ONAYLA ile güvenli yürüt.' : (data.route_message || 'Rota bulunamadı.'), data.route_ok ? 'ok' : 'bad');
+            } catch (error) {
+                setNavigationEvent(`Hedef ayarlanamadı: ${error.message}`, 'bad');
+            }
+        }
+
+        async function setNavigationMode(mode) {
+            try {
+                await postNavigationJson('/api/navigation/mode', {mode});
+                setNavigationEvent(mode === 'manual' ? 'Manuel rota onayı seçildi.' : 'Otonom karar seçildi · güvenli rota oluşunca doğrudan yürütür.', 'ok');
+            } catch (error) { setNavigationEvent(error.message, 'bad'); }
+        }
+
+        async function approveNavigationRoute() {
+            try {
+                motionModeActive = false;
+                joyX = joyY = joyR = 0;
+                clearTimeout(paramTimer);
+                await postNavigationJson('/api/navigation/approve');
+                setNavigationEvent('Tüm waypointleri izleyen düşük hızlı rota yürütmesi başlatıldı.', 'ok');
+            } catch (error) { setNavigationEvent(error.message, 'bad'); }
+        }
+
+        async function clearNavigationGoal() {
+            try {
+                await postNavigationJson('/api/navigation/clear');
+                setNavigationEvent('Hedef ve rota temizlendi.', 'ok');
+            } catch (error) { setNavigationEvent(error.message, 'bad'); }
+        }
+
+        function connectNavigationWS() {
+            if (navigationWs && navigationWs.readyState <= WebSocket.OPEN) return;
+            const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+            navigationWs = new WebSocket(`${proto}://${location.host}/ws/navigation`);
+            navigationWs.onmessage = event => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'navigation') renderNavigationState(data);
+                } catch (error) { setNavigationEvent(`Rota verisi hatası: ${error.message}`, 'bad'); }
+            };
+            navigationWs.onclose = () => {
+                setNavigationEvent('Rota veri bağlantısı kesildi; yeniden bağlanılıyor.', 'bad');
+                setTimeout(connectNavigationWS, 1500);
+            };
+            navigationWs.onerror = () => navigationWs.close();
+        }
+
+        function lidarDepthColor(distanceM, alpha=1) {
+            if (distanceM < 0.6) return `rgba(255,56,69,${alpha})`;
+            if (distanceM < 1.5) return `rgba(255,173,33,${alpha})`;
+            if (distanceM < 3.0) return `rgba(0,229,176,${alpha})`;
+            return `rgba(39,167,255,${alpha})`;
+        }
+
+        function lidarSectorMin(points, centerDeg, halfWidthDeg=18) {
+            let best = Infinity;
+            for (const p of points) {
+                const angle = Number(p[0]), d = Number(p[1]) / 1000;
+                if (!(d > 0) || d > 6) continue;
+                const diff = Math.abs(((angle - centerDeg + 540) % 360) - 180);
+                if (diff <= halfWidthDeg && d < best) best = d;
+            }
+            return Number.isFinite(best) ? best : null;
+        }
+
+        function formatLidarDistance(value) {
+            return value == null ? '--' : `${value.toFixed(2)} m`;
+        }
+
+        function updateLidarMetrics(points) {
+            const front = lidarSectorMin(points, 0, 16);
+            const left = lidarSectorMin(points, 90, 20);
+            const right = lidarSectorMin(points, 270, 20);
+            document.getElementById('lidarFront').textContent = formatLidarDistance(front);
+            document.getElementById('lidarLeft').textContent = formatLidarDistance(left);
+            document.getElementById('lidarRight').textContent = formatLidarDistance(right);
+            for (const [id, d] of [['lidarFront',front],['lidarLeft',left],['lidarRight',right]]) {
+                const el = document.getElementById(id);
+                el.style.color = d == null ? '#777' : lidarDepthColor(d, 1);
+            }
+        }
+
+        function updateLidarMap(msg) {
+            lidarOnlineState = msg.online === true;
+            lidarLatestPoints = Array.isArray(msg.points) ? msg.points.filter(p => Number(p[1]) > 0 && Number(p[1]) <= 10000) : [];
+            lidarMapMode = msg.slam === true && Array.isArray(msg.map_points) && msg.map_points.length > 0;
+            lidarMapPoints = lidarMapMode ? msg.map_points : [];
+            if (msg.pose) lidarPose = {x:Number(msg.pose.x)||0, y:Number(msg.pose.y)||0, theta:Number(msg.pose.theta)||0};
+            updateLidarMetrics(lidarLatestPoints);
+            drawLidarMap();
+        }
+
+        function drawLidarMap() {
+            if (!lidarMapCanvas || !lidarMapCtx) return;
+            const ctx = lidarMapCtx;
+            const rect = lidarMapCanvas.getBoundingClientRect();
+            const w = rect.width, h = rect.height;
+            if (w < 2 || h < 2) return;
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = '#030607';
+            ctx.fillRect(0, 0, w, h);
+
+            const cx = w * 0.5, cy = h * 0.56;
+            const radius = Math.max(100, Math.min(w * 0.46, h * 0.43));
+            const scale = radius / lidarViewRangeM;
+
+            const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+            glow.addColorStop(0, 'rgba(0,229,176,.055)');
+            glow.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = glow;
+            ctx.fillRect(cx-radius, cy-radius, radius*2, radius*2);
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(54,76,84,.28)';
+            ctx.lineWidth = 1;
+            const halfSteps = Math.floor(lidarViewRangeM / 0.5);
+            for (let i=-halfSteps; i<=halfSteps; i++) {
+                const pos = i * 0.5 * scale;
+                ctx.beginPath(); ctx.moveTo(cx+pos, cy-radius); ctx.lineTo(cx+pos, cy+radius); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(cx-radius, cy+pos); ctx.lineTo(cx+radius, cy+pos); ctx.stroke();
+            }
+            for (let m=1; m<=lidarViewRangeM; m++) {
+                ctx.strokeStyle = m === lidarViewRangeM ? 'rgba(230,0,0,.36)' : 'rgba(72,102,112,.48)';
+                ctx.beginPath(); ctx.arc(cx, cy, m*scale, 0, Math.PI*2); ctx.stroke();
+                ctx.fillStyle = '#617078'; ctx.font = '10px Courier New';
+                ctx.fillText(`${m}m`, cx+4, cy-m*scale-4);
+            }
+            ctx.strokeStyle = 'rgba(255,45,53,.65)';
+            ctx.beginPath(); ctx.moveTo(cx, cy-radius); ctx.lineTo(cx, cy+radius); ctx.stroke();
+            ctx.strokeStyle = 'rgba(0,229,176,.45)';
+            ctx.beginPath(); ctx.moveTo(cx-radius, cy); ctx.lineTo(cx+radius, cy); ctx.stroke();
+            ctx.fillStyle = '#ff4650'; ctx.font = 'bold 11px Courier New'; ctx.fillText('ÖN 0°', cx+7, cy-radius+14);
+            ctx.fillStyle = '#00e5b0'; ctx.fillText('SOL 90°', cx-radius+8, cy-7); ctx.fillText('SAĞ 270°', cx+radius-72, cy-7);
+
+            if (lidarMapMode) {
+                for (const p of lidarMapPoints) {
+                    const dx = Number(p[0]) - lidarPose.x, dy = Number(p[1]) - lidarPose.y;
+                    const forward = dx*Math.cos(lidarPose.theta) + dy*Math.sin(lidarPose.theta);
+                    const left = -dx*Math.sin(lidarPose.theta) + dy*Math.cos(lidarPose.theta);
+                    if (Math.hypot(forward,left) > lidarViewRangeM) continue;
+                    ctx.fillStyle = 'rgba(0,229,176,.82)';
+                    ctx.fillRect(cx-left*scale-1.5, cy-forward*scale-1.5, 3, 3);
+                }
+            } else if (lidarLatestPoints.length) {
+                const points = lidarLatestPoints.map(p => {
+                    const angle = Number(p[0]) * Math.PI / 180, d = Number(p[1]) / 1000;
+                    return { angle, d, x:cx-Math.sin(angle)*d*scale, y:cy-Math.cos(angle)*d*scale };
+                }).filter(p => p.d <= lidarViewRangeM).sort((a,b) => a.angle-b.angle);
+
+                if (points.length > 2) {
+                    ctx.beginPath(); ctx.moveTo(cx,cy);
+                    for (const p of points) ctx.lineTo(p.x,p.y);
+                    ctx.closePath();
+                    ctx.fillStyle = 'rgba(0,133,122,.10)'; ctx.fill();
+                    ctx.strokeStyle = 'rgba(0,229,176,.25)'; ctx.lineWidth = 1; ctx.stroke();
+                }
+                for (let i=0; i<points.length; i++) {
+                    const p = points[i];
+                    if (i % 8 === 0) {
+                        ctx.strokeStyle = lidarDepthColor(p.d, .10);
+                        ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(p.x,p.y); ctx.stroke();
+                    }
+                    ctx.fillStyle = lidarDepthColor(p.d, .96);
+                    const size = p.d < .6 ? 5 : p.d < 1.5 ? 4 : 3;
+                    ctx.fillRect(p.x-size/2, p.y-size/2, size, size);
+                }
+            }
+
+            ctx.translate(cx,cy);
+            ctx.fillStyle = '#e60000';
+            ctx.beginPath(); ctx.moveTo(0,-15); ctx.lineTo(-10,10); ctx.lineTo(10,10); ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#ff9d22'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(0,-18); ctx.lineTo(0,-31); ctx.stroke();
+            ctx.restore();
+
+            if (!lidarOnlineState) {
+                ctx.fillStyle = 'rgba(0,0,0,.72)'; ctx.fillRect(0,0,w,h);
+                ctx.fillStyle = '#e60000'; ctx.font = 'bold 18px Courier New'; ctx.textAlign = 'center';
+                ctx.fillText('LIDAR BAĞLANTI YOK', w/2, h/2);
+                ctx.textAlign = 'left';
+            }
+        }
+
+        // GERÇEK 3D POINT CLOUD GÖRÜNÜMÜ
+        // A1M8 tek yatay lazer düzlemi ölçtüğü için noktalara sahte yükseklik verilmez.
+        // Perspektif kamera, 3D ızgara ve robot referansı uzamsal okumayı kolaylaştırır;
+        // ileride gerçek Z/depth sensörü eklendiğinde color/position buffer hazırdır.
+        const MAX_LIDAR_POINTS = 6000;
+        const SCENE_SCALE = 65;      // sahne birimi / metre — sunucudan METRE gelir, görsel ölçeğe çevrilir
+        let lidarPositions, lidarColors;
+        let robotMarkerGroup;        // sahnedeki robot işaretçisi (gövde + yön konisi)
+
+        function init3DPointCloud() {
+            const container = document.getElementById('PointCloudMap');
+            if (typeof THREE === 'undefined') {
+                if (container) container.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#666;font-size:10px;text-align:center;padding:8px;">3D KÜTÜPHANE YÜKLENMEDİ<br>LiDAR motor/telemetri yine çalışır.</div>';
+                return;
+            }
+            const width = Math.max(2, container.clientWidth);
+            const height = Math.max(2, container.clientHeight);
+            pCloudScene = new THREE.Scene();
+            pCloudCamera = new THREE.PerspectiveCamera(60, width / height, 1, 1200);
+            pCloudCamera.position.set(0, 100, 180);
+            pCloudCamera.lookAt(0, 0, 0);
+
+            pCloudRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            pCloudRenderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+            pCloudRenderer.setSize(width, height, false);
+            container.appendChild(pCloudRenderer.domElement);
+
+            const geometry = new THREE.BufferGeometry();
+            lidarPositions = new Float32Array(MAX_LIDAR_POINTS * 3);
+            lidarColors = new Float32Array(MAX_LIDAR_POINTS * 3);
+            geometry.setAttribute('position', new THREE.BufferAttribute(lidarPositions, 3).setUsage(THREE.DynamicDrawUsage));
+            geometry.setAttribute('color', new THREE.BufferAttribute(lidarColors, 3).setUsage(THREE.DynamicDrawUsage));
+            geometry.setDrawRange(0, 0);  // gerçek LiDAR verisi gelene kadar hiçbir nokta çizilmez
+
+            const material = new THREE.PointsMaterial({ vertexColors: true, size: 3.0, transparent: true, opacity: 0.96, sizeAttenuation: true });
+            pCloudPoints = new THREE.Points(geometry, material);
+            pCloudPoints.rotation.set(0, 0, 0);  // veri gerçek olduğu için sahne döndürülmez, sabit kalır
+            pCloudScene.add(pCloudPoints);
+
+            // Metrik zemin: 1 metre aralıklı çizgiler, 10 metre çalışma alanı.
+            const grid = new THREE.GridHelper(SCENE_SCALE * 20, 20, 0x24434a, 0x14272b);
+            grid.position.y = -1;
+            pCloudScene.add(grid);
+            for (const radiusM of [1, 2, 3, 5]) {
+                const ringPoints = [];
+                for (let i=0; i<96; i++) {
+                    const a = i / 96 * Math.PI * 2;
+                    ringPoints.push(new THREE.Vector3(Math.cos(a)*radiusM*SCENE_SCALE, 0, Math.sin(a)*radiusM*SCENE_SCALE));
+                }
+                const ring = new THREE.LineLoop(
+                    new THREE.BufferGeometry().setFromPoints(ringPoints),
+                    new THREE.LineBasicMaterial({ color: radiusM < 2 ? 0x55301d : 0x17373b, transparent:true, opacity:.55 })
+                );
+                pCloudScene.add(ring);
+            }
+
+            // ROBOT REFERANS İŞARETÇİSİ — sahnenin merkezinde, robotun kendisini temsil eder.
+            // LiDAR verisi her zaman robota göre (egocentric) olduğu için bu işaretçi sabit
+            // kalır; bulutun NE KADAR yakın/uzak olduğunu bu referansa göre değerlendirebilirsin.
+            robotMarkerGroup = new THREE.Group();
+            const robotBody = new THREE.Mesh(
+                new THREE.CylinderGeometry(4, 4, 3, 16),
+                new THREE.MeshBasicMaterial({ color: 0xff2222 })
+            );
+            robotMarkerGroup.add(robotBody);
+            const headingMarker = new THREE.Mesh(
+                new THREE.ConeGeometry(2.5, 8, 12),
+                new THREE.MeshBasicMaterial({ color: 0xffa500 })
+            );
+            headingMarker.rotation.z = -Math.PI / 2;   // koni +X yönünü gösterir (LiDAR açı=0 referansı)
+            headingMarker.position.x = 8;
+            robotMarkerGroup.add(headingMarker);
+
+            // EKSEN GÖSTERGESİ — X(kırmızı)/Y(yeşil)/Z(mavi) referans çizgileri,
+            // robot işaretçisiyle birlikte hareket eder/döner.
+            const axesHelper = new THREE.AxesHelper(14);
+            robotMarkerGroup.add(axesHelper);
+
+            pCloudScene.add(robotMarkerGroup);
+
+            // İNTERAKTİF GÖRÜNÜM — mouse ile sürükle: bakış açısını döndür,
+            // tekerlek: yakınlaş/uzaklaş. Ek kütüphane gerekmez (manuel orbit).
+            const camDist0 = pCloudCamera.position.length();
+            let camAzimuth   = Math.atan2(pCloudCamera.position.x, pCloudCamera.position.z);
+            let camPolar     = Math.acos(pCloudCamera.position.y / camDist0);
+            let camRadius    = camDist0;
+            let isDragging   = false;
+            let lastMouseX = 0, lastMouseY = 0;
+
+            function updateCameraFromOrbit() {
+                const r = camRadius;
+                pCloudCamera.position.set(
+                    r * Math.sin(camPolar) * Math.sin(camAzimuth),
+                    r * Math.cos(camPolar),
+                    r * Math.sin(camPolar) * Math.cos(camAzimuth)
+                );
+                pCloudCamera.lookAt(0, 0, 0);
+            }
+            pCloudResetView = () => {
+                camAzimuth = 0;
+                camPolar = Math.acos(100 / Math.sqrt(100*100 + 180*180));
+                camRadius = Math.sqrt(100*100 + 180*180);
+                updateCameraFromOrbit();
+            };
+
+            const domEl = pCloudRenderer.domElement;
+            domEl.style.cursor = 'grab';
+            domEl.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                lastMouseX = e.clientX; lastMouseY = e.clientY;
+                domEl.style.cursor = 'grabbing';
+            });
+            window.addEventListener('mouseup', () => { isDragging = false; domEl.style.cursor = 'grab'; });
+            window.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                const dx = e.clientX - lastMouseX, dy = e.clientY - lastMouseY;
+                lastMouseX = e.clientX; lastMouseY = e.clientY;
+                camAzimuth -= dx * 0.008;
+                camPolar   -= dy * 0.008;
+                camPolar = Math.max(0.05, Math.min(Math.PI - 0.05, camPolar));  // tam tepe/alta kilitlenmesin
+                updateCameraFromOrbit();
+            });
+            // Dokunmatik (tablet/telefon) sürükleme desteği
+            domEl.addEventListener('touchstart', (e) => {
+                if (e.touches.length !== 1) return;
+                isDragging = true;
+                lastMouseX = e.touches[0].clientX; lastMouseY = e.touches[0].clientY;
+            }, { passive: true });
+            window.addEventListener('touchend', () => { isDragging = false; });
+            window.addEventListener('touchmove', (e) => {
+                if (!isDragging || e.touches.length !== 1) return;
+                const dx = e.touches[0].clientX - lastMouseX, dy = e.touches[0].clientY - lastMouseY;
+                lastMouseX = e.touches[0].clientX; lastMouseY = e.touches[0].clientY;
+                camAzimuth -= dx * 0.008;
+                camPolar   -= dy * 0.008;
+                camPolar = Math.max(0.05, Math.min(Math.PI - 0.05, camPolar));
+                updateCameraFromOrbit();
+            }, { passive: true });
+            domEl.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                camRadius *= (1 + e.deltaY * 0.001);
+                camRadius = Math.max(40, Math.min(600, camRadius));
+                updateCameraFromOrbit();
+            }, { passive: false });
+
+            function animatePointCloud() {
+                requestAnimationFrame(animatePointCloud);
+                pCloudRenderer.render(pCloudScene, pCloudCamera);
+            }
+            animatePointCloud();
+        }
+
+        function resizeLidar3D() {
+            const container = document.getElementById('PointCloudMap');
+            if (!container || !pCloudRenderer || !pCloudCamera) return;
+            const rect = container.getBoundingClientRect();
+            if (rect.width < 2 || rect.height < 2) return;
+            pCloudRenderer.setSize(rect.width, rect.height, false);
+            pCloudCamera.aspect = rect.width / rect.height;
+            pCloudCamera.updateProjectionMatrix();
+        }
+
+        function setLidar3DColor(index, distanceM) {
+            let hex = distanceM < .6 ? 0xff3845 : distanceM < 1.5 ? 0xffad21 : distanceM < 3 ? 0x00e5b0 : 0x27a7ff;
+            const color = new THREE.Color(hex);
+            lidarColors[index*3] = color.r;
+            lidarColors[index*3+1] = color.g;
+            lidarColors[index*3+2] = color.b;
+        }
+
+        function updateLidar3D(msg) {
+            if (!pCloudPoints || !lidarPositions || !lidarColors) return;
+            let count = 0;
+            const useMap = msg.slam === true && Array.isArray(msg.map_points) && msg.map_points.length;
+            if (useMap) {
+                const pose = msg.pose || {x:0,y:0,theta:0};
+                const px = Number(pose.x)||0, py = Number(pose.y)||0, theta = Number(pose.theta)||0;
+                for (const point of msg.map_points) {
+                    if (count >= MAX_LIDAR_POINTS) break;
+                    const dx = Number(point[0])-px, dy = Number(point[1])-py;
+                    const forward = dx*Math.cos(theta)+dy*Math.sin(theta);
+                    const left = -dx*Math.sin(theta)+dy*Math.cos(theta);
+                    const distanceM = Math.hypot(forward,left);
+                    if (!(distanceM > 0) || distanceM > 10) continue;
+                    lidarPositions[count*3] = forward*SCENE_SCALE;
+                    lidarPositions[count*3+1] = 0;
+                    lidarPositions[count*3+2] = left*SCENE_SCALE;
+                    setLidar3DColor(count, distanceM);
+                    count++;
+                }
+            } else {
+                const points = Array.isArray(msg.points) ? msg.points : [];
+                for (const point of points) {
+                    if (count >= MAX_LIDAR_POINTS) break;
+                    const angle = Number(point[0])*Math.PI/180;
+                    const distanceM = Number(point[1])/1000;
+                    if (!(distanceM > 0) || distanceM > 10) continue;
+                    lidarPositions[count*3] = Math.cos(angle)*distanceM*SCENE_SCALE;
+                    lidarPositions[count*3+1] = 0;
+                    lidarPositions[count*3+2] = Math.sin(angle)*distanceM*SCENE_SCALE;
+                    setLidar3DColor(count, distanceM);
+                    count++;
+                }
+            }
+            pCloudPoints.geometry.attributes.position.needsUpdate = true;
+            pCloudPoints.geometry.attributes.color.needsUpdate = true;
+            pCloudPoints.geometry.setDrawRange(0, count);
+        }
+
+        // KAMERA — tek port/same-origin: tarayıcı artık normalde /camera/stream
+        // üzerinden bağlanır. Asıl donma düzeltmesi burada: MJPEG <img> bağlantısı
+        // bazen hata vermeden son karede kalabilir. Bu yüzden ayrı bir /camera/status
+        // watchdog'u çalışır; taze kare yoksa <img> src zorla yenilenir.
+        function connectCameraFeed() {
+            const img = document.getElementById('cameraFeed');
+            const offlineMsg = document.getElementById('cameraOfflineMsg');
+            const localStatus = document.getElementById('localStatus');
+            if (!img) return;
+
+            let sourceIndex = 0;
+            let reconnectTimer = null;
+            let watchdogTimer = null;
+            let lastReconnectAt = 0;
+            const directProto = location.protocol === 'https:' ? 'https:' : 'http:';
+            // Önce doğrudan Pi kamera portu: MJPEG için en az ara katman ve en düşük gecikme.
+            // İkinci kaynak same-origin FastAPI proxy; doğrudan 8888 erişilemiyorsa otomatik fallback.
+            const sources = [
+                () => `${directProto}//${location.hostname}:8888/stream?_=${Date.now()}`,
+                () => `/camera/stream?_=${Date.now()}`
+            ];
+
+            function setOffline(isOffline, text) {
+                if (offlineMsg) offlineMsg.style.display = isOffline ? 'flex' : 'none';
+                if (localStatus && text) localStatus.textContent = text;
+            }
+
+            function forceReconnect(reason, advanceSource=false) {
+                const now = Date.now();
+                if (now - lastReconnectAt < 1200) return;
+                lastReconnectAt = now;
+                if (advanceSource) sourceIndex++;
+                setOffline(true, reason || 'Kamera akışı yenileniyor...');
+                img.removeAttribute('src');
+                clearTimeout(reconnectTimer);
+                reconnectTimer = setTimeout(() => {
+                    img.src = sources[sourceIndex % sources.length]();
+                }, 150);
+            }
+
+            img.addEventListener('load', () => {
+                setOffline(false, 'Kamera akışı aktif.');
+            });
+            img.addEventListener('error', () => {
+                forceReconnect('Kamera bağlantısı koptu, yeniden deneniyor...', true);
+            });
+
+            async function cameraWatchdog() {
+                try {
+                    const r = await fetch(`/camera/status?_=${Date.now()}`, { cache: 'no-store' });
+                    const st = await r.json();
+                    if (!st.camera || st.fresh === false) {
+                        const age = (typeof st.frame_age === 'number') ? ` (${st.frame_age.toFixed(1)}s eski kare)` : '';
+                        forceReconnect('Kamera taze kare üretmiyor' + age + ', akış yenileniyor...', false);
+                    } else {
+                        setOffline(false, 'Kamera akışı aktif.');
+                    }
+                } catch (e) {
+                    forceReconnect('Kamera durumu okunamadı, akış yenileniyor...', false);
+                }
+            }
+
+            img.src = sources[sourceIndex % sources.length]();
+            clearInterval(watchdogTimer);
+            watchdogTimer = setInterval(cameraWatchdog, 2000);
+            setTimeout(cameraWatchdog, 2500);
+        }
+
+        // HEDEF SEÇİMİ (tıkla-takip-et) — object-fit:cover ölçeklemesini
+        // doğru hesaba katarak tıklama pikselini gerçek görüntü
+        // koordinatına (sonra normalize 0-1'e) çeviriyor.
+        function selectTrackTarget(event) {
+            const img = event.target;
+            const rect = img.getBoundingClientRect();
+            const clickX = event.clientX - rect.left;
+            const clickY = event.clientY - rect.top;
+
+            const iw = img.naturalWidth, ih = img.naturalHeight;
+            const cw = rect.width, ch = rect.height;
+            if (!iw || !ih) return;  // görüntü henüz yüklenmediyse işlem yapma
+
+            // object-fit:cover: görüntü kutuyu TAMAMEN kaplayacak şekilde
+            // ölçeklenir (en-boy oranı korunur), taşan kısım kırpılır.
+            const scale = Math.max(cw / iw, ch / ih);
+            const offsetX = (iw * scale - cw) / 2;
+            const offsetY = (ih * scale - ch) / 2;
+            const imgX = (clickX + offsetX) / scale;
+            const imgY = (clickY + offsetY) / scale;
+            const normX = Math.max(0, Math.min(1, imgX / iw));
+            const normY = Math.max(0, Math.min(1, imgY / ih));
+
+            const marker = document.getElementById('clickMarker');
+            if (marker) {
+                marker.style.left = clickX + 'px';
+                marker.style.top = clickY + 'px';
+                marker.style.display = 'block';
+                clearTimeout(window._clickMarkerTimer);
+                window._clickMarkerTimer = setTimeout(() => { marker.style.display = 'none'; }, 1500);
+            }
+            sendCmd(`/select_target?x=${normX.toFixed(4)}&y=${normY.toFixed(4)}`, 'HEDEF SEÇ');
+        }
+        function clearTrackTarget() {
+            sendCmd('/select_target?clear=1', 'SEÇİM TEMİZLENDİ');
+        }
+
+        // GERÇEK LIDAR VERİSİ — RPi'deki /ws/lidar'a bağlanır. RPLIDAR A1M8'in
+        // ölçtüğü tek yatay düzlem, sahte yükseklik üretmeden 2D yerel işgal haritasına
+        // aktarılır. Motor başlat/durdur zinciri aynen korunur.
+        let lidarWs = null;
+        let lidarMotorPending = null;
+        function connectLidarWS() {
+            const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+            lidarWs = new WebSocket(`${proto}://${location.host}/ws/lidar`);
+
+            lidarWs.onmessage = (ev) => {
+                let msg;
+                try { msg = JSON.parse(ev.data); } catch (e) { return; }
+                if (msg.type === 'lidar_motor_ack') {
+                    if (lidarMotorPending) {
+                        const pending = lidarMotorPending;
+                        lidarMotorPending = null;
+                        clearTimeout(pending.timer);
+                        pending.resolve(msg);
+                    }
+                    return;
+                }
+                if (msg.type !== 'lidar') return;
+                if (typeof msg.enabled === 'boolean') {
+                    lidarMotorEnabled = msg.enabled;
+                    updateLidarMotorButton(lidarMotorEnabled, msg.applied !== false);
+                }
+                updateLidarMap(msg);
+                updateLidar3D(msg);
+                updateLidarTag();
+            };
+
+            lidarWs.onclose = () => {
+                if (lidarMotorPending) {
+                    const pending = lidarMotorPending;
+                    lidarMotorPending = null;
+                    clearTimeout(pending.timer);
+                    pending.reject(new Error('LiDAR canlı bağlantısı kapandı'));
+                }
+                setTimeout(connectLidarWS, 2000);
+            };
+            lidarWs.onerror = () => { lidarWs.close(); };
+        }
+
+        // AMORTİSÖRLÜ JOYSTICKLER
+        function setupJoystick(areaId, knobId, callback, isDualAxis) {
+            const area = document.getElementById(areaId); const knob = document.getElementById(knobId);
+            let active = false;
+            function move(e) {
+                if(!active) return;
+                let rect = area.getBoundingClientRect();
+                let cx = e.touches ? e.touches[0].clientX : e.clientX; let cy = e.touches ? e.touches[0].clientY : e.clientY;
+                let x = cx - rect.left - rect.width/2; let y = isDualAxis ? (cy - rect.top - rect.height/2) : 0;
+                
+                let radius = isDualAxis ? (rect.width/2 - 22) : (rect.width/2 - 22); 
+                let dist = Math.sqrt(x*x + y*y);
+                if(dist > radius) { x = (x/dist)*radius; y = (y/dist)*radius; }
+                
+                knob.style.transform = `translate(${x}px, ${y}px)`;
+                callback(x/radius, -y/radius);
+            }
+            function end() {
+                if (!active) return;
+                active = false;
+                knob.style.transform = `translate(0px, 0px)`;
+                callback(0, 0);
+            }
+            area.addEventListener('mousedown', () => active = true); window.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
+            area.addEventListener('touchstart', () => active = true); window.addEventListener('touchmove', (e) => { e.preventDefault(); move(e); }, {passive:false}); window.addEventListener('touchend', end);
+        }
+
+        let motionModeActive = false;
+        let motionRequestPending = false;
+        let motionRequestFailures = 0;
+        function pushMotionData() {
+            if (!motionModeActive || controlMode !== 'MANUAL' || motionRequestPending) return;
+            motionRequestPending = true;
+            fetch(`/joy?x=${joyX.toFixed(2)}&y=${joyY.toFixed(2)}&r=${joyR.toFixed(2)}`, {cache:'no-store', signal:AbortSignal.timeout(650)})
+                .then(async response => {
+                    if (!response.ok) throw new Error(await response.text());
+                    motionRequestFailures = 0;
+                })
+                .catch(error => {
+                    motionRequestFailures++;
+                    const status = document.getElementById('localStatus');
+                    if (status) { status.style.color = '#ff9d22'; status.innerText = `KOMUT GECİKTİ (${motionRequestFailures}/4) · bağlantı toparlanıyor`; }
+                    if (motionRequestFailures >= 4) {
+                        motionModeActive = false;
+                        joyX = joyY = joyR = 0;
+                        if (status) { status.style.color = '#e60000'; status.innerText = 'YÜRÜYÜŞ GÜVENLİ DURDU · MANUEL modu yeniden seç'; }
+                    }
+                })
+                .finally(() => { motionRequestPending = false; });
+        }
+
+        function forceJoystickStop() {
+            const shouldTransmitStop = motionModeActive
+                || Math.abs(joyX) >= 0.01 || Math.abs(joyY) >= 0.01 || Math.abs(joyR) >= 0.01;
+            joyX = 0; joyY = 0; joyR = 0;
+            clearTimeout(paramTimer);
+            if (!shouldTransmitStop) return;
+            fetch('/joy?x=0&y=0&r=0', {cache:'no-store', keepalive:true}).catch(() => {});
+        }
+
+        function sendParams() {
+            let gz = document.getElementById('gz').value;
+            let sl = document.getElementById('sl').value; let sh = document.getElementById('sh').value; let sp = document.getElementById('sp').value;
+            document.getElementById('vGz').innerText = gz; document.getElementById('vSl').innerText = sl;
+            document.getElementById('vSh').innerText = sh; document.getElementById('vSp').innerText = sp;
+            sendCmd(`/params?z=${gz}&len=${sl}&lift=${sh}&spd=${sp}`, 'PARAMS');
+        }
+
+        function sendIK() {
+            let p = document.getElementById('pitch').value; let r = document.getElementById('roll').value; let y = document.getElementById('yaw').value;
+            document.getElementById('vP').innerText = p + "°"; document.getElementById('vR').innerText = r + "°"; document.getElementById('vYw').innerText = y + "°";
+            clearTimeout(debounceIK); debounceIK = setTimeout(() => { sendCmd(`/bodyIk?p=${p}&r=${r}&y=${y}`, 'BODY-IK'); }, 50);
+        }
+        function resetIK() { document.getElementById('pitch').value = 0; document.getElementById('roll').value = 0; document.getElementById('yaw').value = 0; sendIK(); }
+        
+        // KOMUT GERİ BİLDİRİMİ — her gönderilen komutun sonucu localStatus'ta görünür
+        function sendCmd(url, label) {
+            const stEl = document.getElementById('localStatus');
+            fetch(url).then(r => {
+                r.text().then(body => {
+                    if (stEl) {
+                        stEl.style.color = r.ok ? '#3a3' : '#e60000';
+                        stEl.innerText = (label || url) + ' → HTTP ' + r.status + (body ? ' (' + body + ')' : '');
+                    }
+                });
+            }).catch(e => {
+                if (stEl) { stEl.style.color = '#e60000'; stEl.innerText = (label || url) + ' → BAĞLANTI HATASI'; }
+            });
+        }
+
+        function toggleGimbal() {
+            gimbalActiveState = !gimbalActiveState;
+            let btn = document.getElementById('btnGimbal');
+            if(gimbalActiveState) { btn.classList.add('btn-active'); btn.innerText = "GİMBAL (OTO-DENGE): AKTİF"; } 
+            else { btn.classList.remove('btn-active'); btn.innerText = "GİMBAL (OTO-DENGE): KAPALI"; }
+            sendCmd('/setGimbal?state=' + (gimbalActiveState ? '1' : '0'), 'GIMBAL');
+        }
+
+        let gimbalFilterDebounce;
+        function setGimbalFilterLevel(v) {
+            document.getElementById('vGimbalFilter').innerText = v;
+            clearTimeout(gimbalFilterDebounce);
+            gimbalFilterDebounce = setTimeout(() => {
+                sendCmd(`/setGimbalFilter?v=${v}`, 'GİMBAL TEPKİ');
+            }, 80);
+        }
+
+        async function sendMode(m) {
+            motionModeActive = false;
+            joyX = joyY = joyR = 0;
+            try {
+                const response = await fetch('/mode?m=' + m, {cache:'no-store'});
+                const body = await response.text();
+                if (!response.ok) throw new Error(body);
+                motionModeActive = (m === 'bezier_joy');
+                if (motionModeActive) { controlMode = 'MANUAL'; pushMotionData(); }
+                document.getElementById('localStatus').innerText = 'MODE: ' + m + ' · OK';
+                return true;
+            } catch (error) {
+                document.getElementById('localStatus').innerText = 'MOD REDDEDİLDİ: ' + error.message;
+                return false;
+            }
+        }
+
+        let standArmPending = false;
+        let standArmGeneration = 0;
+        let lastArmStatusText = '';
+        let lastArmStatusAt = 0;
+        function updateArmStatus(data) {
+            const el = document.getElementById('armStatus');
+            if (!el) return;
+            if (!data || data.proxyStale) {
+                if (!lastArmStatusText) el.textContent = 'SERVO: CANLI VERİ BEKLENİYOR';
+                return;
+            }
+            const missing = [];
+            if (data.pcaRightOnline !== true) missing.push('SAĞ PCA');
+            if (data.pcaLeftOnline !== true) missing.push('SOL PCA');
+            lastArmStatusText = missing.length ? 'ARM ENGELLİ: ' + missing.join(' + ') + ' BULUNAMADI' :
+                'SERVO: ' + (data.spineState || 'BİLİNMİYOR') + ' · ' + (data.outputsArmed ? 'ARM AKTİF' : 'TÜM BACAK ARM KAPALI');
+            lastArmStatusAt = Date.now();
+            el.textContent = lastArmStatusText;
+        }
+        async function startControlledStand() {
+            if (standArmPending) return;
+            if (!confirm('Robot gövde destek çıkıntıları üzerinde mi, ayakların çevresi tamamen boş mu? CAPTURE → STAND başlatılsın mı?')) return;
+            standArmPending = true;
+            const generation = ++standArmGeneration;
+            const btn = document.getElementById('btnStandArm');
+            if (btn) btn.disabled = true;
+            motionModeActive = false;
+            joyX = joyY = joyR = 0;
+            try {
+                const tr = await fetch('/telemetry', {cache:'no-store', signal:AbortSignal.timeout(2500)});
+                if (!tr.ok) throw new Error('ESP bağlantısı yok');
+                const t = await tr.json();
+                updateArmStatus(t);
+                if (t.proxyStale || t.spineState !== 'DISARMED' || t.outputsArmed || !t.pcaRightOnline || !t.pcaLeftOnline || !t.configValid || !t.homeSet)
+                    throw new Error('DISARMED, iki PCA ve geçerli HOME gerekli. Durumu kontrol et.');
+                if (generation !== standArmGeneration) throw new Error('Kalkış iptal edildi');
+                const r = await fetch('/goHome?confirm=start', {cache:'no-store', signal:AbortSignal.timeout(8000)});
+                const body = await r.text();
+                if (!r.ok) throw new Error(body);
+                document.getElementById('localStatus').textContent = 'Kalkış kabul edildi; STAND durumunu bekle. Yürüyüş için MANUEL seç.';
+            } catch (e) {
+                document.getElementById('localStatus').textContent = 'ARM: ' + e.message + ' · Otomatik tekrar yok; servo durumunu kontrol et.';
+            } finally {
+                standArmPending = false;
+                if (btn) btn.disabled = false;
+                fetchCockpitTelemetry();
+            }
+        }
+        function cutStandPwm() {
+            ++standArmGeneration;
+            motionModeActive = false;
+            joyX = joyY = joyR = 0;
+            sendCmd('/legOff', 'PWM KES');
+        }
+
+        // KONTROL MODU — MANUEL: joystick aktif. OTO: joystick devre dışı (otonom
+        // navigasyon modülü henüz bağlı değil; bu sadece geçiş altyapısını kurar)
+        let controlMode = 'MANUAL';
+        async function setControlMode(m) {
+            if (m === 'OTO' && controlMode !== 'OTO') {
+                if (!confirm('OTO (LIDAR) modu açılacak — robot LiDAR ile koridoru ortalayıp duvarlardan kaçınarak KENDİ BAŞINA yürüyecek. Devam edilsin mi?')) {
+                    return;
+                }
+            }
+            motionModeActive = false;
+            joyX = joyY = joyR = 0;
+            try {
+                const response = await fetch(`/lidar_nav?state=${m === 'OTO' ? 1 : 0}`, {cache:'no-store'});
+                const body = await response.text();
+                if (!response.ok) throw new Error(body);
+                if (m === 'MANUAL' && !await sendMode('bezier_joy')) return;
+            } catch (error) {
+                document.getElementById('localStatus').innerText = 'KONTROL MODU REDDEDİLDİ: ' + error.message;
+                return;
+            }
+            controlMode = m;
+            document.getElementById('btnManual').classList.toggle('btn-active', m === 'MANUAL');
+            document.getElementById('btnOto').classList.toggle('btn-active', m === 'OTO');
+            const joyA = document.getElementById('joyArea'), joyAR = document.getElementById('joyAreaR');
+            const active = (m === 'MANUAL');
+            joyA.style.opacity = joyAR.style.opacity = active ? '1' : '0.3';
+            joyA.style.pointerEvents = joyAR.style.pointerEvents = active ? 'auto' : 'none';
+            const stEl = document.getElementById('localStatus');
+            if (stEl) {
+                stEl.style.color = '#888';
+                stEl.innerText = active
+                    ? 'MANUEL MOD: Joystick aktif.'
+                    : 'OTO MOD: Joystick kapalı. LiDAR otonom yürüyüş AKTİF.';
+            }
+        }
+
+        // LİDAR MOTOR — OTO modda olmasan da manuel aç/kapa. Gerçek durum
+        // /ws/lidar üzerinden 'enabled' alanıyla da senkronize edilir.
+        // Başlat/durdur düğmeleri yalnızca backend cevabı başarılı olduktan
+        // sonra durumu değiştirir; böylece arayüz gerçekte olmayan bir sonucu
+        // göstermemiş olur.
+        let lidarMotorEnabled = true;
+        function toggleLidarMotor() {
+            setLidarMotor(!lidarMotorEnabled);
+        }
+        async function setLidarMotor(enabled) {
+            const stEl = document.getElementById('localStatus');
+            const startBtn = document.getElementById('btnLidarStart');
+            const stopBtn = document.getElementById('btnLidarStop');
+            if (startBtn) startBtn.disabled = true;
+            if (stopBtn) stopBtn.disabled = true;
+            try {
+                let result;
+                if (lidarWs && lidarWs.readyState === WebSocket.OPEN) {
+                    result = await new Promise((resolve, reject) => {
+                        const timer = setTimeout(() => {
+                            if (lidarMotorPending) lidarMotorPending = null;
+                            reject(new Error('LiDAR komut cevabı zaman aşımına uğradı'));
+                        }, 5000);
+                        lidarMotorPending = { resolve, reject, timer };
+                        lidarWs.send(JSON.stringify({cmd:'motor', state: enabled ? 1 : 0}));
+                    });
+                } else {
+                    // WS henüz kurulmadıysa eski HTTP hattı uyumluluk/yedek olarak kalır.
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 8000);
+                    try {
+                        const response = await fetch(`/lidar/motor?state=${enabled ? 1 : 0}`, {
+                            signal: controller.signal,
+                            cache: 'no-store'
+                        });
+                        result = await response.json();
+                        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+                    } finally {
+                        clearTimeout(timeoutId);
+                    }
+                }
+                if (typeof result.enabled !== 'boolean') throw new Error('Geçersiz backend cevabı');
+                lidarMotorEnabled = result.enabled;
+                updateLidarMotorButton(lidarMotorEnabled, result.applied === true);
+                if (stEl) {
+                    stEl.style.color = result.applied ? '#3a3' : '#ff8800';
+                    stEl.innerText = result.applied
+                        ? `LIDAR MOTOR → ${lidarMotorEnabled ? 'BAŞLATILDI; TARAMA CANLI' : 'DURDURULDU'}`
+                        : `LIDAR MOTOR → KOMUT ALINDI, DONANIM DOĞRULANAMADI${result.error ? ' (' + result.error + ')' : ''}`;
+                }
+            } catch (e) {
+                if (stEl) {
+                    stEl.style.color = '#e60000';
+                    stEl.innerText = 'LIDAR MOTOR → BAĞLANTI HATASI';
+                }
+            } finally {
+                if (startBtn) startBtn.disabled = false;
+                if (stopBtn) stopBtn.disabled = false;
+            }
+        }
+        function updateLidarMotorButton(enabled, applied = true) {
+            const btn = document.getElementById('btnLidarMotor');
+            if (!btn) return;
+            btn.innerText = applied
+                ? `LIDAR MOTOR: ${enabled ? 'AÇIK — TARAMA CANLI' : 'KAPALI'}`
+                : `LIDAR MOTOR: ${enabled ? 'BAŞLATILIYOR' : 'DURDURULUYOR'}`;
+            btn.style.color = applied ? (enabled ? 'var(--c-cyan)' : '#666') : '#ff8800';
+            btn.style.borderColor = applied ? (enabled ? 'var(--c-cyan)' : '#444') : '#ff8800';
+            const startBtn = document.getElementById('btnLidarStart');
+            const stopBtn = document.getElementById('btnLidarStop');
+            if (startBtn) startBtn.classList.toggle('btn-active', applied && enabled);
+            if (stopBtn) stopBtn.classList.toggle('btn-active', applied && !enabled);
+        }
+
+        // AI TAKİP — açıldığında robot GERÇEKTEN hareket edebilir (kişi
+        // takibi/arama dönüşü). Yanlışlıkla açılmasın diye onay istiyor.
+        let aiTrackEnabled = false;
+        function toggleAiTracking() {
+            if (!aiTrackEnabled) {
+                if (!confirm('AI TAKİP açılacak — robot SEÇTİĞİN kişiyi takip etmek için dönebilir VE artık yaklaşabilir (ileri hareket de dahil). Devam edilsin mi?')) return;
+            }
+            aiTrackEnabled = !aiTrackEnabled;
+            sendCmd(`/ai_tracking?state=${aiTrackEnabled ? 1 : 0}`, 'AI TAKİP');
+            updateAiTrackButton(aiTrackEnabled);
+        }
+        function updateAiTrackButton(enabled) {
+            const btn = document.getElementById('btnAiTrack');
+            if (!btn) return;
+            btn.innerText = `AI TAKİP: ${enabled ? 'AKTİF' : 'KAPALI'}`;
+            btn.style.color = enabled ? '#ff8800' : '#666';
+            btn.style.borderColor = enabled ? '#ff8800' : '#444';
+            if (enabled) btn.classList.add('btn-active'); else btn.classList.remove('btn-active');
+        }
+
+        // ROBOT KOL KALİBRASYON — sadece base/joint1/joint2/gripper.
+        // Bacak/joystick kontrolüne dokunmaz; server tarafında da sadece /armServo veya /armPose kullanılır.
+        let armServoTimers = {};
+        function armStatus(msg, ok=true) {
+            const stEl = document.getElementById('localStatus');
+            if (!stEl) return;
+            stEl.style.color = ok ? '#3a3' : '#e60000';
+            stEl.innerText = msg;
+        }
+        function armStatusFromResponse(prefix, r, body) {
+            let extra = '';
+            try {
+                const j = JSON.parse(body || '{}');
+                const inner = j?.result?.status || j?.esp?.armStatus?.status || j?.esp?.['arm/status']?.status;
+                const err = j?.result?.error || j?.error;
+                if (inner) extra += ` ESP:${inner}`;
+                if (err) extra += ` ${String(err).slice(0,80)}`;
+            } catch(e) {}
+            armStatus(`${prefix} → RPi:${r.status}${extra}`, r.ok);
+            if (!r.ok) console.warn('[ARM]', body);
+        }
+        function setArmSliderLabel(joint, value) {
+            const map = { base: 'vArmBase', joint1: 'vArmJ1', joint2: 'vArmJ2', gripper: 'vArmGrip' };
+            const el = document.getElementById(map[joint]);
+            if (el) el.innerText = Number(value).toFixed(0) + '°';
+        }
+        function sendArmServoDebounced(joint, value) {
+            value = Number(value);
+            setArmSliderLabel(joint, value);
+            clearTimeout(armServoTimers[joint]);
+            armServoTimers[joint] = setTimeout(() => {
+                fetch(`/arm/servo?joint=${encodeURIComponent(joint)}&angle=${encodeURIComponent(value)}`, { cache: 'no-store' })
+                    .then(async r => {
+                        const body = await r.text();
+                        armStatusFromResponse(`KOL ${joint} → ${value.toFixed(0)}°`, r, body);
+                    })
+                    .catch(e => armStatus(`KOL ${joint} bağlantı hatası`, false));
+            }, 90);
+        }
+        function armCalibrate90() {
+            if (!confirm('Bütün kol servoları 90° elektriksel orta poza gidecek. Horn takma/kalibrasyon için devam edilsin mi?')) return;
+            fetch('/arm/calibrate_pose', { cache: 'no-store' })
+                .then(async r => { const body = await r.text(); armStatusFromResponse('90° KALİBRE', r, body); })
+                .catch(e => armStatus('90° kalibre bağlantı hatası', false));
+        }
+        function armHomePose() {
+            if (!confirm('Kol bekleme pozuna gidecek: base 90, joint1 5° gövde üstüne katlı, joint2 bekleme. Devam edilsin mi?')) return;
+            fetch('/arm/home', { cache: 'no-store' })
+                .then(async r => { const body = await r.text(); armStatusFromResponse('KOL BEKLEME', r, body); })
+                .catch(e => armStatus('Kol bekleme bağlantı hatası', false));
+        }
+        function armOff() {
+            if (!confirm('Sadece kol PCA kanalları 12, 13, 3 ve 7 PWM kesilecek. Kamera CH14/15 etkilenmez; bacaklara dokunulmaz. Devam edilsin mi?')) return;
+            fetch('/arm/off', { cache: 'no-store' })
+                .then(async r => { const body = await r.text(); armStatusFromResponse('KOL PWM KES', r, body); })
+                .catch(e => armStatus('Kol PWM kes bağlantı hatası', false));
+        }
+        function armGripperPreset(which) {
+            const id = which === 'close' ? 'armGripClose' : 'armGripOpen';
+            const label = which === 'close' ? 'KAPAT' : 'AÇ';
+            const el = document.getElementById(id);
+            const grip = document.getElementById('armGrip');
+            const value = Number(el?.value ?? grip?.value ?? 90);
+            if (grip) grip.value = String(value);
+            setArmSliderLabel('gripper', value);
+            fetch(`/arm/servo?joint=gripper&angle=${encodeURIComponent(value)}`, { cache: 'no-store' })
+                .then(async r => { const body = await r.text(); armStatusFromResponse(`GRIPPER ${label} → ${value.toFixed(0)}°`, r, body); })
+                .catch(e => armStatus(`Gripper ${label.toLowerCase()} bağlantı hatası`, false));
+        }
+        function applyGripperLimits(minV, maxV) {
+            // Rack-and-pinion gripper: 90° açık sabit; kapalı açı = MAX.
+            const lo = 90;
+            const hi = Math.max(90, Math.min(175, Number(maxV || 120)));
+            const grip = document.getElementById('armGrip');
+            if (grip) {
+                grip.min = String(lo);
+                grip.max = String(hi);
+                grip.value = String(Math.max(lo, Math.min(hi, Number(grip.value || 90))));
+                setArmSliderLabel('gripper', grip.value);
+            }
+            const minEl = document.getElementById('armGripMin');
+            const maxEl = document.getElementById('armGripMax');
+            const openEl = document.getElementById('armGripOpen');
+            const closeEl = document.getElementById('armGripClose');
+            if (minEl) minEl.value = '90';
+            if (maxEl) maxEl.value = String(hi);
+            if (openEl) openEl.value = '90';
+            if (closeEl) closeEl.value = String(hi);
+        }
+        function saveArmGripperCalibration() {
+            const minV = 90;
+            const maxV = Math.max(90, Math.min(175, Number(document.getElementById('armGripMax')?.value ?? 120)));
+            const openV = 90;
+            const closeV = maxV;
+            const curV = Math.max(90, Math.min(maxV, Number(document.getElementById('armGrip')?.value ?? 90)));
+            const setField = (id, v) => { const el = document.getElementById(id); if (el) el.value = String(v); };
+            setField('armGripMin', 90);
+            setField('armGripOpen', 90);
+            setField('armGripClose', closeV);
+            applyGripperLimits(minV, maxV);
+            const qs = new URLSearchParams({
+                gripper_min: String(minV),
+                gripper_max: String(maxV),
+                gripper_open: String(openV),
+                gripper_close: String(closeV),
+                gripper_current: String(curV),
+            });
+            fetch('/arm/calibration/set?' + qs.toString(), { cache: 'no-store' })
+                .then(async r => { const body = await r.text(); armStatusFromResponse('GRIPPER KAYIT', r, body); loadArmCalibration(); })
+                .catch(e => armStatus('Gripper kayıt bağlantı hatası', false));
+        }
+        
+        function armDiagnose() {
+            fetch('/arm/diagnose', { cache: 'no-store' })
+                .then(async r => {
+                    const body = await r.text();
+                    armStatusFromResponse('KOL BAĞLANTI TESTİ', r, body);
+                    console.log('[ARM DIAG]', body);
+                })
+                .catch(e => armStatus('Kol bağlantı testi hatası', false));
+        }
+
+        function loadArmCalibration() {
+            fetch('/arm/calibration', { cache: 'no-store' })
+                .then(r => r.json())
+                .then(cal => {
+                    const gp = cal.gripper || {};
+                    const gl = (cal.limits && cal.limits.gripper) || { min: 90, max: 120 };
+                    const setVal = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined) el.value = String(v); };
+                    const gMax = Math.max(90, Math.min(175, Number(gl.max ?? gp.close ?? 120)));
+                    setVal('armGripMin', 90);
+                    setVal('armGripMax', gMax);
+                    setVal('armGripOpen', 90);
+                    setVal('armGripClose', gMax);
+                    setVal('armGrip', Math.max(90, Math.min(gMax, Number(gp.current ?? 90))));
+                    applyGripperLimits(90, gMax);
+                    setArmSliderLabel('base', document.getElementById('armBase')?.value || 90);
+                    setArmSliderLabel('joint1', document.getElementById('armJ1')?.value || 90);
+                    setArmSliderLabel('joint2', document.getElementById('armJ2')?.value || 90);
+                })
+                .catch(e => console.warn('[ARM] kalibrasyon yüklenemedi', e));
+        }
+
+        // ===== DUAL WORKSPACE =====
+        function openCameraConsole() {
+            window.open(location.protocol + '//' + location.host + '/camera-console', '_blank', 'noopener');
+        }
+
+        function openNavigationConsole() {
+            window.open(location.protocol + '//' + location.host + '/navigation-console', '_blank', 'noopener');
+        }
+
+        async function updateVisionSummary() {
+            const el = document.getElementById('visionSummary');
+            if (!el) return;
+            try {
+                const [cameraRes, visionRes] = await Promise.all([
+                    fetch('/camera/status', {cache:'no-store'}),
+                    fetch('/api/vision/status', {cache:'no-store'})
+                ]);
+                if (!cameraRes.ok || !visionRes.ok) throw new Error('durum okunamadı');
+                const camera = await cameraRes.json();
+                const vision = await visionRes.json();
+                const age = Number(camera.frame_age);
+                const cameraText = camera.camera === true && camera.fresh === true
+                    ? `Kamera canlı${Number.isFinite(age) ? ` · ${age.toFixed(2)}s` : ''}`
+                    : 'Kamera taze değil';
+                const trackingText = vision.ai_tracking === true ? 'AI takip açık' : 'AI takip kapalı';
+                const targetState = vision.tracking?.state === 'locked'
+                    ? 'hedef kilitli' : vision.tracking?.state === 'lost' ? 'hedef kayıp' : 'hedef seçilmedi';
+                el.textContent = `${cameraText} · ${trackingText} · ${targetState}. Tüm görüntü ve seçim araçları ayrı ekranda.`;
+                el.style.color = camera.camera === true && camera.fresh === true ? '#8aa79e' : '#ff9d22';
+            } catch (_) {
+                el.textContent = 'Kamera durumu okunamadı. Kamera + AI kontrolleri ayrı ekranda korunuyor.';
+                el.style.color = '#ff9d22';
+            }
+        }
+
+        function openKinematicsLab() {
+            const url = location.protocol + '//' + location.hostname + ':8090';
+            window.open(url, '_blank', 'noopener');
+        }
+
+        // ===== LEG SERVO LAB =====
+        const LEG_LAB_NAMES = ['RF','RM','RR','LF','LM','LR'];
+        const LEG_JOINT_NAMES = ['COXA','FEMUR','TIBIA'];
+
+        function legLabGetSelection() {
+            return {
+                leg: Number(document.getElementById('legLabLeg')?.value || 0),
+                joint: Number(document.getElementById('legLabJoint')?.value || 0),
+            };
+        }
+
+        function legLabSelectionChanged() {
+            const {leg, joint} = legLabGetSelection();
+            if (legLabSnapshot?.legs?.[leg]) {
+                const a = Number(legLabSnapshot.legs[leg].angle?.[joint] ?? 90);
+                const slider = document.getElementById('legLabAngle');
+                if (slider) slider.value = Math.round(Math.max(5, Math.min(175, a)));
+                const v = document.getElementById('legLabAngleVal');
+                if (v) v.innerText = Math.round(a) + '°';
+            } else {
+                const mount = joint === 0 ? 90 : (leg < 3 ? 5 : 175);
+                legLabSetAngleLocal(mount);
+            }
+            legLabLoadCalibration();
+            legLabRenderStatus();
+        }
+
+        function legLabSetAngleLocal(v) {
+            v = Math.max(5, Math.min(175, Number(v)));
+            const slider = document.getElementById('legLabAngle');
+            const label = document.getElementById('legLabAngleVal');
+            if (slider) slider.value = v;
+            if (label) label.innerText = Math.round(v) + '°';
+        }
+
+        function legLabAngleInput(v) {
+            legLabSetAngleLocal(v);
+            clearTimeout(legLabDebounce);
+            legLabDebounce = setTimeout(() => legLabSendAngle(Number(v)), 70);
+        }
+
+        function legLabSetAngle(v) {
+            legLabSetAngleLocal(v);
+            legLabSendAngle(v);
+        }
+
+        function legLabSendAngle(angle) {
+            const {leg, joint} = legLabGetSelection();
+            const a = Math.max(5, Math.min(175, Number(angle)));
+            fetch(`/legServo?leg=${leg}&j=${joint}&angle=${a}`, {cache:'no-store'})
+                .then(async r => { if(!r.ok) throw new Error(await r.text()); return r.json(); })
+                .then(() => fetch(`/legOn?leg=${leg}&j=${joint}&confirm=lab`, {cache:'no-store'}))
+                .then(async r => { if(!r.ok) throw new Error(await r.text()); return r.json(); })
+                .then(() => legLabMessage(`${LEG_LAB_NAMES[leg]} / ${LEG_JOINT_NAMES[joint]} USB PWM AKTİF`, true))
+                .then(() => legLabLoadStatus())
+                .catch(e => legLabMessage('SERVO KOMUT HATASI: ' + e.message, false));
+        }
+
+        function legLabMountPose(all) {
+            const {leg} = legLabGetSelection();
+            fetch('/legMountPose?leg=' + (all ? -1 : leg), {cache:'no-store'})
+                .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+                .then(() => { legLabMessage(all ? 'TÜM BACAKLAR MONTAJ POZUNA GİDİYOR' : LEG_LAB_NAMES[leg] + ' MONTAJ POZUNA GİDİYOR', true); legLabLoadStatus(); })
+                .catch(e => legLabMessage('MONTAJ POZU HATASI: '+e.message, false));
+        }
+
+        function legLabHomePose(all) {
+            const {leg} = legLabGetSelection();
+            fetch('/legHomePose?leg=' + (all ? -1 : leg), {cache:'no-store'})
+                .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+                .then(() => { legLabMessage(all ? 'TÜM BACAKLAR HOME/STAND HEDEFINE GİDİYOR' : LEG_LAB_NAMES[leg] + ' HOME/STAND HEDEFINE GİDİYOR', true); legLabLoadStatus(); })
+                .catch(e => legLabMessage('HOME POZU HATASI: '+e.message, false));
+        }
+
+        function legLabOff(scope) {
+            const {leg, joint} = legLabGetSelection();
+            let q = '/legOff?';
+            if (scope === 'joint') q += `leg=${leg}&j=${joint}`;
+            else if (scope === 'leg') q += `leg=${leg}&j=-1`;
+            else q += 'leg=-1&j=-1';
+            fetch(q, {cache:'no-store'})
+                .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+                .then(() => legLabMessage('PWM KESİLDİ: ' + scope.toUpperCase(), true))
+                .catch(e => legLabMessage('PWM KESME HATASI: '+e.message, false));
+        }
+
+        function legLabLoadStatus() {
+            fetch('/legStatus', {cache:'no-store'})
+                .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+                .then(d => { legLabSnapshot = d; legLabRenderStatus(); })
+                .catch(() => {});
+        }
+
+        function legLabRenderStatus() {
+            const el = document.getElementById('legLabStatus');
+            if (!el) return;
+            const {leg, joint} = legLabGetSelection();
+            const d = legLabSnapshot?.legs?.[leg];
+            if (!d) { el.innerText = 'Servo bilgisi bekleniyor...'; return; }
+            const dirText = Number(d.dir?.[joint]) === -1 ? 'MIRROR (180-IK)' : 'DIRECT (+)';
+            const ch = d.channels?.[joint];
+            const actual = Number(d.angle?.[joint] ?? 0).toFixed(1);
+            const target = Number(d.target?.[joint] ?? 0).toFixed(1);
+            el.innerText = `${LEG_LAB_NAMES[leg]} / ${LEG_JOINT_NAMES[joint]}\nPCA ${d.pca} · CH${ch} · ${dirText}\nACTUAL ${actual}° · TARGET ${target}°\nHOME C/F/T: ${(d.home||[]).map(x=>Number(x).toFixed(0)+'°').join(' / ')}`;
+        }
+
+        function legLabMessage(msg, ok=true) {
+            const el = document.getElementById('legLabStatus');
+            if (el) { el.innerText = msg; el.style.color = ok ? 'var(--c-cyan)' : 'var(--primary)'; }
+        }
+
+        function legLabLoadCalibration() {
+            const {leg} = legLabGetSelection();
+            fetch('/getCalib?leg=' + leg, {cache:'no-store'})
+                .then(r => r.json()).then(d => {
+                    const map = {
+                        lcCMin:d.cMin, lcCMax:d.cMax, lcCOff:d.cOff,
+                        lcFMin:d.fMin, lcFMax:d.fMax, lcFOff:d.fOff,
+                        lcTMin:d.tMin, lcTMax:d.tMax, lcTOff:d.tOff,
+                    };
+                    Object.entries(map).forEach(([id,v]) => { const e=document.getElementById(id); if(e) e.value=v; });
+                }).catch(()=>{});
+        }
+
+        function legLabSaveCalibration() {
+            const {leg} = legLabGetSelection();
+            const v = id => encodeURIComponent(document.getElementById(id).value);
+            const qs = `leg=${leg}&cMin=${v('lcCMin')}&cMax=${v('lcCMax')}&cOff=${v('lcCOff')}&fMin=${v('lcFMin')}&fMax=${v('lcFMax')}&fOff=${v('lcFOff')}&tMin=${v('lcTMin')}&tMax=${v('lcTMax')}&tOff=${v('lcTOff')}`;
+            fetch('/saveCalib?' + qs, {cache:'no-store'})
+                .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.text(); })
+                .then(() => legLabMessage(LEG_LAB_NAMES[leg] + ' KALİBRASYONU NVS\'YE KAYDEDİLDİ', true))
+                .catch(e => legLabMessage('KALİBRASYON KAYIT HATASI: '+e.message, false));
+        }
+
+        // ===== POWER + TOF =====
+        function updatePowerTelemetry(data) {
+            const setText = (id, text) => { const e=document.getElementById(id); if(e) e.innerText=text; };
+            if (typeof data.batR === 'number') {
+                setText('batRVal', data.batR.toFixed(2) + ' V');
+                setText('batRCellVal', (data.batRCell ?? data.batR/3).toFixed(2) + ' V/CELL');
+                powerCardClass('batRCard', data.batR);
+            }
+            if (typeof data.batL === 'number') {
+                setText('batLVal', data.batL.toFixed(2) + ' V');
+                setText('batLCellVal', (data.batLCell ?? data.batL/3).toFixed(2) + ' V/CELL');
+                powerCardClass('batLCard', data.batL);
+            }
+            if (typeof data.tofMm === 'number') setText('tofVal', data.tofMm >= 0 ? data.tofMm + ' mm' : '-- mm');
+            if (typeof data.tofOnline === 'boolean') {
+                setText('tofState', data.tofOnline ? 'ONLINE · I2C 0x29' : 'OFFLINE · I2C 0x29');
+                const c=document.getElementById('tofCard'); if(c){ c.classList.toggle('crit', !data.tofOnline); }
+            }
+            if (typeof data.tofSequence === 'number') {
+                const age = typeof data.tofAgeMs === 'number' && data.tofAgeMs >= 0 ? data.tofAgeMs + ' ms' : '--';
+                setText('tofSampleState', 'SAMPLE ' + data.tofSequence + ' · AGE ' + age);
+            }
+        }
+
+        function powerCardClass(id, packV) {
+            const c=document.getElementById(id); if(!c) return;
+            c.classList.remove('warn','crit');
+            if (packV > 0 && packV < 10.2) c.classList.add('crit');
+            else if (packV > 0 && packV < 10.8) c.classList.add('warn');
+        }
+
+        // MÜZİK/SES SİSTEMİ — 0001..0009 doğrudan seçim + ileri/geri
+        function syncAudioTrackUi() {
+            const display = document.getElementById('trackDisp');
+            const select = document.getElementById('audioTrackSelect');
+            if (display) display.innerText = currentTrack;
+            if (select) select.value = String(currentTrack);
+        }
+        function selectAudioTrack(value) {
+            currentTrack = Math.max(1, Math.min(9, Number.parseInt(value, 10) || 1));
+            syncAudioTrackUi();
+        }
+        function audioCmd(cmd) {
+            const now = performance.now();
+            if (now < audioCommandBusyUntil) return;
+            audioCommandBusyUntil = now + 500;
+            if (cmd === 'prev') currentTrack = Math.max(1, currentTrack - 1);
+            if (cmd === 'next') currentTrack = Math.min(9, currentTrack + 1);
+            syncAudioTrackUi();
+            sendCmd('/audio?cmd=' + cmd + '&t=' + currentTrack, 'AUDIO:' + cmd);
+        }
+        function setVolume(v) {
+            document.getElementById('vVol').innerText = v;
+            clearTimeout(volDebounce); volDebounce = setTimeout(() => sendCmd('/audio?cmd=vol&v=' + v, 'AUDIO:vol'), 120);
+        }
+
+        let laserOutputOn = false;
+        let laserPowerDebounce = null;
+        function laserPowerInput(value) {
+            const power = Math.max(0, Math.min(100, Number(value) || 0));
+            const label = document.getElementById('laserPowerVal');
+            if (label) label.innerText = power.toFixed(0) + '%';
+            clearTimeout(laserPowerDebounce);
+            laserPowerDebounce = setTimeout(() => setLaserPower(power, false), 100);
+        }
+
+        async function setLaserPower(power, immediate=false) {
+            power = Math.max(0, Math.min(100, Math.round(Number(power) || 0)));
+            const button = document.getElementById('btnLaserOff');
+            if (button && immediate) button.disabled = true;
+            try {
+                const response = await fetch('/laser?power=' + power, {cache:'no-store'});
+                const payload = await response.json();
+                if (!response.ok || payload.ok === false) throw new Error(payload.error || payload.message || ('HTTP ' + response.status));
+                const status = document.getElementById('localStatus');
+                if (status) status.innerText = 'LAZER PWM: ' + power + '% · USB ACK';
+            } catch (error) {
+                const status = document.getElementById('localStatus');
+                if (status) status.innerText = 'LAZER HATASI: ' + error.message;
+            } finally {
+                if (button) button.disabled = false;
+            }
+        }
+
+        function updateLaserTelemetry(data) {
+            laserOutputOn = data.laserOn === true;
+            const state = document.getElementById('laserState');
+            const power = typeof data.laserPowerPct === 'number' ? Math.max(0, Math.min(100, data.laserPowerPct)) : 0;
+            const slider = document.getElementById('laserPowerSlider');
+            const label = document.getElementById('laserPowerVal');
+            if (state) {
+                state.innerText = laserOutputOn ? ('AÇIK · ' + power + '% · SÜRE SINIRI YOK') : 'KAPALI · USB ONLINE';
+                state.style.color = laserOutputOn ? '#ff4650' : 'var(--c-cyan)';
+            }
+            if (document.activeElement !== slider && slider) slider.value = String(power);
+            if (document.activeElement !== slider && label) label.innerText = power + '%';
+        }
+
+        let fanPowerDebounce = null;
+        let fanPowerPending = null;
+        let fanPowerSending = false;
+        function fanPowerInput(value) {
+            const power = Math.max(0, Math.min(100, Number(value) || 0));
+            const label = document.getElementById('fanPowerVal');
+            if (label) label.innerText = power.toFixed(0) + '%';
+            clearTimeout(fanPowerDebounce);
+            fanPowerDebounce = setTimeout(() => setFanPower(power), 180);
+        }
+
+        async function sendFanCommand(url, description) {
+            try {
+                const response = await fetch(url, {cache:'no-store'});
+                const payload = await response.json();
+                if (!response.ok || payload.ok === false) throw new Error(payload.error || payload.message || ('HTTP ' + response.status));
+                const status = document.getElementById('localStatus');
+                if (status) status.innerText = description + ' · USB ACK';
+            } catch (error) {
+                const status = document.getElementById('localStatus');
+                if (status) status.innerText = 'FAN HATASI: ' + error.message;
+            }
+        }
+
+        function setFanPower(power) {
+            power = Math.max(0, Math.min(100, Math.round(Number(power) || 0)));
+            fanPowerPending = power;
+            if (fanPowerSending) return;
+            fanPowerSending = true;
+            (async () => {
+                try {
+                    while (fanPowerPending !== null) {
+                        const next = fanPowerPending;
+                        fanPowerPending = null;
+                        await sendFanCommand('/fan?power=' + next, 'FAN MANUEL ' + next + '%');
+                    }
+                } finally {
+                    fanPowerSending = false;
+                }
+            })();
+        }
+
+        function setFanAuto() {
+            return sendFanCommand('/fan?mode=auto', 'FAN AUTO');
+        }
+
+        function updateFanTelemetry(data) {
+            const valid = data.ntcValid === true;
+            const auto = data.fanAuto !== false;
+            const power = typeof data.fanPowerPct === 'number' ? Math.max(0, Math.min(100, data.fanPowerPct)) : 100;
+            const temp = document.getElementById('internalTempVal');
+            const state = document.getElementById('fanState');
+            const slider = document.getElementById('fanPowerSlider');
+            const label = document.getElementById('fanPowerVal');
+            const autoButton = document.getElementById('btnFanAuto');
+            if (temp) temp.innerText = valid && typeof data.internalTempC === 'number' ? data.internalTempC.toFixed(1) + '°C' : 'SENSÖR YOK';
+            if (state) {
+                const sensorState = valid ? 'NTC ONLINE' : (auto ? 'NTC YOK / AUTO FAILSAFE' : 'NTC YOK / MANUEL OVERRIDE');
+                state.innerText = (auto ? 'AUTO' : 'MANUEL') + ' · ' + power + '% · ' + sensorState;
+                state.style.color = valid || !auto ? 'var(--c-cyan)' : '#ff4650';
+            }
+            if (autoButton) {
+                autoButton.style.background = auto ? 'var(--c-cyan)' : 'transparent';
+                autoButton.style.color = auto ? '#071013' : 'var(--c-cyan)';
+            }
+            if (document.activeElement !== slider && slider) slider.value = String(power);
+            if (document.activeElement !== slider && label) label.innerText = power + '%';
+        }
+
+        const cameraGimbalDebounce = {pan:null, tilt:null};
+        function cameraGimbalInput(axis, value) {
+            const angle = Math.max(45, Math.min(135, Math.round(Number(value) || 90)));
+            const label = document.getElementById(axis === 'pan' ? 'cameraPanVal' : 'cameraTiltVal');
+            if (label) label.innerText = angle + '°';
+            clearTimeout(cameraGimbalDebounce[axis]);
+            cameraGimbalDebounce[axis] = setTimeout(() => sendCameraGimbal(axis, angle), 100);
+        }
+
+        async function cameraGimbalCommand(url, description) {
+            const state = document.getElementById('cameraGimbalState');
+            try {
+                const response = await fetch(url, {cache:'no-store', signal:AbortSignal.timeout(3200)});
+                const payload = await response.json();
+                if (!response.ok || payload.ok === false) throw new Error(payload.error || payload.message || ('HTTP ' + response.status));
+                if (state) { state.innerText = description + ' · USB ACK'; state.style.color = 'var(--c-cyan)'; }
+            } catch (error) {
+                if (state) { state.innerText = 'KAMERA GİMBAL HATASI: ' + error.message; state.style.color = '#ff4650'; }
+            }
+        }
+
+        function sendCameraGimbal(axis, angle) {
+            return cameraGimbalCommand('/cameraGimbal?axis=' + encodeURIComponent(axis) + '&angle=' + angle, axis.toUpperCase() + ' ' + angle + '°');
+        }
+
+        function centerCameraGimbal() {
+            return cameraGimbalCommand('/cameraGimbal?action=center', 'PAN/TILT MERKEZ 90°');
+        }
+
+        function stabilizeCameraGimbal() {
+            return cameraGimbalCommand('/cameraGimbal?action=stabilize', 'PAN/TILT AUTO STABİLİZE');
+        }
+
+        function disableCameraGimbal() {
+            return cameraGimbalCommand('/cameraGimbal?action=off', 'PAN/TILT PWM KESİLDİ');
+        }
+
+        function updateCameraGimbalTelemetry(data) {
+            const enabled = data.cameraGimbalEnabled === true;
+            const modeNames = ['MERKEZ', 'STABİLİZE', 'AI TAKİP', 'MANUEL'];
+            const mode = modeNames[Number(data.cameraGimbalMode)] || 'BİLİNMİYOR';
+            const pan = typeof data.cameraPanDeg === 'number' ? Math.max(45, Math.min(135, data.cameraPanDeg)) : 90;
+            const tilt = typeof data.cameraTiltDeg === 'number' ? Math.max(45, Math.min(135, data.cameraTiltDeg)) : 90;
+            const panSlider = document.getElementById('cameraPanSlider');
+            const tiltSlider = document.getElementById('cameraTiltSlider');
+            const panLabel = document.getElementById('cameraPanVal');
+            const tiltLabel = document.getElementById('cameraTiltVal');
+            const state = document.getElementById('cameraGimbalState');
+            if (document.activeElement !== panSlider && panSlider) panSlider.value = String(Math.round(pan));
+            if (document.activeElement !== tiltSlider && tiltSlider) tiltSlider.value = String(Math.round(tilt));
+            if (document.activeElement !== panSlider && panLabel) panLabel.innerText = pan.toFixed(1) + '°';
+            if (document.activeElement !== tiltSlider && tiltLabel) tiltLabel.innerText = tilt.toFixed(1) + '°';
+            if (state) {
+                state.innerText = enabled ? (mode + ' · PAN ' + pan.toFixed(1) + '° · TILT ' + tilt.toFixed(1) + '°') : 'PWM KESİK · CH15 PAN / CH14 TILT';
+                state.style.color = enabled ? 'var(--c-cyan)' : '#888';
+            }
+        }
+
+        let telemetryRequestPending = false;
+        let telemetryFailures = 0;
+        let lastTelemetryLogs = null;
+        let lastBootDiag = null;
+        function fetchCockpitTelemetry() {
+            if (telemetryRequestPending) return;
+            telemetryRequestPending = true;
+            fetch('/telemetry', {cache:'no-store', signal:AbortSignal.timeout(1600)}).then(r => {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            }).then(data => {
+                if (typeof data.z === 'number') latestBodyZ = data.z;
+                updateArmStatus(data);
+                latestMpuOnline = data.mpuOnline === true;
+                latestTofOnline = data.tofOnline === true;
+                if (typeof data.tofMm === 'number') latestTofMm = data.tofMm;
+                if (typeof data.mpuP === 'number') {
+                    latestMpuPitch = data.mpuP;
+                    const el = document.getElementById('mpuPitchVal');
+                    if (el) el.innerText = data.mpuP.toFixed(1) + '°';
+                }
+                if (typeof data.mpuR === 'number') {
+                    latestMpuRoll = data.mpuR;
+                    const el = document.getElementById('mpuRollVal');
+                    if (el) el.innerText = data.mpuR.toFixed(1) + '°';
+                }
+                if (typeof data.mpuY === 'number') {
+                    latestMpuYaw = data.mpuY;
+                    const el = document.getElementById('mpuYawVal');
+                    if (el) el.innerText = data.mpuY.toFixed(1) + '°';
+                }
+                updateNavigationLiveSensors();
+                updatePowerTelemetry(data);
+                updateLaserTelemetry(data);
+                updateFanTelemetry(data);
+                updateCameraGimbalTelemetry(data);
+                updateGpsTelemetry(data);
+                if (typeof data.gaitPhase === 'number') latestGaitPhase = data.gaitPhase;
+                if (!footFastTelemetrySeen && Array.isArray(data.footContacts) && data.footContacts.length >= 6) {
+                    latestFootContacts = data.footContacts.slice(0, 6).map(Boolean);
+                    updateFootContactUi();
+                }
+                if (typeof data.aiTrack === 'boolean' && data.aiTrack !== aiTrackEnabled) {
+                    aiTrackEnabled = data.aiTrack;
+                    updateAiTrackButton(aiTrackEnabled);
+                }
+                if (typeof data.gP === 'number') {
+                    const el = document.getElementById('gimbalPVal');
+                    if (el) el.innerText = data.gP.toFixed(2) + '°';
+                }
+                if (typeof data.gR === 'number') {
+                    const el = document.getElementById('gimbalRVal');
+                    if (el) el.innerText = data.gR.toFixed(2) + '°';
+                }
+                let sysLog = document.getElementById('sysLogBox');
+                const nextLogs = data.logs || '(log boş)';
+                if (sysLog && nextLogs !== lastTelemetryLogs) {
+                    let isAtBottom = sysLog.scrollHeight - sysLog.clientHeight <= sysLog.scrollTop + 1;
+                    sysLog.innerText = nextLogs;
+                    lastTelemetryLogs = nextLogs;
+                    if (isAtBottom) sysLog.scrollTop = sysLog.scrollHeight;
+                }
+                let bootDiag = document.getElementById('bootDiagBox');
+                if (bootDiag && data.bootDiag && data.bootDiag !== lastBootDiag) {
+                    bootDiag.innerText = data.bootDiag;
+                    lastBootDiag = data.bootDiag;
+                }
+                const linkEl = document.getElementById('tickerLink');
+                const modeEl = document.getElementById('tickerMode');
+                const sysEl  = document.getElementById('tickerSys');
+                if (linkEl) { linkEl.innerText = data.usbTelemetry ? 'ESP32 USB BAĞLI' : 'ESP32 BAĞLI'; linkEl.style.color = 'var(--c-cyan)'; }
+                telemetryFailures = 0;
+                if (modeEl) { modeEl.innerText = data.mode || '--'; modeEl.style.color = 'var(--text-hl)'; }
+                if (sysEl)  {
+                    const nominal = data.systemNominal === true;
+                    sysEl.innerText = nominal ? 'NOMINAL' : 'DEGRADED';
+                    sysEl.style.color = nominal ? 'var(--c-cyan)' : 'var(--c-orange)';
+                }
+            }).catch(e => {
+                telemetryFailures++;
+                if (telemetryFailures < 3) return;
+                const linkEl = document.getElementById('tickerLink');
+                const sysEl  = document.getElementById('tickerSys');
+                if (linkEl) { linkEl.innerText = 'BAĞLANTI YOK'; linkEl.style.color = '#888'; }
+                if (sysEl)  { sysEl.innerText  = 'HATA'; sysEl.style.color = '#888'; }
+            }).finally(() => { telemetryRequestPending = false; });
+        }
+
+        // LEG STATUS CANVAS — GERÇEK firmware fazına göre (artık kendi kendine
+        // sahte sayan bir sayaç değil). LEG_PHASE_OFFSET sabittir, v41.ino'daki
+        // legPhase[6] dizisiyle BİREBİR aynı olmalı.
+        const LEG_PHASE_OFFSET = [0, 0.5, 0, 0.5, 0, 0.5];
+        let latestGaitPhase = 0;  // /telemetry'den gelen gerçek currentPhase
+        const LEG_NAMES = ['RF','RM','RR','LF','LM','LR'];
+        let latestFootContacts = [false, false, false, false, false, false];
+        let footContactRequestPending = false;
+        let footFastTelemetrySeen = false;
+
+        function fetchFootContacts() {
+            if (footContactRequestPending || document.hidden) return;
+            footContactRequestPending = true;
+            fetch('/api/foot-contacts', {cache:'no-store', signal:AbortSignal.timeout(300)})
+                .then(response => {
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
+                    return response.json();
+                })
+                .then(data => {
+                    if (!data.ok || !Array.isArray(data.contacts) || data.contacts.length < 6) return;
+                    footFastTelemetrySeen = true;
+                    latestFootContacts = data.contacts.slice(0, 6).map(Boolean);
+                    updateFootContactUi();
+                })
+                .catch(() => {})
+                .finally(() => { footContactRequestPending = false; });
+        }
+
+        function updateFootContactUi() {
+            latestFootContacts.forEach((pressed, i) => {
+                const el = document.getElementById('footContact' + i);
+                if (!el) return;
+                el.classList.toggle('pressed', pressed);
+                el.textContent = LEG_NAMES[i] + (pressed ? ' TEMAS' : ' BOŞ');
+            });
+        }
+
+        function initLegCanvas() {
+            const c = document.getElementById('legCanvas');
+            if (!c) return;
+            c.width  = c.offsetWidth  || 360;
+            c.height = c.offsetHeight || 140;
+        }
+
+        function drawLegStatus() {
+            const c = document.getElementById('legCanvas');
+            if (!c) return;
+            const ctx = c.getContext('2d');
+            const W = c.width, H = c.height;
+            const cx = W / 2, cy = H / 2 - 8;
+            const walking = (Math.abs(joyX) > 0.05 || Math.abs(joyY) > 0.05 || Math.abs(joyR) > 0.05);
+
+            // GERÇEK faz: firmware'in currentPhase'i + sabit bacak ofseti.
+            // Eskiden burada "legPhase += 0.016" gibi sabit hızda kendi
+            // kendine sayan SAHTE bir animasyon vardı — gerçek yürüme hızı/
+            // yönüyle hiç ilgisi yoktu ("gerçek dünyadaki hareketle aynı
+            // değil" şikayetinin sebebi tam buydu). Artık /telemetry'den
+            // gelen gerçek currentPhase kullanılıyor.
+            const legPhase = LEG_PHASE_OFFSET.map(off => (latestGaitPhase + off) % 1);
+
+            ctx.clearRect(0, 0, W, H);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, W, H);
+
+            // Gövde
+            ctx.fillStyle = '#1a1a1a'; ctx.strokeStyle = '#444'; ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.roundRect(cx - 22, cy - 36, 44, 72, 5);
+            ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#555'; ctx.font = 'bold 8px "Share Tech Mono", monospace';
+            ctx.textAlign = 'center'; ctx.fillText('APEX', cx, cy + 3);
+
+            // Ön oku
+            ctx.beginPath(); ctx.moveTo(cx, cy - 44); ctx.lineTo(cx - 5, cy - 36); ctx.lineTo(cx + 5, cy - 36);
+            ctx.closePath(); ctx.fillStyle = '#e60000'; ctx.globalAlpha = 0.9; ctx.fill(); ctx.globalAlpha = 1;
+
+            // 6 bacak
+            const LC = [
+                {a: -48, bx: cx + 20, by: cy - 24},
+                {a:   0, bx: cx + 24, by: cy      },
+                {a:  48, bx: cx + 20, by: cy + 24 },
+                {a: -132, bx: cx - 20, by: cy - 24},
+                {a:  180, bx: cx - 24, by: cy      },
+                {a:  132, bx: cx - 20, by: cy + 24 },
+            ];
+
+            LC.forEach((lc, i) => {
+                const ph = legPhase[i], sw = ph < 0.5;
+                const col = sw ? '#e60000' : '#444', op = sw ? 1 : 0.45;
+                const contact = latestFootContacts[i] === true;
+                const footCol = contact ? '#00ff88' : col;
+                const rad = lc.a * Math.PI / 180;
+                const arc = (sw && walking) ? Math.sin(ph * Math.PI * 2) * 0.2 : 0;
+                const x1 = lc.bx + 20 * Math.cos(rad), y1 = lc.by + 20 * Math.sin(rad);
+                const x2 = x1 + 23 * Math.cos(rad + arc), y2 = y1 + 23 * Math.sin(rad + arc);
+
+                ctx.globalAlpha = op; ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+                ctx.beginPath(); ctx.moveTo(lc.bx, lc.by); ctx.lineTo(x1, y1); ctx.stroke();
+                ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+                ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x1, y1, 2.5, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = contact ? '#00ff88' : (sw ? '#e60000' : '#111'); ctx.strokeStyle = footCol; ctx.lineWidth = contact ? 2 : 1;
+                ctx.beginPath(); ctx.arc(x2, y2, contact ? 5 : (sw ? 4 : 3), 0, Math.PI*2); ctx.fill(); ctx.stroke();
+                if (contact) { ctx.strokeStyle='#00ff88'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(x2,y2,9,0,Math.PI*2); ctx.stroke(); }
+                if (sw && walking) { ctx.strokeStyle='#e60000'; ctx.lineWidth=0.8; ctx.beginPath(); ctx.arc(x2,y2,8,0,Math.PI*2); ctx.stroke(); }
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = footCol; ctx.font = 'bold 8px "Share Tech Mono", monospace';
+                ctx.textAlign = i < 3 ? 'left' : 'right';
+                ctx.fillText(LEG_NAMES[i], x2 + (i < 3 ? 6 : -6), y2 - 3);
+            });
+
+            // Durum + faz çubuğu
+            ctx.globalAlpha = 1;
+            ctx.font = '9px "Share Tech Mono", monospace'; ctx.textAlign = 'center';
+            ctx.fillStyle = walking ? '#e60000' : '#555';
+            ctx.fillText(walking ? '▶ YÜRÜYOR' : '■ DURDU', cx, H - 16);
+            const bW = W - 40, bX = 20, bY = H - 10;
+            ctx.fillStyle = '#111'; ctx.fillRect(bX, bY, bW, 5);
+            ctx.fillStyle = '#e60000'; ctx.globalAlpha = 0.75;
+            ctx.fillRect(bX + legPhase[0] * (bW/2), bY, bW/2 - 1, 5);
+            ctx.fillStyle = '#880000'; ctx.globalAlpha = 0.55;
+            ctx.fillRect(bX + legPhase[1] * (bW/2), bY, bW/2 - 1, 5);
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#555'; ctx.font = '7px "Share Tech Mono", monospace';
+            ctx.textAlign = 'left'; ctx.fillText('A', bX - 14, bY + 4);
+            ctx.textAlign = 'right'; ctx.fillText('B', bX + bW + 14, bY + 4);
+        }
+    </script>
+</body>
+</html>

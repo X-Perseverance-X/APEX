@@ -56,10 +56,18 @@ class VisionRuntimeContractTests(unittest.TestCase):
         self.assertNotIn("SCANNING...", self.source)
         self.assertNotIn("cv2.fillPoly(ov,[pts]", self.source)
 
-    def test_ai_commands_have_exclusive_source_and_verified_forward_sign(self):
-        self.assertIn("&source=ai", self.source)
-        self.assertIn("send_joy(0, command_fwd, command_turn)", self.source)
-        self.assertNotIn("send_joy(0, 0, SEARCH_TURN_SPEED * last_side)", self.source)
+    def test_ai_tracking_moves_only_camera_gimbal(self):
+        self.assertIn("APEX_GIMBAL_URL", self.source)
+        self.assertIn("def send_gimbal_target", self.source)
+        self.assertIn("send_gimbal_target(command_pan, command_tilt)", self.source)
+        self.assertIn("send_gimbal_mode('stabilize')", self.source)
+        self.assertNotIn("APEX_JOY_URL", self.source)
+        self.assertNotIn("send_joy(", self.source)
+
+    def test_new_camera_mount_is_not_rotated_or_mirrored_by_default(self):
+        self.assertIn('CAMERA_HFLIP = os.environ.get("APEX_CAMERA_HFLIP", "0") == "1"', self.source)
+        self.assertIn('CAMERA_VFLIP = os.environ.get("APEX_CAMERA_VFLIP", "0") == "1"', self.source)
+        self.assertIn("Transform(hflip=CAMERA_HFLIP, vflip=CAMERA_VFLIP)", self.source)
 
     def test_adaptive_approach_is_close_smooth_and_tof_guarded(self):
         tree = ast.parse(self.source)

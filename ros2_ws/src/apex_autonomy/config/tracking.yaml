@@ -1,0 +1,32 @@
+color_target_detector:
+  ros__parameters:
+    image_topic: /apex/camera
+    observation_topic: /apex/target_observation
+    debug_image_topic: /apex/tracking/debug_image
+    target_height_m: 1.40
+    horizontal_fov_deg: 60.0
+    minimum_area_px: 120.0
+target_follow_controller:
+  ros__parameters:
+    enabled: false
+    command_hz: 10.0
+    observation_timeout_s: 0.45
+    minimum_confidence: 0.50
+    target_distance_m: 1.20
+    tof_stop_distance_m: 0.45
+    tof_timeout_s: 0.60
+    max_linear_mps: 0.45
+    max_angular_rps: 0.85
+sim_target_driver:
+  ros__parameters:
+    enabled: false
+    mode: circle
+    linear_speed_mps: 0.12
+    yaw_rate_rps: 0.20
+tripod_gait_controller:
+  ros__parameters:
+    use_sim_time: true
+    update_rate_hz: 50.0
+    command_timeout_s: 0.40
+    command_linear_scale_mps: 0.45
+    command_angular_scale_rps: 0.85

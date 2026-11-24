@@ -12,7 +12,7 @@ from mapping_v2 import GraphConfig, ImuSample, LidarOutlierFilter, LidarScan, Ma
 from mapping_v2.occupancy import GridConfig, OccupancyGrid, rle_encode
 from mapping_v2.planner import plan_route
 from mapping_v2.pointcloud import VoxelCloud, project_lidar_scan, rotation_matrix_rpy
-from mapping_v2.scan_matcher import CorrelativeScanMatcher
+from mapping_v2.scan_matcher import CorrelativeScanMatcher, MatchResult
 import apex_server as server
 
 
@@ -68,6 +68,20 @@ class MappingV2Tests(unittest.TestCase):
         before = grid.log_odds.copy()
         self.assertFalse(grid.update_lidar(scan))
         np.testing.assert_array_equal(before, grid.log_odds)
+
+    def test_rejected_scan_is_not_published_to_persistent_sparse_cloud(self):
+        engine = MappingEngine(self.config)
+        now = time.monotonic_ns()
+        engine.ingest_imu(ImuSample(now, 0.0, 0.0, 0.0, True))
+        points = [(float(angle), 1500.0) for angle in range(0, 360, 5)]
+        engine.ingest_lidar(LidarScan(now + 1, 1, points))
+        self.assertEqual(engine.snapshot(False)["sparse_cloud"]["sequence"], 1)
+
+        engine.scan_matcher.match = lambda scan, grid, previous, **kwargs: MatchResult(
+            False, previous, 0.01, 1.0, len(scan.points), reason="LOW_CORRELATION",
+        )
+        engine.ingest_lidar(LidarScan(now + 2, 2, points))
+        self.assertEqual(engine.snapshot(False)["sparse_cloud"]["sequence"], 1)
 
     def test_local_costmap_forgets_obstacles_that_are_no_longer_seen(self):
         config = GridConfig(width=41, height=41, resolution_m=0.1, max_range_m=1.8,

@@ -140,7 +140,13 @@ class MappingEngine:
 
             if current_imu_yaw is not None:
                 self._last_lidar_imu_yaw_deg = current_imu_yaw
-            self._update_sparse_cloud_locked(scan)
+            # The browser accumulates sparse-cloud packets into a persistent
+            # coloured map. Never publish a scan that local SLAM rejected;
+            # doing so used the previous pose and painted duplicated/smeared
+            # geometry even though the 2D occupancy grid correctly rejected it.
+            cloud_admissible = first_scan or self.last_match.accepted or self.last_match.reason == "INITIALIZING_SUBMAP"
+            if cloud_admissible and not frozen:
+                self._update_sparse_cloud_locked(scan)
             self.last_lidar_ns = scan.timestamp_ns
             if changed:
                 self.last_map_update_ns = scan.timestamp_ns

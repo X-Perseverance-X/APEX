@@ -1,0 +1,24 @@
+[Unit]
+Description=APEX META-1 3D Kinematics Lab
+Wants=network-online.target apex-command-center.service
+After=network-online.target apex-command-center.service
+
+[Service]
+Type=simple
+User=perseverance
+Group=perseverance
+WorkingDirectory=/opt/apex/control_station/apex_kinematics_lab
+Environment=PYTHONUNBUFFERED=1
+Environment=APEX_COMMAND_CENTER_URL=http://127.0.0.1:8080
+ExecStart=/opt/apex/venvs/control/bin/python -m uvicorn app:app --host 0.0.0.0 --port 8090
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=60
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+Firmware libraries required by v54_meta1_integrated.ino:
+
+- Adafruit PWM Servo Driver Library
+- Adafruit VL53L1X
+- TinyGPSPlus
+- DFRobotDFPlayerMini
+
+Board/core:
+- ESP32 by Espressif Systems (ESP32-S3 target)
+
+Built-in/core libraries used:
+- Arduino
+- Wire
+- WiFi
+- WebServer
+- Preferences

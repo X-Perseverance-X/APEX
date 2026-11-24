@@ -1,0 +1,31 @@
+[Unit]
+Description=APEX local camera-aware AI assistant
+Wants=network-online.target apex-camera-test.service
+After=network-online.target apex-camera-test.service
+
+[Service]
+Type=simple
+User=perseverance
+Group=perseverance
+SupplementaryGroups=audio video render
+Environment=PYTHONUNBUFFERED=1
+Environment=HAILORT_LOGGER_PATH=/home/perseverance/.hailo
+Environment=APEX_AI_PORT=8090
+Environment=APEX_AI_MAX_TOKENS=140
+Environment=APEX_AI_SNAPSHOT_URL=http://127.0.0.1:8888/snapshot
+Environment=APEX_AI_AUDIO_DEVICE=plughw:CARD=DAC,DEV=0
+ExecStartPre=/bin/sleep 12
+ExecStartPre=-/usr/bin/amixer -c DAC sset PCM 95% unmute
+ExecStart=/opt/apex/venvs/assistant/bin/python /opt/apex/assistant/apex_ai_assistant.py
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=120
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/tmp /home/perseverance/.hailo
+
+[Install]
+WantedBy=multi-user.target

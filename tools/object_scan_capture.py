@@ -16,7 +16,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from object_scan import ObjectScanSession
+from object_scan import (
+    DEFAULT_SENSOR_RIG,
+    ObjectScanSession,
+    camera_distortion,
+    camera_from_lidar,
+    camera_matrix,
+    load_sensor_rig,
+    with_translation_overrides,
+)
 
 
 def main() -> int:
@@ -27,7 +35,21 @@ def main() -> int:
     parser.add_argument("--output", default=str(ROOT / ".runtime" / "object-scans" / time.strftime("%Y%m%d-%H%M%S")))
     parser.add_argument("--max-range", type=float, default=2.5)
     parser.add_argument("--motion-mode", choices=("free", "pivot"), default="free")
+    parser.add_argument("--rig-config", default=str(DEFAULT_SENSOR_RIG))
+    parser.add_argument("--camera-x", type=float, default=None)
+    parser.add_argument("--camera-y", type=float, default=None)
+    parser.add_argument("--camera-z", type=float, default=None)
+    parser.add_argument("--imu-x", type=float, default=None)
+    parser.add_argument("--imu-y", type=float, default=None)
+    parser.add_argument("--imu-z", type=float, default=None)
+    parser.add_argument("--max-sync-skew", type=float, default=0.18,
+                        help="Reject camera/LiDAR pairs farther apart than this many seconds")
     args = parser.parse_args()
+
+    rig = with_translation_overrides(load_sensor_rig(args.rig_config), vars(args))
+    lidar_to_camera = camera_from_lidar(rig)
+    if args.max_sync_skew <= 0.0:
+        raise ValueError("--max-sync-skew must be positive")
 
     try:
         import cv2
@@ -65,9 +87,31 @@ def main() -> int:
         frame = cv2.imdecode(np.frombuffer(camera_response.content, dtype=np.uint8), cv2.IMREAD_COLOR)
         if frame is None:
             raise RuntimeError("ham kamera JPEG çözülemedi")
+        camera_ts_raw = camera_response.headers.get("x-apex-frame-ts")
+        lidar_ts_raw = lidar.get("timestamp_monotonic_s")
+        try:
+            sync_skew_s = abs(float(camera_ts_raw) - float(lidar_ts_raw))
+        except (TypeError, ValueError):
+            sync_skew_s = None
+        if sync_skew_s is None or sync_skew_s > args.max_sync_skew:
+            label = "yok" if sync_skew_s is None else f"{sync_skew_s * 1000.0:.0f}ms"
+            print(f"[SKIP] kamera/LiDAR zaman farkı {label}", flush=True)
+            time.sleep(max(0.01, interval - (time.monotonic() - cycle_started)))
+            continue
         if session is None:
             height, width = frame.shape[:2]
-            session = ObjectScanSession(width, height, max_range_m=args.max_range, motion_mode=args.motion_mode)
+            intrinsics = camera_matrix(rig, width, height)
+            session = ObjectScanSession(
+                width,
+                height,
+                horizontal_fov_deg=float(rig["camera"]["horizontal_fov_deg"]),
+                max_range_m=args.max_range,
+                camera_from_lidar=lidar_to_camera,
+                camera_matrix=intrinsics,
+                distortion_coefficients=camera_distortion(rig),
+                rig_metadata=rig,
+                motion_mode=args.motion_mode,
+            )
         update = session.add_frame(frame, lidar.get("points", []), time.time())
         last_sequence = sequence
         frame_path = frames_dir / f"{sequence:08d}.jpg"
@@ -78,6 +122,7 @@ def main() -> int:
             "captured_at_s": time.time(),
             "camera_frame_age_s": camera_response.headers.get("x-apex-frame-age"),
             "lidar_scan_age_s": lidar.get("scan_age_s"),
+            "sensor_sync_skew_s": sync_skew_s,
             "lidar_points": lidar.get("points", []),
             **update.__dict__,
         }

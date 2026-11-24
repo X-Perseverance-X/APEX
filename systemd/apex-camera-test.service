@@ -1,0 +1,23 @@
+[Unit]
+Description=APEX CSI0 camera test stream
+After=network.target
+
+[Service]
+Type=simple
+User=perseverance
+Group=perseverance
+Environment=PYTHONUNBUFFERED=1
+Environment=APEX_CAMERA_WIDTH=1920
+Environment=APEX_CAMERA_HEIGHT=1080
+Environment=APEX_CAMERA_FPS=30
+Environment=APEX_CAMERA_JPEG_QUALITY=60
+Environment=APEX_CAMERA_ROTATION=180
+ExecStart=/usr/bin/python3 /opt/apex/tools/csi_camera_test_server.py
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

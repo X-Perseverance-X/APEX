@@ -63,6 +63,13 @@ except ImportError as mapping_import_error:
 #   ESP32_URL=http://192.168.1.42 uvicorn apex_server:app --host 0.0.0.0 --port 8080
 
 ESP32_URL    = os.environ.get("ESP32_URL", "http://192.168.7.50")
+SPINE_USB_URL = os.environ.get("SPINE_USB_URL", "http://127.0.0.1:8091")
+SPINE_USB_PREFER = os.environ.get("SPINE_USB_PREFER", "1").strip().lower() not in {"0", "false", "no"}
+SENSOR_BRIDGE_URL = os.environ.get("APEX_SENSOR_BRIDGE_URL", "").strip().rstrip("/")
+DENSE_CLOUD_PATH = os.environ.get(
+    "APEX_DENSE_CLOUD_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".runtime", "live-dense-cloud.json"),
+)
 TELEMETRY_HZ = 5                        # Telemetri poll hızı (saniyede)
 HTTP_TIMEOUT = 0.8                      # ESP32 HTTP timeout (saniye)
 SIM_MODE     = os.environ.get("APEX_SIM_MODE", "0").strip().lower() in {"1", "true", "yes", "on"}
@@ -927,20 +934,63 @@ def _sensor_timestamp_is_fresh(source_ns: int, now_ns: int, max_age_ns: int = 1_
 def _mapping_worker():
     """Feed mapping_v2 from shared sensor snapshots; never contact hardware."""
     last_sequence = -1
+    remote_client = httpx.Client(base_url=SENSOR_BRIDGE_URL, timeout=1.2) if SENSOR_BRIDGE_URL else None
     while True:
+        remote_imu = None
+        if remote_client is not None:
+            try:
+                lidar_response = remote_client.get("/api/lidar/snapshot")
+                imu_response = remote_client.get("/api/imu/snapshot")
+                lidar_response.raise_for_status()
+                imu_response.raise_for_status()
+                lidar_payload = lidar_response.json()
+                imu_payload = imu_response.json()
+                raw_points = lidar_payload.get("points") or []
+                normalized_points = [
+                    (float(point[0]), float(point[1]))
+                    for point in raw_points
+                    if isinstance(point, (list, tuple)) and len(point) >= 2
+                ]
+                with _lidar_lock:
+                    global _lidar_points, _lidar_scan_seq, _lidar_last_scan_ts, _lidar_online, _lidar_last_error
+                    _lidar_points = normalized_points
+                    _lidar_scan_seq = int(lidar_payload.get("scan_seq") or 0)
+                    _lidar_last_scan_ts = time.monotonic()
+                    _lidar_online = bool(lidar_payload.get("fresh")) and bool(normalized_points)
+                    _lidar_last_error = str(lidar_payload.get("error") or "")
+                remote_imu = imu_payload
+            except (httpx.HTTPError, ValueError, TypeError) as exc:
+                with _lidar_lock:
+                    _lidar_online = False
+                    _lidar_last_error = f"sensor bridge: {exc}"
         with _lidar_lock:
             points = list(_lidar_points)
             sequence = int(_lidar_scan_seq)
             scan_timestamp_ns = int(_lidar_last_scan_ts * 1_000_000_000)
             online = bool(_lidar_online)
         if _mapping_engine is not None and online and points and sequence != last_sequence:
-            with _telemetry_cache_lock:
-                telemetry = dict(_telemetry_cache)
             now_ns = time.monotonic_ns()
-            imu_timestamp_ns = int(telemetry.get("mpu_monotonic_ns") or 0)
-            tof_timestamp_ns = int(telemetry.get("tof_monotonic_ns") or 0)
-            imu_fresh = _sensor_timestamp_is_fresh(imu_timestamp_ns, now_ns)
-            tof_fresh = _sensor_timestamp_is_fresh(tof_timestamp_ns, now_ns)
+            if remote_imu is not None:
+                packet = remote_imu.get("imu") or {}
+                rpy = packet.get("rpy_deg") or [0.0, 0.0, 0.0]
+                imu_fresh = bool(remote_imu.get("fresh")) and bool(packet.get("online")) and len(rpy) >= 3
+                imu_timestamp_ns = now_ns
+                telemetry = {
+                    "mpuR": rpy[0] if len(rpy) > 0 else 0.0,
+                    "mpuP": rpy[1] if len(rpy) > 1 else 0.0,
+                    "mpuY": rpy[2] if len(rpy) > 2 else 0.0,
+                    "mpuOnline": imu_fresh,
+                    "tofOnline": False, "tofMm": None,
+                }
+                tof_timestamp_ns = now_ns
+                tof_fresh = False
+            else:
+                with _telemetry_cache_lock:
+                    telemetry = dict(_telemetry_cache)
+                imu_timestamp_ns = int(telemetry.get("mpu_monotonic_ns") or 0)
+                tof_timestamp_ns = int(telemetry.get("tof_monotonic_ns") or 0)
+                imu_fresh = _sensor_timestamp_is_fresh(imu_timestamp_ns, now_ns)
+                tof_fresh = _sensor_timestamp_is_fresh(tof_timestamp_ns, now_ns)
             _mapping_engine.ingest_imu(ImuSample(
                 timestamp_ns=imu_timestamp_ns or now_ns,
                 roll_deg=float(telemetry.get("mpuR") or 0.0),
@@ -966,7 +1016,7 @@ def _mapping_worker():
         # A1M8 normal modda yaklaşık 5 tam tur/s üretir. 20 Hz salt-okunur
         # kontrol, yeni turu ortalama 25 ms içinde yakalar; aynı sequence ağır
         # occupancy hesabına ikinci kez girmez.
-        time.sleep(1.0 / MAPPING_SENSOR_POLL_HZ)
+        time.sleep(1.0 / (8.0 if remote_client is not None else MAPPING_SENSOR_POLL_HZ))
 
 
 def start_mapping_thread():
@@ -1055,7 +1105,9 @@ async def lifespan(app: FastAPI):
 
     background_tasks: list[asyncio.Task] = []
     start_mapping_thread()
-    if SIM_MODE:
+    if SENSOR_BRIDGE_URL:
+        log.info(f"[APEX] Uzak sensör köprüsü aktif: {SENSOR_BRIDGE_URL}; yerel LiDAR aygıtı açılmayacak")
+    elif SIM_MODE:
         log.info("[APEX] SIM_MODE aktif — fiziksel LiDAR yerine dummy scan kullanılıyor")
         background_tasks.append(asyncio.create_task(_dummy_lidar_loop()))
     else:
@@ -1309,14 +1361,9 @@ async def lidar_motor(state: str | None = None):
 
 @app.get("/ai_tracking")
 async def ai_tracking(state: str = "1"):
-    global _ai_tracking_enabled, _lidar_nav_enabled
+    global _ai_tracking_enabled
     requested = (state == "1")
     if requested:
-        if _navigation_platform_status.get("active"):
-            return JSONResponse(
-                {"enabled": False, "error": "Rota yürütülürken AI takip başlatılamaz"},
-                status_code=409,
-            )
         tracking = await _vision_tracking_status()
         if tracking.get("state") != "locked" or not tracking.get("visible"):
             _ai_tracking_enabled = False
@@ -1324,38 +1371,12 @@ async def ai_tracking(state: str = "1"):
                 {"enabled": False, "error": "Önce görüntüde görünen bir kişiyi seçip kilitle"},
                 status_code=409,
             )
-        if _lidar_nav_enabled:
-            # İKİSİ BİRDEN /joy'a komut gönderirse çakışır — karşılıklı dışlayıcı.
-            _lidar_nav_enabled = False
-            log.info("[AI-TRACK] LiDAR-NAV ile çakışmayı önlemek için LiDAR-NAV kapatıldı")
-        # BEZIER_JOY modunda değilse joy komutları IDLE modun decay mantığı
-        # tarafından anında sıfırlanır — takip çalışmadan önce doğru moda
-        # geçirilmesi GEREKİYOR, yoksa hiçbir hareket görünmez.
-        try:
-            telemetry = await _motion_start_telemetry()
-        except RuntimeError as exc:
-            _ai_tracking_enabled = False
-            return JSONResponse({"enabled": False, "error": str(exc)}, status_code=409)
-        safety_error = _navigation_telemetry_error(telemetry)
-        if safety_error:
-            _ai_tracking_enabled = False
-            return JSONResponse({"enabled": False, "error": safety_error}, status_code=409)
-        mode_response = await _proxy_to_esp32("/mode", {"m": "bezier_joy"})
-        if mode_response.status_code >= 400:
-            _ai_tracking_enabled = False
-            return JSONResponse(
-                {"enabled": False, "error": "Omurilik çevrimdışı; AI takip güvenle başlatılmadı"},
-                status_code=503,
-            )
         _ai_tracking_enabled = True
-        log.info("[AI-TRACK] Açıldı — mod bezier_joy'a alındı")
+        log.info("[AI-TRACK] Kamera gimbali açıldı — bacak hareket kanalı kapalı")
     else:
         _ai_tracking_enabled = False
-        # Tek sıfır joy WALK modunu kapatmaz ve 750ms sonra yanlış FAILSAFE
-        # üretir. Tam stop sekansı sıfır komutlardan sonra IDLE/STAND'e geçer.
-        asyncio.create_task(_navigation_send_stop())
-        log.info("[AI-TRACK] Kapatıldı — sıfır joy + IDLE duruş sekansı gönderildi")
-    return JSONResponse({"enabled": _ai_tracking_enabled})
+        log.info("[AI-TRACK] Kamera takibi kapatıldı — gimbal stabilizasyona dönecek")
+    return JSONResponse({"enabled": _ai_tracking_enabled, "mode": "camera-gimbal", "leg_motion": False})
 
 
 @app.get("/api/vision/status")
@@ -1403,8 +1424,6 @@ async def select_target(x: float = 0.0, y: float = 0.0, clear: str = "0"):
             _target_selection = {"pending": True, "x": x, "y": y,
                                   "ts": time.time(), "clear": False}
             log.info(f"[AI-TRACK] Yeni hedef seçimi: x={x:.3f} y={y:.3f}")
-    if clear == "1":
-        asyncio.create_task(_navigation_send_stop())
     return JSONResponse({"ok": True})
 
 
@@ -1713,6 +1732,27 @@ async def navigation_status():
     result = _mapping_engine.snapshot(include_grid=True)
     result["platform_test"] = dict(_navigation_platform_status)
     return JSONResponse(result)
+
+
+@app.get("/api/navigation/dense-cloud")
+async def navigation_dense_cloud():
+    """Expose the latest read-only true RGB-D frame produced by the local worker."""
+    try:
+        with open(DENSE_CLOUD_PATH, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except FileNotFoundError:
+        return JSONResponse({
+            "schema": "apex-live-dense-rgbd-v1", "status": "OFFLINE",
+            "message": "Yoğun RGB-D işçisi henüz başlamadı", "points": [],
+        })
+    except (OSError, json.JSONDecodeError) as exc:
+        return JSONResponse({
+            "schema": "apex-live-dense-rgbd-v1", "status": "WAITING",
+            "message": f"Yoğun bulut okunamadı: {exc}", "points": [],
+        })
+    generated_at = float(payload.get("generated_at") or 0.0)
+    payload["fresh"] = 0.0 <= time.time() - generated_at < 8.0
+    return JSONResponse(payload)
 
 
 @app.get("/api/navigation/maps")
@@ -2246,8 +2286,13 @@ async def ws_navigation(ws: WebSocket):
                     # aygıtı veya MJPEG akışı ikinci kez açılmaz.
                     if time.monotonic() - last_camera_probe >= 3.0:
                         try:
-                            health = await camera_client.get(f"{CAMERA_STREAM_URL}/health")
-                            _mapping_engine.set_camera_health(health.status_code == 200)
+                            if SENSOR_BRIDGE_URL:
+                                health = await camera_client.get(f"{SENSOR_BRIDGE_URL}/status")
+                                payload = health.json() if health.status_code == 200 else {}
+                                _mapping_engine.set_camera_health(bool(payload.get("camera")))
+                            else:
+                                health = await camera_client.get(f"{CAMERA_STREAM_URL}/health")
+                                _mapping_engine.set_camera_health(health.status_code == 200)
                         except httpx.RequestError:
                             _mapping_engine.set_camera_health(False)
                         last_camera_probe = time.monotonic()
@@ -2377,7 +2422,7 @@ async def arm_diagnose():
         "esp32_url": ESP32_URL,
         "pose_endpoint": ARM_POSE_ENDPOINT,
         "servo_endpoint": ARM_SERVO_ENDPOINT,
-        "expected_pwm": {"pca": "0x40", "base": 12, "joint1": 13, "joint2": 14, "gripper": 15},
+        "expected_pwm": {"pca": "0x40", "base": 12, "joint1": 13, "joint2": 3, "gripper": 7},
         "esp": {},
     }
     try:
@@ -2532,17 +2577,308 @@ async def workspaces(request: Request):
 
 PROXIED_GET_PATHS = [
     "/telemetry", "/joy", "/bodyIk", "/mode", "/params",
-    "/setGimbal", "/setGimbalFilter", "/audio",
+    "/setGimbal", "/setGimbalFilter", "/audio", "/laser", "/fan", "/cameraGimbal",
     "/manual", "/homePreview", "/goHome",
     "/getCalib", "/saveCalib", "/getHome", "/saveHome",
     # Leg Servo Lab
-    "/legServo", "/legMountPose", "/legHomePose", "/legOff", "/legOn", "/legStatus",
+    "/legServo", "/legPose", "/legMountPose", "/legHomePose", "/legOff", "/legOn", "/legStatus",
 ]
 
 esp32_lock = asyncio.Lock()  # ESP32 WebServer senkron/blocking — eşzamanlı istek kabul etmiyor
 
+
+async def _usb_spine_telemetry() -> JSONResponse | None:
+    """Translate the wired USB bridge packet into the legacy HUD schema."""
+    global esp_online
+    try:
+        async with httpx.AsyncClient(timeout=0.25) as client:
+            response = await client.get(f"{SPINE_USB_URL}/telemetry")
+        raw = response.json()
+        spine = raw.get("spine")
+        imu = raw.get("imu")
+        if not raw.get("ok") or not isinstance(spine, dict) or not isinstance(imu, dict):
+            return None
+
+        rpy = imu.get("rpy_deg") or [0.0, 0.0, 0.0]
+        mode_number = int(spine.get("mode", 0))
+        mode_names = {0: "IDLE", 1: "CAL(KILITLI)", 2: "YURUYUS", 3: "MANUEL TEST", 4: "KALKIS"}
+        gps_chars = int(spine.get("gps_chars", 0))
+        gps_transport = gps_chars > 0
+        gps_passed = int(spine.get("gps_passed_checksum", 0))
+        gps_failed = int(spine.get("gps_failed_checksum", 0))
+        gps_fix_sentences = int(spine.get("gps_sentences_with_fix", 0))
+        gps_location_age_ms = int(spine.get("gps_location_age_ms", 0xFFFFFFFF))
+        gps_hdop_x100 = int(spine.get("gps_hdop_x100", 0))
+        hardware_checks = {
+            "PCA9685 RIGHT 0x40": bool(spine.get("pca_right_online")),
+            "PCA9685 LEFT 0x41": bool(spine.get("pca_left_online")),
+            "MPU6050 0x68": bool(spine.get("imu_online")),
+            "TOF400C 0x29": bool(spine.get("tof_online")),
+            "DFPLAYER UART": bool(spine.get("dfplayer_online")),
+            "GPS UART": gps_transport,
+        }
+        system_nominal = raw.get("ok") is True and all(hardware_checks.values()) and bool(spine.get("config_valid"))
+        check_lines = [
+            f"[{'+' if online else '-'}] {name}: {'ONLINE' if online else 'OFFLINE'}"
+            for name, online in hardware_checks.items()
+        ]
+        boot_diag = "\n".join([
+            "[SYS] APEX OMURILIK BASLATMA DIZISI",
+            "[USB] FT232 115200 8N1 ONLINE · ESP WIFI OFF",
+            "[SYS] I2C CHECK [SDA:8 / SCL:9]",
+            *check_lines,
+            f"[GPS] DATA={gps_chars} byte · FIX={'LOCKED' if spine.get('gps_fix') else 'WAIT'} · SAT={int(spine.get('gps_satellites', 0))}",
+            f"[GPS] NMEA OK={gps_passed} · BAD={gps_failed} · FIX SENT={gps_fix_sentences} · HDOP={(gps_hdop_x100 / 100.0):.2f}",
+            f"[TOF] SAMPLE={int(spine.get('tof_sequence', 0))} · AGE={int(spine.get('tof_age_ms', -1))} ms",
+            "[SAFETY] SAFE BOOT · SERVO PWM " + ("ARMED" if spine.get("outputs_armed") else "CUT"),
+            "[SYS] " + ("ALL SYSTEMS NOMINAL" if system_nominal else "SYSTEM DEGRADED · OFFLINE SATIRLARI KONTROL ET"),
+        ]) + "\n"
+        event_logs = "\n".join([
+            "[POWER] APEX CORE ONLINE",
+            "[USB] ESP32-S3 KABLOLU OMURILIK HATTI AKTIF",
+            f"[STREAM] IMU {float(raw.get('imu_fps', 0.0)):.1f} Hz · SYSTEM {float(raw.get('spine_fps', 0.0)):.1f} Hz",
+            f"[STATE] {spine.get('spine_state', 'UNKNOWN')} · PWM={'ARMED' if spine.get('outputs_armed') else 'CUT'}",
+            f"[LASER] GPIO14 {'ON' if spine.get('laser_on') else 'OFF'}",
+            f"[THERMAL] NTC GPIO15 {'%.1f C' % float(spine.get('internal_temp_c', -127.0)) if spine.get('ntc_valid') else 'SENSOR WAIT'} · FAN GPIO18 {int(spine.get('fan_power_pct', 100))}% {'AUTO' if spine.get('fan_auto', True) else 'MANUAL'}",
+            f"[AUDIO] DFPLAYER {'ONLINE' if spine.get('dfplayer_online') else 'OFFLINE'}",
+        ]) + "\n"
+        data = {
+            "logs": event_logs,
+            "bootDiag": boot_diag,
+            "firmwareVersion": spine.get("firmware_version", "USB firmware sürümü bilinmiyor"),
+            "buildProfile": "esp32s3-n16r8-generic",
+            "spineState": spine.get("spine_state", "DISARMED"),
+            "outputsArmed": bool(spine.get("outputs_armed")),
+            "pcaRightOnline": bool(spine.get("pca_right_online")),
+            "pcaLeftOnline": bool(spine.get("pca_left_online")),
+            "mpuOnline": bool(spine.get("imu_online")),
+            "configValid": bool(spine.get("config_valid")),
+            "homeSet": bool(spine.get("home_set")),
+            "fix": bool(spine.get("gps_fix")),
+            "lat": float(spine.get("latitude", 0.0)),
+            "lng": float(spine.get("longitude", 0.0)),
+            "sats": int(spine.get("gps_satellites", 0)),
+            "gpsChars": int(spine.get("gps_chars", 0)),
+            "gpsPassedChecksum": gps_passed,
+            "gpsFailedChecksum": gps_failed,
+            "gpsFixSentences": gps_fix_sentences,
+            "gpsLocationAgeMs": gps_location_age_ms,
+            "gpsHdop": gps_hdop_x100 / 100.0,
+            "mpuR": float(rpy[0]),
+            "mpuP": float(rpy[1]),
+            "mpuY": float(rpy[2]),
+            "tofOnline": bool(spine.get("tof_online")),
+            "tofMm": int(spine.get("tof_mm", -1)),
+            "dfPlayerOnline": bool(spine.get("dfplayer_online")),
+            "laserOn": bool(spine.get("laser_on")),
+            "laserPowerPct": int(spine.get("laser_power_pct", 0)),
+            "internalTempC": float(spine.get("internal_temp_c", -127.0)),
+            "ntcValid": bool(spine.get("ntc_valid", False)),
+            "fanPowerPct": int(spine.get("fan_power_pct", 100)),
+            "fanAuto": bool(spine.get("fan_auto", True)),
+            "cameraPanDeg": float(spine.get("camera_pan_deg", 90.0)),
+            "cameraTiltDeg": float(spine.get("camera_tilt_deg", 90.0)),
+            "cameraGimbalEnabled": bool(spine.get("camera_gimbal_enabled", False)) and bool(spine.get("pca_right_online")),
+            "cameraGimbalMode": int(spine.get("camera_gimbal_mode", 0)),
+            "tofSequence": int(spine.get("tof_sequence", 0)),
+            "tofAgeMs": int(spine.get("tof_age_ms", -1)),
+            "footContactMask": int(spine.get("foot_contact_mask", 0)) & 0x3F,
+            "footContacts": list(spine.get("foot_contacts", [False] * 6))[:6],
+            "footContactSequence": int(spine.get("foot_contact_sequence", 0)),
+            "batR": float(spine.get("battery_right_v", 0.0)),
+            "batL": float(spine.get("battery_left_v", 0.0)),
+            "mode": mode_names.get(mode_number, f"MODE-{mode_number}"),
+            "failsafe": spine.get("spine_state") == "FAILSAFE",
+            "cmdAgeMs": -1,
+            "usbTelemetry": True,
+            "usbTelemetryReadOnly": False,
+            "usbMotionWrites": False,
+            "usbStandWrites": "home_set" in spine,
+            "systemNominal": system_nominal,
+            "usbImuHz": float(raw.get("imu_fps", 0.0)),
+            "usbStatusHz": float(raw.get("spine_fps", 0.0)),
+            "usbImuAgeMs": round(float(raw.get("imu_age_s", 0.0)) * 1000.0, 2),
+            "usbStatusAgeMs": round(float(raw.get("spine_age_s", 0.0)) * 1000.0, 2),
+        }
+        data["aiTrack"] = _ai_tracking_enabled
+        with _target_selection_lock:
+            data["sel"] = dict(_target_selection)
+        sensor_now_ns = time.monotonic_ns()
+        with _telemetry_cache_lock:
+            for key in ("mpuP", "mpuR", "mpuY", "mpuOnline", "tofOnline", "tofMm"):
+                _telemetry_cache[key] = data[key]
+            _telemetry_cache["mpu_monotonic_ns"] = sensor_now_ns
+            _telemetry_cache["tof_monotonic_ns"] = sensor_now_ns
+        with _telemetry_resp_cache_lock:
+            _telemetry_resp_cache["data"] = data
+            _telemetry_resp_cache["ts"] = time.time()
+        esp_online = True
+        return JSONResponse(content=data, status_code=200)
+    except (httpx.RequestError, TimeoutError, ValueError, TypeError, KeyError):
+        return None
+
+
+@app.get("/api/foot-contacts")
+async def foot_contacts():
+    """Fast read-only foot contact path, independent of the large HUD packet."""
+    try:
+        async with httpx.AsyncClient(timeout=0.20) as client:
+            response = await client.get(f"{SPINE_USB_URL}/telemetry")
+        raw = response.json()
+        foot = raw.get("foot")
+        if response.status_code != 200 or not isinstance(foot, dict):
+            raise ValueError("FOOT1 telemetry unavailable")
+        contacts = list(foot.get("contacts", [False] * 6))[:6]
+        while len(contacts) < 6:
+            contacts.append(False)
+        return JSONResponse({
+            "ok": True,
+            "contacts": [bool(value) for value in contacts],
+            "mask": int(foot.get("contact_mask", 0)) & 0x3F,
+            "sequence": int(foot.get("sequence", 0)),
+            "changeSequence": int(foot.get("change_sequence", 0)),
+            "ageMs": round(float(raw.get("foot_age_s", 0.0)) * 1000.0, 2),
+            "hz": round(float(raw.get("foot_fps", 0.0)), 2),
+        })
+    except (httpx.RequestError, TimeoutError, ValueError, TypeError, KeyError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=503)
+
+
+async def _usb_peripheral_command(device: str, action: str, value: str = "") -> JSONResponse:
+    """Send an allow-listed, non-motion command over the FT232 USB bridge."""
+    try:
+        params = {"device": device, "action": action}
+        if value != "":
+            params["value"] = value
+        async with httpx.AsyncClient(timeout=3.2) as client:
+            response = await client.get(f"{SPINE_USB_URL}/command", params=params)
+        payload = response.json()
+        return JSONResponse(content=payload, status_code=response.status_code)
+    except (httpx.RequestError, TimeoutError, ValueError, TypeError) as exc:
+        return JSONResponse({"ok": False, "error": f"USB omurilik komutu basarisiz: {exc}"}, status_code=502)
+
 async def _proxy_to_esp32(path: str, query: dict, *, force_fresh: bool = False) -> Response:
     global esp_online
+    if path == "/audio":
+        command = str(query.get("cmd", "")).lower()
+        mapping = {"init": "INIT", "play": "PLAY", "stop": "STOP", "next": "NEXT", "prev": "PREV", "vol": "VOL"}
+        if command not in mapping:
+            return JSONResponse({"ok": False, "error": "Gecersiz audio komutu"}, status_code=400)
+        value = str(query.get("v" if command == "vol" else "t", ""))
+        return await _usb_peripheral_command("AUDIO", mapping[command], value)
+    if path == "/laser":
+        if "power" in query:
+            try:
+                power = max(0, min(100, int(float(str(query.get("power", "0"))))))
+            except ValueError:
+                return JSONResponse({"ok": False, "error": "power 0-100 olmali"}, status_code=400)
+            return await _usb_peripheral_command("LASER", "SET", str(power))
+        state = str(query.get("state", "")).lower()
+        if state != "off":
+            return JSONResponse({"ok": False, "error": "PWM icin power=0..100 kullan"}, status_code=400)
+        return await _usb_peripheral_command("LASER", "OFF")
+    if path == "/fan":
+        mode = str(query.get("mode", "")).lower()
+        if mode == "auto":
+            return await _usb_peripheral_command("FAN", "AUTO")
+        if "power" in query:
+            try:
+                power = max(0, min(100, int(float(str(query.get("power", "0"))))))
+            except ValueError:
+                return JSONResponse({"ok": False, "error": "power 0-100 olmali"}, status_code=400)
+            return await _usb_peripheral_command("FAN", "SET", str(power))
+        state = str(query.get("state", "")).lower()
+        if state == "off":
+            return await _usb_peripheral_command("FAN", "OFF")
+        return JSONResponse({"ok": False, "error": "mode=auto veya power=0..100 kullan"}, status_code=400)
+    if path == "/cameraGimbal":
+        action = str(query.get("action", "")).lower()
+        if action == "center":
+            return await _usb_peripheral_command("CAM_GIMBAL", "CENTER")
+        if action == "stabilize":
+            return await _usb_peripheral_command("CAM_GIMBAL", "STABILIZE")
+        if action == "off":
+            return await _usb_peripheral_command("CAM_GIMBAL", "OFF")
+        if "pan" in query and "tilt" in query:
+            try:
+                pan = max(45.0, min(135.0, float(str(query.get("pan", "90")))))
+                tilt = max(45.0, min(135.0, float(str(query.get("tilt", "90")))))
+            except ValueError:
+                return JSONResponse({"ok": False, "error": "pan/tilt 45..135 olmali"}, status_code=400)
+            return await _usb_peripheral_command("CAM_GIMBAL", "SET", f"{pan:.1f},{tilt:.1f}")
+        axis = str(query.get("axis", "")).lower()
+        if axis not in {"pan", "tilt"} or "angle" not in query:
+            return JSONResponse({"ok": False, "error": "axis=pan|tilt ve angle=45..135 gerekli"}, status_code=400)
+        try:
+            angle = max(45.0, min(135.0, float(str(query.get("angle", "90")))))
+        except ValueError:
+            return JSONResponse({"ok": False, "error": "angle 45..135 olmali"}, status_code=400)
+        device = "CAM_PAN" if axis == "pan" else "CAM_TILT"
+        return await _usb_peripheral_command(device, "SET", f"{angle:.1f}")
+    if path == "/legServo":
+        try:
+            leg = int(str(query.get("leg", "-1")))
+            joint = int(str(query.get("j", "-1")))
+            angle = max(5.0, min(175.0, float(str(query.get("angle", "90")))))
+        except ValueError:
+            return JSONResponse({"ok": False, "error": "gecersiz leg/joint/angle"}, status_code=400)
+        if not (0 <= leg <= 5 and 0 <= joint <= 2):
+            return JSONResponse({"ok": False, "error": "leg 0..5 ve joint 0..2 olmali"}, status_code=400)
+        return await _usb_peripheral_command("LEG_LAB", "SET", f"{leg},{joint},{angle:.1f}")
+    if path == "/legPose":
+        try:
+            leg = int(str(query.get("leg", "-1")))
+            coxa = max(5.0, min(175.0, float(str(query.get("c", "90")))))
+            femur = max(5.0, min(175.0, float(str(query.get("f", "90")))))
+            tibia = max(5.0, min(175.0, float(str(query.get("t", "90")))))
+        except ValueError:
+            return JSONResponse({"ok": False, "error": "gecersiz leg/c/f/t"}, status_code=400)
+        if not 0 <= leg <= 5:
+            return JSONResponse({"ok": False, "error": "leg 0..5 olmali"}, status_code=400)
+        return await _usb_peripheral_command(
+            "LEG_LAB", "POSE", f"{leg},{coxa:.1f},{femur:.1f},{tibia:.1f}"
+        )
+    if path == "/legOn":
+        try:
+            leg = int(str(query.get("leg", "-1")))
+            joint = int(str(query.get("j", "-1")))
+        except ValueError:
+            return JSONResponse({"ok": False, "error": "gecersiz leg/joint"}, status_code=400)
+        if query.get("confirm") != "lab" or not (0 <= leg <= 5 and -1 <= joint <= 2):
+            return JSONResponse({"ok": False, "error": "secilen eklem/bacak icin confirm=lab gerekli"}, status_code=409)
+        return await _usb_peripheral_command("LEG_LAB", "ON", f"{leg},{joint}")
+    if path == "/legOff":
+        try:
+            leg = int(str(query.get("leg", "-1")))
+            joint = int(str(query.get("j", "-1")))
+        except ValueError:
+            return JSONResponse({"ok": False, "error": "gecersiz leg/joint"}, status_code=400)
+        if leg == -1 and joint == -1:
+            return await _usb_peripheral_command("LEG_LAB", "OFF", "-1,-1")
+        if not (0 <= leg <= 5 and -1 <= joint <= 2):
+            return JSONResponse({"ok": False, "error": "gecersiz PWM kesme kapsami"}, status_code=400)
+        if joint == -1:
+            results = []
+            for selected_joint in range(3):
+                response = await _usb_peripheral_command("LEG_LAB", "OFF", f"{leg},{selected_joint}")
+                results.append(response.status_code)
+            return JSONResponse({"ok": all(code == 200 for code in results), "statusCodes": results})
+        return await _usb_peripheral_command("LEG_LAB", "OFF", f"{leg},{joint}")
+    if SPINE_USB_PREFER and path == "/goHome":
+        if query.get("confirm") != "start":
+            return JSONResponse({"ok": False, "error": "confirm=start gerekli"}, status_code=400)
+        return await _usb_peripheral_command("SPINE", "STAND")
+    if SPINE_USB_PREFER and path == "/legStatus":
+        # Wi-Fi is intentionally disabled in v57.12. Avoid a 900 ms polling
+        # storm against the retired ESP AP while the motion protocol remains
+        # safety-locked on USB.
+        return JSONResponse({"legs": [], "transport": "usb-wired", "available": False}, status_code=200)
+    if SPINE_USB_PREFER and path != "/telemetry":
+        return JSONResponse({
+            "ok": False,
+            "error": "ESP Wi-Fi kapali; bu hareket/PWM komutu USB protokolunde guvenlik kilitli",
+            "transport": "usb-wired",
+        }, status_code=503)
     cached_telemetry = None
     if path == "/telemetry" and not force_fresh:
         with _telemetry_resp_cache_lock:
@@ -2567,6 +2903,18 @@ async def _proxy_to_esp32(path: str, query: dict, *, force_fresh: bool = False) 
             # eden komutu bekletmek yerine son örneği açıkça stale olarak döndür.
             cached_telemetry["proxyStale"] = True
             return JSONResponse(content=cached_telemetry, status_code=200)
+    if path == "/telemetry" and SPINE_USB_PREFER:
+        usb_response = await _usb_spine_telemetry()
+        if usb_response is not None:
+            return usb_response
+        # USB is the only ESP transport. A momentary scheduling delay must not
+        # make the UI fall back to the retired Wi-Fi AP or freeze ToF at an old
+        # value. Return the latest explicitly-stale sample if one exists.
+        if cached_telemetry is not None:
+            cached_telemetry["proxyStale"] = True
+            cached_telemetry["usbTransientStale"] = True
+            return JSONResponse(content=cached_telemetry, status_code=200)
+        return JSONResponse({"error": "USB omurilik telemetrisi henuz hazir degil"}, status_code=503)
     if path == "/legStatus" and esp32_lock.locked():
         return JSONResponse({"error": "ESP32 busy", "retry": True}, status_code=429)
     try:
@@ -2631,8 +2979,10 @@ async def _operator_proxy(path: str, query: dict):
         if _navigation_platform_status.get("active"):
             return JSONResponse({"error": "Rota testi joystick kanalını kullanıyor"}, status_code=409)
         if source == "ai":
-            if not _ai_tracking_enabled:
-                return JSONResponse({"error": "AI takip hareket kanalı kapalı"}, status_code=409)
+            return JSONResponse(
+                {"error": "AI takip kamera gimbali ile sinirli; bacak hareket kanali kapali"},
+                status_code=409,
+            )
         elif source == "lidar":
             if not _lidar_nav_enabled:
                 return JSONResponse({"error": "LiDAR yürüyüşü kapalı"}, status_code=409)

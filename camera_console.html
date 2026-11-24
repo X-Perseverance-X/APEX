@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APEX AI CAMERA CONSOLE</title>
+    <style>
+        :root {
+            --bg:#060809; --panel:#111517; --line:#263036; --red:#ff2d35;
+            --cyan:#00e5b0; --blue:#27a7ff; --orange:#ff9d22; --text:#e8edf0;
+            --muted:#7f8b91; --mono:"Courier New",monospace;
+        }
+        * { box-sizing:border-box; }
+        html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--bg); color:var(--text); font-family:var(--mono); }
+        button { font:700 12px var(--mono); color:var(--text); background:#161c1f; border:1px solid #3a464c; border-radius:5px; padding:10px 12px; cursor:pointer; }
+        button:hover { border-color:var(--cyan); }
+        button:disabled { opacity:.45; cursor:wait; }
+        .app { height:100%; display:grid; grid-template-rows:52px minmax(0,1fr); }
+        header { display:flex; align-items:center; gap:12px; padding:7px 12px; border-bottom:1px solid var(--line); background:#090c0e; }
+        .brand { color:var(--red); font-weight:900; letter-spacing:2px; font-size:18px; white-space:nowrap; }
+        .brand span { color:#fff; font-size:11px; }
+        .header-spacer { flex:1; }
+        .badge { border:1px solid #3b464b; border-radius:999px; padding:6px 10px; color:var(--muted); font-size:11px; white-space:nowrap; }
+        .badge.ok { color:var(--cyan); border-color:rgba(0,229,176,.6); }
+        .badge.warn { color:var(--orange); border-color:rgba(255,157,34,.6); }
+        .badge.bad { color:var(--red); border-color:rgba(255,45,53,.6); }
+        .layout { min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:10px; padding:10px; }
+        .video-panel { min-width:0; min-height:0; border:1px solid var(--line); background:#000; border-radius:6px; overflow:hidden; position:relative; }
+        .video-stage { position:absolute; inset:0; background:#000; overflow:hidden; }
+        #cameraFeed { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; cursor:crosshair; }
+        .scanlines { position:absolute; inset:0; pointer-events:none; opacity:.18; background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,255,255,.045) 3px 4px); }
+        #targetMarker { position:absolute; width:34px; height:34px; border:2px solid var(--orange); border-radius:50%; transform:translate(-50%,-50%); box-shadow:0 0 15px rgba(255,157,34,.9); pointer-events:none; display:none; }
+        #targetMarker::before,#targetMarker::after { content:""; position:absolute; background:var(--orange); }
+        #targetMarker::before { height:1px; width:46px; left:-8px; top:15px; }
+        #targetMarker::after { width:1px; height:46px; left:15px; top:-8px; }
+        .video-top { position:absolute; top:10px; left:10px; right:10px; display:flex; gap:8px; justify-content:space-between; pointer-events:none; }
+        .video-label { background:rgba(0,0,0,.78); border:1px solid rgba(0,229,176,.55); color:var(--cyan); padding:6px 9px; font-size:11px; }
+        .video-hint { position:absolute; left:10px; bottom:10px; background:rgba(0,0,0,.8); color:#aeb8bd; border:1px solid #303a3f; padding:7px 9px; font-size:10px; pointer-events:none; }
+        .sidebar { min-height:0; overflow:auto; display:flex; flex-direction:column; gap:10px; padding-right:2px; }
+        .card { background:var(--panel); border:1px solid var(--line); border-top:2px solid var(--red); border-radius:5px; padding:11px; }
+        .card h2 { margin:0 0 10px; color:var(--red); font-size:12px; letter-spacing:1px; }
+        .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+        .wide { width:100%; }
+        .primary { color:var(--cyan); border-color:var(--cyan); }
+        .danger { color:var(--red); border-color:var(--red); }
+        .orange { color:var(--orange); border-color:var(--orange); }
+        .orange.target-ready { color:#160d02!important; background:var(--orange)!important; border-color:var(--orange)!important; box-shadow:0 0 15px rgba(255,157,34,.28); }
+        .orange.active { color:#160d02!important; background:var(--orange)!important; border-color:#ffc36e!important; box-shadow:0 0 20px rgba(255,157,34,.55); }
+        .status-list { display:grid; gap:7px; }
+        .status-row { display:flex; justify-content:space-between; gap:12px; font-size:11px; border-bottom:1px solid #222a2e; padding-bottom:6px; }
+        .status-row span:first-child { color:var(--muted); }
+        .status-row strong { color:#fff; text-align:right; overflow-wrap:anywhere; }
+        #actionStatus { min-height:42px; white-space:pre-wrap; color:var(--muted); font-size:10px; line-height:1.45; background:#070909; border:1px solid #252d31; padding:8px; }
+        .note { color:#7f8b91; font-size:9px; line-height:1.45; margin-top:8px; }
+        @media (max-width:1000px) {
+            html, body { overflow:auto; }
+            .app { min-height:100%; height:auto; }
+            .layout { grid-template-columns:1fr; grid-template-rows:minmax(58vh,720px) auto; }
+            .sidebar { overflow:visible; }
+        }
+    </style>
+</head>
+<body>
+<div class="app">
+    <header>
+        <div class="brand">APEX AI CAMERA <span>DIRECT 8888</span></div>
+        <div id="cameraBadge" class="badge">KAMERA BEKLENİYOR</div>
+        <div id="trackingBadge" class="badge">AI TAKİP KAPALI</div>
+        <div class="header-spacer"></div>
+        <button onclick="openRawStream()">HAM 8888 ↗</button>
+        <button onclick="requestFullscreen()">TAM EKRAN</button>
+        <button class="primary" onclick="location.href='/'">ANA HUD ↗</button>
+    </header>
+
+    <main class="layout">
+        <section class="video-panel">
+            <div id="videoStage" class="video-stage">
+                <img id="cameraFeed" alt="APEX AI camera stream">
+                <div class="scanlines"></div>
+                <div id="targetMarker"></div>
+                <div class="video-top">
+                    <div id="streamLabel" class="video-label">DOĞRUDAN AKIŞ BAĞLANIYOR</div>
+                    <div id="resolutionLabel" class="video-label">-- × --</div>
+                </div>
+                <div class="video-hint">HEDEF SEÇMEK İÇİN GÖRÜNTÜYE TIKLA · Görüntü kırpılmaz (object-fit: contain)</div>
+            </div>
+        </section>
+
+        <aside class="sidebar">
+            <section class="card">
+                <h2>AI HEDEF KONTROLÜ</h2>
+                <button id="aiTrackButton" class="wide orange" onclick="toggleAiTracking()">AI TAKİP: KAPALI</button>
+                <div class="grid2" style="margin-top:7px;">
+                    <button class="primary" onclick="reconnectStream()">AKIŞI YENİLE</button>
+                    <button onclick="clearTarget()">SEÇİMİ TEMİZLE</button>
+                </div>
+                <div class="note">AI takip yalnız seçtiğin hedefi kamera pan/tilt ile merkezler. Bacak hareket kanalı kullanılmaz. Takip kapalıyken kafa merkez/stabilizasyon moduna döner.</div>
+            </section>
+
+            <section class="card">
+                <h2>CANLI DURUM</h2>
+                <div class="status-list">
+                    <div class="status-row"><span>KARE YAŞI</span><strong id="frameAge">--</strong></div>
+                    <div class="status-row"><span>HEDEF</span><strong id="targetState">SEÇİLMEDİ</strong></div>
+                    <div class="status-row"><span>TAKİP KİMLİĞİ</span><strong id="targetId">--</strong></div>
+                    <div class="status-row"><span>GÖRÜNÜRLÜK</span><strong id="targetVisible">--</strong></div>
+                    <div class="status-row"><span>HEDEF X/Y</span><strong id="targetXY">--</strong></div>
+                    <div class="status-row"><span>GİMBAL MODU</span><strong id="gimbalMode">STABİLİZE</strong></div>
+                    <div class="status-row"><span>PAN / TILT</span><strong id="gimbalAngles">90.0° / 90.0°</strong></div>
+                    <div class="status-row"><span>AKIŞ</span><strong>HD · apex:8888/stream</strong></div>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>İŞLEM KAYDI</h2>
+                <div id="actionStatus">Hazır. Görüntü doğrudan 8888 portundan yükleniyor.</div>
+            </section>
+        </aside>
+    </main>
+</div>
+
+<script>
+    const img = document.getElementById('cameraFeed');
+    const stage = document.getElementById('videoStage');
+    const marker = document.getElementById('targetMarker');
+    let aiTrackingEnabled = false;
+    let targetState = 'none';
+    let reconnectTimer = null;
+    let visionWs = null;
+    let visionRequestId = 0;
+    const visionPending = new Map();
+
+    function directStreamUrl() {
+        return `http://${location.hostname}:8888/stream?console=${Date.now()}`;
+    }
+
+    function setAction(message, tone='normal') {
+        const el = document.getElementById('actionStatus');
+        el.textContent = message;
+        el.style.color = tone === 'ok' ? 'var(--cyan)' : tone === 'bad' ? 'var(--red)' : tone === 'warn' ? 'var(--orange)' : 'var(--muted)';
+    }
+
+    function reconnectStream() {
+        clearTimeout(reconnectTimer);
+        document.getElementById('streamLabel').textContent = 'DOĞRUDAN AKIŞ YENİLENİYOR';
+        img.removeAttribute('src');
+        reconnectTimer = setTimeout(() => { img.src = directStreamUrl(); }, 180);
+    }
+
+    img.addEventListener('load', () => {
+        document.getElementById('streamLabel').textContent = 'DOĞRUDAN 8888 AKIŞI';
+        document.getElementById('resolutionLabel').textContent = `${img.naturalWidth || '--'} × ${img.naturalHeight || '--'}`;
+        const cameraBadge = document.getElementById('cameraBadge');
+        cameraBadge.textContent = `KAMERA CANLI · DIRECT · ${img.naturalWidth || '--'}×${img.naturalHeight || '--'}`;
+        cameraBadge.className = 'badge ok';
+        document.getElementById('frameAge').textContent = 'DIRECT';
+    });
+    img.addEventListener('error', () => {
+        document.getElementById('streamLabel').textContent = 'AKIŞ KOPTU · YENİDEN BAĞLANIYOR';
+        setAction('Doğrudan kamera bağlantısı koptu; 1,5 saniye sonra yeniden deneniyor.', 'warn');
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(reconnectStream, 1500);
+    });
+
+    stage.addEventListener('click', (event) => {
+        const rect = img.getBoundingClientRect();
+        const iw = img.naturalWidth, ih = img.naturalHeight;
+        if (!iw || !ih) return;
+        const scale = Math.min(rect.width / iw, rect.height / ih);
+        const renderedW = iw * scale, renderedH = ih * scale;
+        const offsetX = (rect.width - renderedW) / 2;
+        const offsetY = (rect.height - renderedH) / 2;
+        const px = event.clientX - rect.left;
+        const py = event.clientY - rect.top;
+        if (px < offsetX || px > offsetX + renderedW || py < offsetY || py > offsetY + renderedH) {
+            setAction('Siyah kenar alanı hedef değildir; görüntünün içine tıkla.', 'warn');
+            return;
+        }
+        const nx = Math.max(0, Math.min(1, (px - offsetX) / renderedW));
+        const ny = Math.max(0, Math.min(1, (py - offsetY) / renderedH));
+        marker.style.left = `${px}px`;
+        marker.style.top = `${py}px`;
+        marker.style.display = 'block';
+        selectTarget(nx, ny);
+    });
+
+    async function fetchJson(url, options={}, retries=0) {
+        let lastError;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 8000);
+            try {
+                const response = await fetch(url, { ...options, signal: controller.signal, cache:'no-store' });
+                const text = await response.text();
+                let data = {};
+                try { data = JSON.parse(text || '{}'); } catch (_) { data = { raw:text }; }
+                if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+                return data;
+            } catch (e) {
+                lastError = e;
+                const transient = e && (e.name === 'AbortError' || e.name === 'TimeoutError' || e.name === 'TypeError');
+                if (!transient || attempt >= retries) break;
+                await new Promise(resolve => setTimeout(resolve, 250));
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+        if (lastError && (lastError.name === 'AbortError' || lastError.name === 'TimeoutError')) {
+            throw new Error('kontrol bağlantısı zaman aşımına uğradı');
+        }
+        throw lastError;
+    }
+
+    function connectVisionControl() {
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        visionWs = new WebSocket(`${proto}://${location.host}/ws/vision`);
+        visionWs.onmessage = (event) => {
+            let message;
+            try { message = JSON.parse(event.data); } catch (_) { return; }
+            if (message.type !== 'vision_ack') return;
+            const pending = visionPending.get(message.id);
+            if (!pending) return;
+            visionPending.delete(message.id);
+            clearTimeout(pending.timer);
+            if (message.ok) pending.resolve(message);
+            else pending.reject(new Error(message.error || `HTTP ${message.status || 500}`));
+        };
+        visionWs.onclose = () => {
+            for (const pending of visionPending.values()) {
+                clearTimeout(pending.timer);
+                pending.reject(new Error('kamera kontrol bağlantısı kapandı'));
+            }
+            visionPending.clear();
+            setTimeout(connectVisionControl, 800);
+        };
+        visionWs.onerror = () => visionWs.close();
+    }
+
+    async function sendVisionCommand(command, payload, fallbackUrl) {
+        if (!visionWs || visionWs.readyState !== WebSocket.OPEN) {
+            return fetchJson(fallbackUrl, {}, 1);
+        }
+        const id = ++visionRequestId;
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                visionPending.delete(id);
+                reject(new Error('kamera kontrol cevabı zaman aşımına uğradı'));
+            }, 8000);
+            visionPending.set(id, {resolve, reject, timer});
+            visionWs.send(JSON.stringify({id, cmd:command, ...payload}));
+        });
+    }
+
+    async function selectTarget(x, y) {
+        try {
+            await sendVisionCommand(
+                'select', {x, y},
+                `/select_target?x=${x.toFixed(4)}&y=${y.toFixed(4)}`
+            );
+            document.getElementById('targetState').textContent = 'İŞLENİYOR';
+            document.getElementById('targetId').textContent = '--';
+            document.getElementById('targetVisible').textContent = 'BEKLENİYOR';
+            document.getElementById('targetXY').textContent = `${x.toFixed(3)} / ${y.toFixed(3)}`;
+            targetState = 'pending';
+            renderTrackingState();
+            setAction(`Tıklama Hailo'ya gönderildi: x=${x.toFixed(3)}, y=${y.toFixed(3)}. Kişi kilidi doğrulanıyor…`, 'normal');
+        } catch (e) {
+            marker.style.display = 'none';
+            setAction(`Hedef seçilemedi: ${e.message}`, 'bad');
+        }
+    }
+
+    async function clearTarget() {
+        try {
+            await sendVisionCommand('clear', {}, '/select_target?clear=1');
+            marker.style.display = 'none';
+            document.getElementById('targetState').textContent = 'TEMİZLENDİ';
+            document.getElementById('targetId').textContent = '--';
+            document.getElementById('targetVisible').textContent = '--';
+            document.getElementById('targetXY').textContent = '--';
+            targetState = 'cleared';
+            aiTrackingEnabled = false;
+            renderTrackingState();
+            setAction('Hedef seçimi temizlendi.', 'ok');
+        } catch (e) { setAction(`Seçim temizlenemedi: ${e.message}`, 'bad'); }
+    }
+
+    function renderTrackingState() {
+        const btn = document.getElementById('aiTrackButton');
+        const badge = document.getElementById('trackingBadge');
+        const targetReady = ['locked', 'lost'].includes(targetState);
+        btn.textContent = aiTrackingEnabled
+            ? 'AI TAKİP: AKTİF'
+            : targetReady ? 'HEDEF SEÇİLDİ · TAKİBİ BAŞLAT' : 'AI TAKİP: KAPALI';
+        btn.classList.toggle('active', aiTrackingEnabled);
+        btn.classList.toggle('target-ready', targetReady && !aiTrackingEnabled);
+        badge.textContent = aiTrackingEnabled
+            ? 'AI TAKİP AKTİF'
+            : targetReady ? 'HEDEF KİLİTLİ · TAKİP HAZIR' : 'AI TAKİP KAPALI';
+        badge.className = `badge ${(aiTrackingEnabled || targetReady) ? 'warn' : ''}`;
+    }
+
+    async function toggleAiTracking() {
+        const next = !aiTrackingEnabled;
+        if (next && !confirm('AI kamera takibi açılacak. Yalnız pan/tilt kafa hareket eder; bacaklar hareket etmez. Devam edilsin mi?')) return;
+        try {
+            const data = await sendVisionCommand('ai', {state:next}, `/ai_tracking?state=${next ? 1 : 0}`);
+            aiTrackingEnabled = data.enabled === true;
+            renderTrackingState();
+            setAction(`AI takip ${aiTrackingEnabled ? 'açıldı' : 'kapatıldı'}.`, aiTrackingEnabled ? 'warn' : 'ok');
+        } catch (e) { setAction(`AI takip komutu başarısız: ${e.message}`, 'bad'); }
+    }
+
+    function placeMarkerFromNormalized(x, y) {
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !img.naturalWidth || !img.naturalHeight) return;
+        const rect = img.getBoundingClientRect();
+        const scale = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight);
+        const rw = img.naturalWidth * scale, rh = img.naturalHeight * scale;
+        marker.style.left = `${(rect.width-rw)/2 + x*rw}px`;
+        marker.style.top = `${(rect.height-rh)/2 + y*rh}px`;
+        marker.style.display = 'block';
+    }
+
+    async function updateStatus() {
+        const [cameraResult, visionResult] = await Promise.allSettled([
+            fetchJson('/camera/status'), fetchJson('/api/vision/status')
+        ]);
+        const cameraBadge = document.getElementById('cameraBadge');
+        if (cameraResult.status === 'fulfilled') {
+            const st = cameraResult.value;
+            const ok = st.camera === true && st.fresh === true;
+            cameraBadge.textContent = ok ? `KAMERA CANLI · ${(st.frame_age || 0).toFixed(3)}s` : 'KAMERA TAZE DEĞİL';
+            cameraBadge.className = `badge ${ok ? 'ok' : 'bad'}`;
+            document.getElementById('frameAge').textContent = typeof st.frame_age === 'number' ? `${st.frame_age.toFixed(3)} s` : '--';
+        } else {
+            // Yardımcı snapshot sorgusu aksasa bile doğal boyutu olan MJPEG img
+            // canlıdır. Sağlam akışı sırf durum API'si yüzünden hatalı gösterme.
+            const streamLive = img.complete && img.naturalWidth > 0;
+            cameraBadge.textContent = streamLive
+                ? `KAMERA CANLI · DIRECT · ${img.naturalWidth}×${img.naturalHeight}`
+                : 'KAMERA DURUMU OKUNAMADI';
+            cameraBadge.className = `badge ${streamLive ? 'ok' : 'warn'}`;
+            if (streamLive) document.getElementById('frameAge').textContent = 'DIRECT';
+        }
+        if (visionResult.status === 'fulfilled') {
+            const st = visionResult.value;
+            aiTrackingEnabled = st.ai_tracking === true;
+            renderTrackingState();
+            const sel = st.selection || {};
+            if (sel.pending && !sel.clear) {
+                document.getElementById('targetXY').textContent = `${Number(sel.x).toFixed(3)} / ${Number(sel.y).toFixed(3)}`;
+                placeMarkerFromNormalized(Number(sel.x), Number(sel.y));
+            } else if (sel.clear) {
+                document.getElementById('targetState').textContent = 'TEMİZLENDİ';
+                document.getElementById('targetXY').textContent = '--';
+                marker.style.display = 'none';
+            }
+            const tracking = st.tracking || {};
+            const gimbal = tracking.gimbal || {};
+            document.getElementById('gimbalMode').textContent = String(gimbal.mode || 'stabilize').toUpperCase();
+            document.getElementById('gimbalAngles').textContent =
+                `${Number(gimbal.pan ?? 90).toFixed(1)}° / ${Number(gimbal.tilt ?? 90).toFixed(1)}°`;
+            const previousTargetState = targetState;
+            targetState = tracking.state || 'none';
+            renderTrackingState();
+            const stateLabels = {
+                locked:'KİLİTLENDİ', lost:'HEDEF KAYIP', missed:'KİŞİ BULUNAMADI',
+                cleared:'TEMİZLENDİ', none:'SEÇİLMEDİ', offline:'HUD ÇEVRİMDIŞI'
+            };
+            document.getElementById('targetState').textContent = stateLabels[tracking.state] || 'İŞLENİYOR';
+            document.getElementById('targetId').textContent = tracking.track_id == null
+                ? (tracking.selected ? 'GÖRSEL KİLİT' : '--') : `#${tracking.track_id}`;
+            document.getElementById('targetVisible').textContent = tracking.visible ? 'GÖRÜLÜYOR' : tracking.selected ? 'ARAMA/KAYIP' : '--';
+            if (tracking.state === 'missed') {
+                marker.style.display = 'none';
+                setAction('Tıklanan noktada kişi bulunamadı. Kişinin gövde kutusunun içine tekrar tıkla.', 'warn');
+            } else if (tracking.state === 'locked') {
+                setAction(aiTrackingEnabled
+                    ? `Kişi takip ediliyor${tracking.track_id == null ? '' : ` · ID #${tracking.track_id}`}.`
+                    : `Kişi kilitlendi${tracking.track_id == null ? '' : ` · ID #${tracking.track_id}`}. Turuncu düğmeyle AI takibi başlatabilirsin.`,
+                    aiTrackingEnabled ? 'warn' : 'ok');
+            } else if (tracking.state === 'cleared' && previousTargetState !== 'cleared') {
+                setAction('Hedef seçimi temizlendi.', 'ok');
+            }
+        }
+    }
+
+    function openRawStream() { window.open(directStreamUrl(), '_blank', 'noopener'); }
+    function requestFullscreen() { document.documentElement.requestFullscreen?.(); }
+
+    renderTrackingState();
+    connectVisionControl();
+    // Sayfanın load olayı MJPEG'in ömür boyu açık HTTP bağlantısını beklemesin.
+    // Durum yoklaması akışın src'sini değiştirmez; yalnız img error veya kullanıcı
+    // komutu gerçek görüntü bağlantısını yeniden kurar.
+    window.addEventListener('load', () => {
+        // MJPEG isteğini load callback'i bittikten sonra başlat; sonsuz akış
+        // sayfanın yüklenmesini bekleyen tarayıcı/otomasyon istemcilerini tutmasın.
+        setTimeout(reconnectStream, 250);
+        setInterval(updateStatus, 3000);
+        setTimeout(updateStatus, 200);
+    });
+</script>
+</body>
+</html>

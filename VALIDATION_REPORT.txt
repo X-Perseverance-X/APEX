@@ -1,0 +1,15 @@
+PASS Python syntax: apex_server.py
+PASS Python syntax: apex_kinematics_lab/app.py
+PASS Kinematics tripod phases: RF+RR+LM / RM+LF+LR
+PASS Actual leg lengths loaded into Kinematics config
+PASS Joint axis selectors have per-leg C/F/T defaults
+PASS Command UI unique HTML IDs: 81
+PASS Command UI direct event handlers resolved: 32
+PASS Firmware integration anchors: Servo Lab + TOF + dual battery + mount poses
+PASS Firmware raw brace balance: 356 / 356
+
+NOTE: Arduino compiler toolchain is not installed in this execution environment; firmware was structurally/static checked but not board-compiled.
+PASS HTTP TestClient Command Center /: 200
+PASS HTTP TestClient Command Center /api/workspaces: 200
+PASS HTTP TestClient Kinematics /: 200
+PASS HTTP TestClient Kinematics /api/config: 200

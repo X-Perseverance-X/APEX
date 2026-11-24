@@ -70,6 +70,7 @@
         <div id="tofBadge" class="pill">TOF --</div>
         <div id="cameraBadge" class="pill">KAMERA --</div>
         <div class="spacer"></div>
+        <button id="connectionBtn" onclick="reconnectNavigation()">BAĞLAN</button>
         <button onclick="location.href='/'">ANA HUD ↗</button>
         <button onclick="location.href='/camera-console'">KAMERA ↗</button>
     </header>
@@ -80,7 +81,7 @@
             <div class="map-view-toggle"><button id="view2dBtn" class="active" onclick="setMappingView('2d')">2D PLAN</button><button id="view3dBtn" onclick="setMappingView('3d')">RGB 3D</button></div>
             <div id="mapTitle" class="map-title">LOCAL OCCUPANCY · +X İLERİ / +Y SOL</div>
             <div class="lock-banner">LIDAR GÜVENLİKLİ · DÜŞÜK HIZLI ROTA YÜRÜTME</div>
-            <div class="map-hint">HARİTADA HEDEF NOKTAYA TIKLA<br>Manuel onay veya otonom kararla tüm waypointler izlenir.</div>
+            <div id="mapHint" class="map-hint">HARİTADA HEDEF NOKTAYA TIKLA<br>Manuel onay veya otonom kararla tüm waypointler izlenir.</div>
             <div class="legend"><span style="color:#53636a">■</span> BİLİNMEYEN<br><span style="color:#173036">■</span> GÖZLENDİ/BOŞ<br><span style="color:#ff4650">■</span> AKTİF ÖLÇÜM<br><span style="color:#000;text-shadow:0 0 2px #aaa">■</span> KESİN DUVAR<br><span style="color:#00e5b0">━</span> ROTA<br><span style="color:#ff9d22">◆</span> HEDEF</div>
         </section>
         <aside>
@@ -146,7 +147,7 @@
                     <div class="row"><span>KAMERA SEMANTİK</span><strong id="readySemantic">--</strong></div>
                 </div>
                 <div id="fusionBlockers" class="note">Kalibrasyon durumu bekleniyor.</div>
-                <div class="note">RGB 3D, balık gözü kamera snapshot renklerini IMU ile eğilmiş gerçek LiDAR düzlemine yaklaşık projeler. Kamera intrinsic/extrinsic kalibrasyonu tamamlanana kadar ölçüsel renk eşleşmesi PROVISIONAL'dır.</div>
+                <div class="note">TRUE RGB-D, düz web kameranın piksellerinden yoğun derinlik çıkarır; yalnız kameranın 78° görüşündeki LiDAR ölçüleriyle metre ölçeğine oturtur ve VISUAL + IMU + ICP pozu ile renkli nesne yüzeylerini biriktirir. Kamera intrinsic kalibrasyonu tamamlanana kadar ölçüsel hassasiyet PROVISIONAL'dır.</div>
             </section>
             <section class="card"><h2>İŞLEM KAYDI</h2><div id="eventLog">Navigasyon veri kanalı bekleniyor.</div></section>
         </aside>
@@ -156,9 +157,9 @@
     const canvas = document.getElementById('mapCanvas');
     const panel = document.getElementById('mapPanel');
     const ctx = canvas.getContext('2d', {alpha:false});
-    let navState = null, gridCells = [], confirmedCells = [], navWs = null;
-    let mappingView='2d', cloudScene, cloudCamera, cloudRenderer, cloudPoints, cloudRobot;
-    let cloudVoxels=new Map(), lastCloudSequence=-1, lastMappingState='', cameraPixels=null, cameraPixelsAt=0, cameraSnapshotTimer=null, cameraSnapshotFailures=0;
+    let navState = null, gridCells = [], confirmedCells = [], navWs = null, navReconnectTimer = null;
+    let mappingView='2d', cloudScene, cloudCamera, cloudRenderer, cloudPoints, cloudRobot, cloudAnimationStarted=false;
+    let cloudVoxels=new Map(), lastCloudSequence=-1, lastMappingState='', lastDenseFit=null, lastDenseScannerPose=null, lastDenseTracking=null, denseCloudTimer=null, denseCloudBusy=false, cameraPixels=null, cameraPixelsAt=0, cameraSnapshotTimer=null, cameraSnapshotFailures=0;
     const snapshotCanvas=document.createElement('canvas'), snapshotCtx=snapshotCanvas.getContext('2d',{willReadFrequently:true});
 
     function setLog(text, tone='normal') {
@@ -202,6 +203,7 @@
     }
 
     function drawMap() {
+        if(mappingView!=='2d')return;
         const rect = panel.getBoundingClientRect(), w=rect.width, h=rect.height;
         ctx.fillStyle='#030607'; ctx.fillRect(0,0,w,h);
         if (!navState?.grid) return;
@@ -234,53 +236,91 @@
     function setMappingView(view){
         mappingView=view==='3d'?'3d':'2d';canvas.style.display=mappingView==='2d'?'block':'none';
         document.getElementById('rgbCloudPanel').style.display=mappingView==='3d'?'block':'none';
+        document.getElementById('mapHint').innerHTML=mappingView==='3d'?'SOL SÜRÜKLE: DÖNDÜR · TEKERLEK: YAKINLAŞTIR<br>WASD: YATAY · Q/E: AŞAĞI/YUKARI · R: MERKEZLE':'HARİTADA HEDEF NOKTAYA TIKLA<br>Manuel onay veya otonom kararla tüm waypointler izlenir.';
         document.getElementById('view2dBtn').classList.toggle('active',mappingView==='2d');document.getElementById('view3dBtn').classList.toggle('active',mappingView==='3d');
         if(mappingView==='3d'&&typeof THREE==='undefined'){mappingView='2d';canvas.style.display='block';document.getElementById('rgbCloudPanel').style.display='none';document.getElementById('view2dBtn').classList.add('active');document.getElementById('view3dBtn').classList.remove('active');setLog('RGB 3D kütüphanesi yüklenemedi; 2D plan korundu.','warn');}
-        else if(mappingView==='3d'){initRgbCloud();resizeRgbCloud();updateRgbGeometry(navState||{});refreshCameraSnapshot();}
-        else if(!cameraCaptureNeeded())stopCameraSnapshots();
+        else if(mappingView==='3d'){initRgbCloud();resizeRgbCloud();updateRgbGeometry(navState||{});document.getElementById('mapTitle').textContent=cloudVoxels.size?`TRUE RGB-D · ${cloudVoxels.size.toLocaleString('tr-TR')} RENKLİ NOKTA · VISUAL+IMU+ICP · FOV 78°`:'TRUE RGB-D · YOĞUN KARE BEKLENİYOR';refreshDenseCloud();}
+        else if(navState?.grid){const g=navState.grid;gridCells=decodeRle(g.cells_rle,(g.width||0)*(g.height||0));confirmedCells=decodeRle(g.confirmed_rle,(g.width||0)*(g.height||0));drawMap();}
     }
     function initRgbCloud(){
         if(cloudRenderer||typeof THREE==='undefined')return;const host=document.getElementById('rgbCloudPanel');
         cloudScene=new THREE.Scene();cloudScene.background=new THREE.Color(0x030607);cloudScene.fog=new THREE.Fog(0x030607,8,18);
         cloudCamera=new THREE.PerspectiveCamera(52,1,.03,40);cloudCamera.position.set(6,5,7);cloudCamera.lookAt(0,0,0);
         cloudRenderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});cloudRenderer.setPixelRatio(Math.min(1.5,devicePixelRatio||1));host.appendChild(cloudRenderer.domElement);
-        cloudPoints=new THREE.Points(new THREE.BufferGeometry(),new THREE.PointsMaterial({vertexColors:true,size:.055,sizeAttenuation:true,transparent:true,opacity:.96}));cloudScene.add(cloudPoints);cloudScene.add(new THREE.GridHelper(12,24,0x2b5961,0x153137));
+        cloudPoints=new THREE.Points(new THREE.BufferGeometry(),new THREE.PointsMaterial({vertexColors:true,size:.042,sizeAttenuation:true,transparent:true,opacity:.94}));cloudScene.add(cloudPoints);cloudScene.add(new THREE.GridHelper(12,24,0x2b5961,0x153137));
         cloudRobot=new THREE.Group();const body=new THREE.Mesh(new THREE.BoxGeometry(.34,.16,.45),new THREE.MeshBasicMaterial({color:0xe60000}));body.position.y=.10;cloudRobot.add(body);const heading=new THREE.Mesh(new THREE.ConeGeometry(.08,.28,10),new THREE.MeshBasicMaterial({color:0xffa500}));heading.rotation.x=-Math.PI/2;heading.position.set(0,.12,-.32);cloudRobot.add(heading);cloudScene.add(cloudRobot);
-        let drag=false,lx=0,ly=0,az=.7,polar=.82,radius=10;const moveCamera=()=>{cloudCamera.position.set(radius*Math.sin(polar)*Math.sin(az),radius*Math.cos(polar),radius*Math.sin(polar)*Math.cos(az));cloudCamera.lookAt(0,0,0);renderRgbCloud()};const dom=cloudRenderer.domElement;
+        if(!cloudAnimationStarted){cloudAnimationStarted=true;const animate=()=>{if(mappingView==='3d'&&cloudRenderer)renderRgbCloud();requestAnimationFrame(animate)};requestAnimationFrame(animate)}
+        let drag=false,lx=0,ly=0,az=.7,polar=.82,radius=10,target=new THREE.Vector3();const moveCamera=()=>{cloudCamera.position.set(target.x+radius*Math.sin(polar)*Math.sin(az),target.y+radius*Math.cos(polar),target.z+radius*Math.sin(polar)*Math.cos(az));cloudCamera.lookAt(target)};const dom=cloudRenderer.domElement;
         dom.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;dom.setPointerCapture?.(e.pointerId)});dom.addEventListener('pointermove',e=>{if(!drag)return;az-=(e.clientX-lx)*.008;polar=Math.max(.15,Math.min(1.48,polar-(e.clientY-ly)*.006));lx=e.clientX;ly=e.clientY;moveCamera()});dom.addEventListener('pointerup',()=>drag=false);dom.addEventListener('wheel',e=>{e.preventDefault();radius=Math.max(2.5,Math.min(20,radius*(1+e.deltaY*.001)));moveCamera()},{passive:false});moveCamera();
+        window.addEventListener('keydown',e=>{if(mappingView!=='3d'||['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName))return;const step=Math.max(.08,radius*.025),forward=new THREE.Vector3(-Math.sin(az),0,-Math.cos(az)),right=new THREE.Vector3(Math.cos(az),0,-Math.sin(az));let moved=true;if(e.key.toLowerCase()==='w')target.addScaledVector(forward,step);else if(e.key.toLowerCase()==='s')target.addScaledVector(forward,-step);else if(e.key.toLowerCase()==='a')target.addScaledVector(right,-step);else if(e.key.toLowerCase()==='d')target.addScaledVector(right,step);else if(e.key.toLowerCase()==='q')target.y-=step;else if(e.key.toLowerCase()==='e')target.y+=step;else if(e.key.toLowerCase()==='r')target.set(0,0,0);else moved=false;if(moved){e.preventDefault();moveCamera()}});
     }
     function resizeRgbCloud(){if(!cloudRenderer)return;const rect=document.getElementById('rgbCloudPanel').getBoundingClientRect();if(rect.width<2||rect.height<2)return;cloudRenderer.setSize(rect.width,rect.height,false);cloudCamera.aspect=rect.width/rect.height;cloudCamera.updateProjectionMatrix();renderRgbCloud();}
     function renderRgbCloud(){if(cloudRenderer)cloudRenderer.render(cloudScene,cloudCamera);}
-    function depthColor(distance){return distance<.6?[1,.22,.27]:distance<1.5?[1,.68,.13]:distance<3?[0,.9,.69]:[.15,.65,1];}
+    const UNCOLORED_POINT=[.24,.29,.31];
     function sampleCameraColor(point,pose){
-        const dx=point[0]-Number(pose.x_m||0),dy=point[1]-Number(pose.y_m||0),yaw=Number(pose.yaw_rad||0),forward=dx*Math.cos(yaw)+dy*Math.sin(yaw),left=-dx*Math.sin(yaw)+dy*Math.cos(yaw),distance=Math.hypot(forward,left);
-        if(!cameraPixels||Date.now()-cameraPixelsAt>3000||forward<=0)return depthColor(distance);const angle=Math.atan2(left,forward),halfFov=80*Math.PI/180;if(Math.abs(angle)>halfFov)return depthColor(distance);
-        const x=Math.max(0,Math.min(cameraPixels.width-1,Math.round((.5-angle/(2*halfFov))*cameraPixels.width)));const elevation=Math.atan2(Number(point[2]||0),Math.max(.05,distance)),y=Math.max(0,Math.min(cameraPixels.height-1,Math.round((.5-elevation/(100*Math.PI/180))*cameraPixels.height))),i=(y*cameraPixels.width+x)*4;
-        return[cameraPixels.data[i]/255,cameraPixels.data[i+1]/255,cameraPixels.data[i+2]/255];
+        const dx=point[0]-Number(pose.x_m||0),dy=point[1]-Number(pose.y_m||0),yaw=Number(pose.yaw_rad||0);
+        // Dünya noktasını robot/LiDAR karesine geri al. Ölçülmüş kurulumda
+        // kamera LiDAR'dan 6 cm ileride ve 2 cm aşağıdadır (x=ileri,z=yukarı).
+        const lidarForward=dx*Math.cos(yaw)+dy*Math.sin(yaw),lidarLeft=-dx*Math.sin(yaw)+dy*Math.cos(yaw);
+        const forward=lidarForward-.06,left=lidarLeft,up=Number(point[2]||0)+.02;
+        if(!cameraPixels||Date.now()-cameraPixelsAt>1000||forward<=.05)return{c:UNCOLORED_POINT,rgb:false};
+        // Düz web kamera: yaklaşık 70° yatay / 43° dikey görüş. Görüş dışı
+        // LiDAR noktalarına sahte mesafe rengi verme; nötr bırak.
+        const hFov=70*Math.PI/180,vFov=43*Math.PI/180,angle=Math.atan2(left,forward),elevation=Math.atan2(up,Math.hypot(forward,left));
+        if(Math.abs(angle)>hFov/2||Math.abs(elevation)>vFov/2)return{c:UNCOLORED_POINT,rgb:false};
+        const x=Math.max(0,Math.min(cameraPixels.width-1,Math.round((.5-angle/hFov)*cameraPixels.width)));
+        const y=Math.max(0,Math.min(cameraPixels.height-1,Math.round((.5-elevation/vFov)*cameraPixels.height))),i=(y*cameraPixels.width+x)*4;
+        return{c:[cameraPixels.data[i]/255,cameraPixels.data[i+1]/255,cameraPixels.data[i+2]/255],rgb:true};
     }
-    function ingestSparseCloud(state){
-        const cloud=state.sparse_cloud||{},sequence=Number(cloud.sequence||0),session=state.mapping_session?.state||'',wasMapping=lastMappingState==='MAPPING';if(session==='MAPPING'&&!wasMapping){cloudVoxels.clear();lastCloudSequence=-1}lastMappingState=session;if(session==='MAPPING'&&!wasMapping)refreshCameraSnapshot();else if(session!=='MAPPING'&&wasMapping&&!cameraCaptureNeeded())stopCameraSnapshots();
-        if(sequence<=0||sequence===lastCloudSequence||!Array.isArray(cloud.points))return;lastCloudSequence=sequence;const pose=state.pose||{};
-        for(const point of cloud.points){if(!Array.isArray(point)||point.length<3)continue;const numeric=point.map(Number),key=numeric.map(v=>Math.round(v/.06)).join(':');cloudVoxels.set(key,{p:numeric,c:sampleCameraColor(numeric,pose)});}while(cloudVoxels.size>30000)cloudVoxels.delete(cloudVoxels.keys().next().value);if(mappingView==='3d')updateRgbGeometry(state);
+    function ingestMappingState(state){
+        const session=state.mapping_session?.state||'',wasMapping=lastMappingState==='MAPPING';
+        if(session==='MAPPING'&&!wasMapping){cloudVoxels.clear();lastCloudSequence=-1;refreshDenseCloud();}
+        lastMappingState=session;
+    }
+    function scheduleDenseCloud(delay=900){
+        if(denseCloudTimer)clearTimeout(denseCloudTimer);
+        denseCloudTimer=setTimeout(refreshDenseCloud,delay);
+    }
+    async function refreshDenseCloud(){
+        if(denseCloudBusy){scheduleDenseCloud(300);return}denseCloudBusy=true;
+        try{
+            const response=await fetch('/api/navigation/dense-cloud',{cache:'no-store'}),dense=await response.json();
+            const sequence=Number(dense.sequence||0),points=Array.isArray(dense.points)?dense.points:[];
+            if(dense.status==='READY'&&dense.fresh!==false&&sequence>0&&sequence!==lastCloudSequence){
+                lastCloudSequence=sequence;lastDenseFit=Number(dense.metric_fit_error||0);lastDenseScannerPose=Array.isArray(dense.scanner_pose)?dense.scanner_pose.map(Number):null;lastDenseTracking=dense.tracking||null;if(dense.mode==='LIVE_PREVIEW'||dense.reset===true)cloudVoxels.clear();
+                for(const item of points){
+                    if(!Array.isArray(item)||item.length<6)continue;
+                    const p=[Number(item[0]),Number(item[1]),Number(item[2])];
+                    if(!p.every(Number.isFinite))continue;
+                    const key=p.map(v=>Math.round(v/.045)).join(':');
+                    cloudVoxels.set(key,{p,c:[Number(item[3])/255,Number(item[4])/255,Number(item[5])/255],rgb:true});
+                }
+                while(cloudVoxels.size>35000)cloudVoxels.delete(cloudVoxels.keys().next().value);
+                if(mappingView==='3d')updateRgbGeometry(navState||{});
+                const tracking=lastDenseTracking||{},fit=Number(tracking.fitness||0);document.getElementById('mapTitle').textContent=`TRUE RGB-D · ${cloudVoxels.size.toLocaleString('tr-TR')} RENKLİ NOKTA · VISUAL+IMU+ICP ${fit.toFixed(2)} · FOV ${Number(dense.camera_fov_deg||0).toFixed(0)}°`;
+            }else if(mappingView==='3d'&&dense.status!=='READY'){
+                document.getElementById('mapTitle').textContent=`TRUE RGB-D · ${dense.status||'BEKLENİYOR'} · ${dense.message||''}`;
+            }
+        }catch(error){if(mappingView==='3d')document.getElementById('mapTitle').textContent=`TRUE RGB-D · BAĞLANTI BEKLENİYOR`}
+        finally{denseCloudBusy=false;scheduleDenseCloud(mappingView==='3d'||lastMappingState==='MAPPING'?350:1600)}
     }
     function updateRgbGeometry(state){
-        if(!cloudPoints)return;const positions=[],colors=[];for(const value of cloudVoxels.values()){positions.push(-value.p[1],value.p[2],-value.p[0]);colors.push(...value.c)}const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));cloudPoints.geometry.dispose();cloudPoints.geometry=geometry;
-        const pose=state.pose||{};cloudRobot.position.set(-Number(pose.y_m||0),0,-Number(pose.x_m||0));cloudRobot.rotation.y=Number(pose.yaw_rad||0);renderRgbCloud();
+        if(!cloudPoints)return;const positions=[],colors=[];let rgbCount=0;for(const value of cloudVoxels.values()){positions.push(-value.p[1],value.p[2],-value.p[0]);colors.push(...value.c);if(value.rgb)rgbCount++}const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));cloudPoints.geometry.dispose();cloudPoints.geometry=geometry;
+        if(Array.isArray(lastDenseScannerPose)&&lastDenseScannerPose.length>=4){cloudRobot.position.set(-Number(lastDenseScannerPose[1]||0),Number(lastDenseScannerPose[2]||0),-Number(lastDenseScannerPose[0]||0));cloudRobot.rotation.y=Number(lastDenseScannerPose[3]||0)}else{const pose=state.pose||{};cloudRobot.position.set(-Number(pose.y_m||0),0,-Number(pose.x_m||0));cloudRobot.rotation.y=Number(pose.yaw_rad||0)}renderRgbCloud();
     }
     function stopCameraSnapshots(){if(cameraSnapshotTimer){clearTimeout(cameraSnapshotTimer);cameraSnapshotTimer=null;}}
     function cameraCaptureNeeded(){return mappingView==='3d'||lastMappingState==='MAPPING';}
     function scheduleCameraSnapshot(delay){stopCameraSnapshots();if(cameraCaptureNeeded()&&!document.hidden)cameraSnapshotTimer=setTimeout(refreshCameraSnapshot,delay);}
     function refreshCameraSnapshot(){
         if(!cameraCaptureNeeded()||document.hidden)return;const image=new Image();
-        image.onload=()=>{snapshotCanvas.width=320;snapshotCanvas.height=180;snapshotCtx.drawImage(image,0,0,320,180);try{cameraPixels=snapshotCtx.getImageData(0,0,320,180);cameraPixelsAt=Date.now();cameraSnapshotFailures=0}catch(_){cameraPixels=null;cameraPixelsAt=0}scheduleCameraSnapshot(1000)};
-        image.onerror=()=>{cameraPixels=null;cameraPixelsAt=0;cameraSnapshotFailures=Math.min(4,cameraSnapshotFailures+1);scheduleCameraSnapshot(1000*(2**cameraSnapshotFailures))};image.src=`/camera/snapshot?_=${Date.now()}`;
+        image.onload=()=>{snapshotCanvas.width=320;snapshotCanvas.height=180;snapshotCtx.drawImage(image,0,0,320,180);try{cameraPixels=snapshotCtx.getImageData(0,0,320,180);cameraPixelsAt=Date.now();cameraSnapshotFailures=0}catch(_){cameraPixels=null;cameraPixelsAt=0}scheduleCameraSnapshot(250)};
+        image.onerror=()=>{cameraPixels=null;cameraPixelsAt=0;cameraSnapshotFailures=Math.min(4,cameraSnapshotFailures+1);scheduleCameraSnapshot(500*(2**cameraSnapshotFailures))};image.src=`/camera/raw-snapshot?_=${Date.now()}`;
     }
 
     function renderState(state) {
         navState=state;
         const g=state.grid||{};
-        gridCells=decodeRle(g.cells_rle,(g.width||0)*(g.height||0));
-        confirmedCells=decodeRle(g.confirmed_rle,(g.width||0)*(g.height||0));
+        if(mappingView==='2d'){gridCells=decodeRle(g.cells_rle,(g.width||0)*(g.height||0));confirmedCells=decodeRle(g.confirmed_rle,(g.width||0)*(g.height||0));}
         document.getElementById('mapMode').textContent=state.map_mode||'--';
         document.getElementById('goalText').textContent=state.goal?`${state.goal.x_m.toFixed(2)} / ${state.goal.y_m.toFixed(2)} m`:'--';
         document.getElementById('routeStatus').textContent=state.route_status||'--';
@@ -317,8 +357,8 @@
         const ready=state.fusion_readiness||{};
         setReady('ready2d',ready.navigation_2d);setReady('readyLocalSlam',ready.local_slam);setReady('readySlam',ready.global_slam);setReady('ready3d',ready.sparse_3d);setReady('readySemantic',ready.camera_semantic);
         document.getElementById('fusionBlockers').textContent=(ready.blockers||[]).length?`BEKLEYEN: ${(ready.blockers||[]).join(' · ')}`:'TÜM FÜZYON KAPILARI HAZIR';
-        document.getElementById('mapTitle').textContent=mappingView==='3d'?'RGB 3D · IMU PROJECTION · KAMERA RENK PROVISIONAL':`${state.map_mode||'LOCAL_ONLY'} OCCUPANCY · +X İLERİ / +Y SOL`;
-        ingestSparseCloud(state);
+        if(mappingView!=='3d')document.getElementById('mapTitle').textContent=`${state.map_mode||'LOCAL_ONLY'} OCCUPANCY · +X İLERİ / +Y SOL`;
+        ingestMappingState(state);
         drawMap();
     }
 
@@ -375,14 +415,19 @@
     }
 
     function connectNavigation(){
+        if(navWs&&(navWs.readyState===WebSocket.OPEN||navWs.readyState===WebSocket.CONNECTING))return;
+        clearTimeout(navReconnectTimer);navReconnectTimer=null;
+        const connectionBtn=document.getElementById('connectionBtn');connectionBtn.textContent='BAĞLANIYOR…';connectionBtn.disabled=true;
         const proto=location.protocol==='https:'?'wss':'ws';navWs=new WebSocket(`${proto}://${location.host}/ws/navigation`);
+        navWs.onopen=()=>{connectionBtn.textContent='BAĞLI';connectionBtn.disabled=false;connectionBtn.classList.add('active');setLog('Sensör ve canlı SLAM bağlantısı kuruldu.','ok')};
         navWs.onmessage=ev=>{try{const d=JSON.parse(ev.data);if(d.type==='navigation')renderState(d)}catch(e){setLog(`Veri hatası: ${e.message}`,'bad')}};
-        navWs.onclose=()=>{setPill('mapBadge','BAĞLANTI YOK','bad');setTimeout(connectNavigation,1500)};
+        navWs.onclose=()=>{connectionBtn.textContent='BAĞLAN';connectionBtn.disabled=false;connectionBtn.classList.remove('active');setPill('mapBadge','BAĞLANTI YOK','bad');navReconnectTimer=setTimeout(connectNavigation,1500)};
         navWs.onerror=()=>navWs.close();
     }
+    function reconnectNavigation(){clearTimeout(navReconnectTimer);navReconnectTimer=null;if(navWs){navWs.onclose=null;try{navWs.close()}catch(_){}}navWs=null;connectNavigation()}
     document.getElementById('savedMaps').addEventListener('change',ev=>document.getElementById('loadMapBtn').disabled=!ev.target.value);
-    document.addEventListener('visibilitychange',()=>{if(document.hidden)stopCameraSnapshots();else if(cameraCaptureNeeded())refreshCameraSnapshot()});
-    new ResizeObserver(resizeMap).observe(panel);resizeMap();refreshMaps();connectNavigation();
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshDenseCloud()});
+    new ResizeObserver(resizeMap).observe(panel);resizeMap();refreshMaps();connectNavigation();refreshDenseCloud();
 </script>
 </body>
 </html>

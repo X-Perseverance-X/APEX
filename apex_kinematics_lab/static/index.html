@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+  <title>APEX KINEMATICS LAB</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css?v=30">
+  <script src="/static/three.min.js?v=128"></script>
+</head>
+<body>
+  <div class="lab-grid">
+    <div class="top-ticker-bar">
+      <div class="ticker-logo">APEX KINEMATICS LAB <span>v3.1 / FIRMWARE‑ALIGNED TWIN</span></div>
+      <div class="ticker-meta-grid">
+        <div>MODE: <span class="val" id="tickerMode">STATIC</span></div>
+        <div>LIVE: <span class="val live-off" id="tickerLive">OFFLINE</span></div>
+        <div>GAIT: <span class="val" id="tickerGait">TRIPOD</span></div>
+        <div>PHASE Δ: <span class="val" id="tickerPhase">--</span></div>
+        <div>CONTACT: <span class="val" id="tickerContact">SIM</span></div>
+        <div>IK: <span class="val" id="tickerIK">--</span></div>
+        <div>ENERGY IDX: <span class="val" id="tickerEnergy">--</span></div>
+      </div>
+    </div>
+
+    <section class="pnl scene-panel">
+      <div class="panel-header"><span>3D HEXAPOD ORIENTATION / IK / GAIT / LIVE OVERLAY</span><span id="sceneState">BOOT</span></div>
+      <div class="scene-wrap">
+        <div id="scene3d"></div>
+        <div class="scene-overlay">
+          <div class="badge">WORLD: X İLERİ / Y SOL / Z YUKARI</div>
+          <div class="badge cyan">CYAN: SIM TARGET / CORRECTED TARGET</div>
+          <div class="badge live">BLUE: ROBOT COMMAND‑STATE OVERLAY</div>
+          <div class="badge orange">GREEN: CONTACT / SUPPORT POLYGON</div>
+          <div class="badge violet">EKLEMLER: V52/V56 FIRMWARE GEOMETRİ SÖZLEŞMESİ</div>
+        </div>
+        <div class="view-controls">
+          <button onclick="App.resetCamera()">KAMERA RESET</button>
+          <button onclick="App.togglePlay()" id="playBtn">PLAY</button>
+          <button onclick="App.stepFrame()">STEP</button>
+          <button onclick="App.centerRobot()">CENTER</button>
+          <button onclick="App.toggleLayer('showJointAxes')">AXES</button>
+          <button onclick="App.toggleLayer('showSensors')">SENSORS</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="pnl right-panel">
+      <div class="panel-header"><span>APEX PARAMETER CONSOLE</span><span>HOVER INTENT / CLICK LOCK</span></div>
+      <div class="control-deck" id="controlDeck"></div>
+    </aside>
+
+    <footer class="status-panel">
+      <div class="mini-box">
+        <div class="mini-title">IK / SERVO OUTPUT + LIVE COMMAND STATE</div>
+        <div id="ikOutput" class="terminal">IK bekleniyor...</div>
+      </div>
+      <div class="mini-box">
+        <div class="mini-title">SERVO MOTION CURVE + SIM / ROBOT COMPARISON</div>
+        <canvas id="curveCanvas" width="1100" height="430"></canvas>
+      </div>
+      <div class="mini-box">
+        <div class="mini-title">SYSTEM WARNINGS / LIVE METRICS</div>
+        <div id="warnOutput" class="terminal">Uyarı yok.</div>
+      </div>
+    </footer>
+  </div>
+  <div id="tipbox" class="tipbox"></div>
+  <script src="/static/app.js?v=30"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+[Unit]
+Description=APEX META-1 autonomous startup and process supervisor
+After=network.target apex-wlan0-static.service hostapd.service dnsmasq.service
+Wants=network.target hostapd.service dnsmasq.service
+
+[Service]
+Type=simple
+User=perseverance
+WorkingDirectory=/home/perseverance/APEX_META1_COMPLETE
+EnvironmentFile=/etc/apex/apex.env
+Environment=PYTHONUNBUFFERED=1
+Environment=APEX_NO_BROWSER=1
+ExecStart=/home/perseverance/APEX_META1_COMPLETE/apex _service run
+Restart=always
+RestartSec=3
+TimeoutStartSec=120
+TimeoutStopSec=20
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

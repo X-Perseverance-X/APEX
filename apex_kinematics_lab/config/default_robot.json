@@ -1,0 +1,499 @@
+{
+  "meta": {
+    "name": "META-1",
+    "version": "APEX Kinematics Lab v3.1 / firmware geometry contract",
+    "unit": "mm",
+    "frame": "X_FORWARD_Y_LEFT_Z_UP",
+    "geometryAuthority": "v57.24 measured mechanical revision",
+    "bodyShellStatus": "PROVISIONAL_UNTIL_CAD_OR_PHYSICAL_MEASUREMENT"
+  },
+  "body": {
+    "size": {
+      "length": 430,
+      "width": 260,
+      "height": 80
+    },
+    "pose": {
+      "x": 0,
+      "y": 0,
+      "z": 100,
+      "roll": 0,
+      "pitch": 0,
+      "yaw": 0
+    },
+    "com": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "mass": 8.0
+  },
+  "legCommon": {
+    "coxa": 69.66,
+    "femur": 103.24,
+    "tibia": 168.41,
+    "bend": "outward",
+    "mirrorRight": true,
+    "stanceZ": -100,
+    "showWorkspace": false
+  },
+  "gait": {
+    "type": "tripod",
+    "playing": false,
+    "phase": 0,
+    "frequency": 1.0,
+    "stepLength": 100,
+    "stepWidth": 0,
+    "stepHeight": 50,
+    "dutyFactor": 0.5,
+    "bodyHeight": 100,
+    "turnRate": 0,
+    "phases": {
+      "RF": 0.0,
+      "RM": 0.5,
+      "RR": 0.0,
+      "LF": 0.5,
+      "LM": 0.0,
+      "LR": 0.5
+    }
+  },
+  "bodyIK": {
+    "enabled": true,
+    "desired": {
+      "roll": 0,
+      "pitch": 0,
+      "yaw": 0
+    },
+    "actual": {
+      "roll": 0,
+      "pitch": 0,
+      "yaw": 0
+    },
+    "gain": 1.0,
+    "maxZCorrection": 55,
+    "showNominal": true,
+    "showCorrected": true
+  },
+  "servoMotion": {
+    "curve": "minimum_jerk",
+    "durationMs": 520,
+    "maxSpeedDegS": 260,
+    "stiffness": 0.55,
+    "smoothness": 0.78,
+    "currentWeight": 1.0,
+    "preset": "smooth_walk"
+  },
+  "visual": {
+    "showAxes": true,
+    "showJointAxes": false,
+    "showLabels": true,
+    "showSensors": false,
+    "showSupportPolygon": true,
+    "showTrajectories": false,
+    "showCorrectedTargets": true,
+    "showGrid": true
+  },
+  "contacts": {
+    "mode": "gait_phase",
+    "groundZ": 0,
+    "switchTrigger": 4,
+    "manual": {
+      "LF": true,
+      "LM": false,
+      "LR": true,
+      "RF": false,
+      "RM": true,
+      "RR": false
+    }
+  },
+  "sensors": {
+    "imu": {
+      "name": "MPU6050 IMU",
+      "xyz": {
+        "x": 115,
+        "y": 15,
+        "z": 48
+      },
+      "rpy": {
+        "roll": 0,
+        "pitch": 0,
+        "yaw": 0
+      },
+      "visible": true,
+      "type": "imu"
+    },
+    "lidar": {
+      "name": "RPLIDAR A1M8",
+      "xyz": {
+        "x": 135,
+        "y": 0,
+        "z": 108
+      },
+      "rpy": {
+        "roll": 0,
+        "pitch": 0,
+        "yaw": 0
+      },
+      "visible": true,
+      "type": "lidar",
+      "range": 6000,
+      "angle": 360
+    },
+    "camera": {
+      "name": "Front Camera",
+      "xyz": {
+        "x": 213,
+        "y": 0,
+        "z": 50
+      },
+      "rpy": {
+        "roll": 0,
+        "pitch": -8,
+        "yaw": 0
+      },
+      "visible": true,
+      "type": "camera",
+      "fovH": 70,
+      "fovV": 45,
+      "range": 650
+    },
+    "tof": {
+      "name": "TOF400C",
+      "xyz": {
+        "x": 230,
+        "y": 0,
+        "z": 28
+      },
+      "rpy": {
+        "roll": 0,
+        "pitch": 0,
+        "yaw": 0
+      },
+      "visible": true,
+      "type": "tof",
+      "range": 4000
+    },
+    "gps": {
+      "name": "GPS",
+      "xyz": {
+        "x": -120,
+        "y": 0,
+        "z": 72
+      },
+      "rpy": {
+        "roll": 0,
+        "pitch": 0,
+        "yaw": 0
+      },
+      "visible": true,
+      "type": "gps"
+    }
+  },
+  "selected": {
+    "leg": "LF",
+    "sensor": "imu"
+  },
+  "legs": {
+    "LF": {
+      "name": "LF",
+      "side": "left",
+      "hip": {
+        "x": 125,
+        "y": 98,
+        "z": 0
+      },
+      "target": {
+        "x": 125,
+        "y": 248,
+        "z": -100
+      },
+      "homeAngles": {
+        "coxa": 90,
+        "femur": 49,
+        "tibia": 55
+      },
+      "manualAngles": {
+        "coxa": 90,
+        "femur": 49,
+        "tibia": 55
+      },
+      "useIK": true,
+      "joints": {
+        "coxa": {
+          "axis": "+Z",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": 1
+        },
+        "femur": {
+          "axis": "+X",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": -1
+        },
+        "tibia": {
+          "axis": "+X",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": -1
+        }
+      }
+    },
+    "LM": {
+      "name": "LM",
+      "side": "left",
+      "hip": {
+        "x": 0,
+        "y": 98,
+        "z": 0
+      },
+      "target": {
+        "x": 0,
+        "y": 248,
+        "z": -100
+      },
+      "homeAngles": {
+        "coxa": 90,
+        "femur": 49,
+        "tibia": 55
+      },
+      "manualAngles": {
+        "coxa": 90,
+        "femur": 49,
+        "tibia": 55
+      },
+      "useIK": true,
+      "joints": {
+        "coxa": {
+          "axis": "+Z",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": 1
+        },
+        "femur": {
+          "axis": "+X",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": -1
+        },
+        "tibia": {
+          "axis": "+X",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": -1
+        }
+      }
+    },
+    "LR": {
+      "name": "LR",
+      "side": "left",
+      "hip": {
+        "x": -125,
+        "y": 98,
+        "z": 0
+      },
+      "target": {
+        "x": -125,
+        "y": 248,
+        "z": -100
+      },
+      "homeAngles": {
+        "coxa": 90,
+        "femur": 49,
+        "tibia": 55
+      },
+      "manualAngles": {
+        "coxa": 90,
+        "femur": 49,
+        "tibia": 55
+      },
+      "useIK": true,
+      "joints": {
+        "coxa": {
+          "axis": "+Z",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": 1
+        },
+        "femur": {
+          "axis": "+X",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": -1
+        },
+        "tibia": {
+          "axis": "+X",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": -1
+        }
+      }
+    },
+    "RF": {
+      "name": "RF",
+      "side": "right",
+      "hip": {
+        "x": 125,
+        "y": -98,
+        "z": 0
+      },
+      "target": {
+        "x": 125,
+        "y": -248,
+        "z": -100
+      },
+      "homeAngles": {
+        "coxa": 90,
+        "femur": 131,
+        "tibia": 125
+      },
+      "manualAngles": {
+        "coxa": 90,
+        "femur": 131,
+        "tibia": 125
+      },
+      "useIK": true,
+      "joints": {
+        "coxa": {
+          "axis": "+Z",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": -1
+        },
+        "femur": {
+          "axis": "-X",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": 1
+        },
+        "tibia": {
+          "axis": "-X",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": 1
+        }
+      }
+    },
+    "RM": {
+      "name": "RM",
+      "side": "right",
+      "hip": {
+        "x": 0,
+        "y": -98,
+        "z": 0
+      },
+      "target": {
+        "x": 0,
+        "y": -248,
+        "z": -100
+      },
+      "homeAngles": {
+        "coxa": 90,
+        "femur": 131,
+        "tibia": 125
+      },
+      "manualAngles": {
+        "coxa": 90,
+        "femur": 131,
+        "tibia": 125
+      },
+      "useIK": true,
+      "joints": {
+        "coxa": {
+          "axis": "+Z",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": -1
+        },
+        "femur": {
+          "axis": "-X",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": 1
+        },
+        "tibia": {
+          "axis": "-X",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": 1
+        }
+      }
+    },
+    "RR": {
+      "name": "RR",
+      "side": "right",
+      "hip": {
+        "x": -125,
+        "y": -98,
+        "z": 0
+      },
+      "target": {
+        "x": -125,
+        "y": -248,
+        "z": -100
+      },
+      "homeAngles": {
+        "coxa": 90,
+        "femur": 131,
+        "tibia": 125
+      },
+      "manualAngles": {
+        "coxa": 90,
+        "femur": 131,
+        "tibia": 125
+      },
+      "useIK": true,
+      "joints": {
+        "coxa": {
+          "axis": "+Z",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": -1
+        },
+        "femur": {
+          "axis": "-X",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": 1
+        },
+        "tibia": {
+          "axis": "-X",
+          "min": 5,
+          "max": 175,
+          "zero": 90,
+          "dir": 1
+        }
+      }
+    }
+  },
+  "mountReference": {
+    "right": {
+      "coxa": 90,
+      "femur": 5,
+      "tibia": 5
+    },
+    "left": {
+      "coxa": 90,
+      "femur": 175,
+      "tibia": 175
+    },
+    "note": "Servo horn montaj referansı; stand/home hedefi değildir."
+  }
+}

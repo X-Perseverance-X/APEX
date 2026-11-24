@@ -1,0 +1,18 @@
+[Unit]
+Description=APEX actuator-free RGB/LiDAR/IMU mapping bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=betul_enis
+Group=betul_enis
+WorkingDirectory=/home/betul_enis/apex-sensor
+ExecStart=/home/betul_enis/apex-sensor-venv/bin/python /home/betul_enis/apex-sensor/pi4_sensor_bridge.py --host 0.0.0.0 --port 8090 --camera /dev/video0 --lidar /dev/ttyUSB0 --imu /dev/ttyUSB1
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

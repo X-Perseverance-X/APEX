@@ -207,19 +207,41 @@ class ColoredVoxelCloud:
 
 
 class _VisualOdometry:
-    def __init__(self, width: int, height: int, horizontal_fov_deg: float):
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        horizontal_fov_deg: float,
+        camera_matrix: np.ndarray | None = None,
+        distortion_coefficients: np.ndarray | None = None,
+    ):
         try:
             import cv2
         except ImportError as exc:  # pragma: no cover - depends on deployment image
             raise RuntimeError("OpenCV object scanning için gerekli") from exc
         self.cv2 = cv2
-        focal = width / (2.0 * math.tan(math.radians(horizontal_fov_deg) * 0.5))
-        self.camera_matrix = np.asarray(((focal, 0.0, width * 0.5), (0.0, focal, height * 0.5), (0.0, 0.0, 1.0)), dtype=np.float64)
+        if camera_matrix is None:
+            focal = width / (2.0 * math.tan(math.radians(horizontal_fov_deg) * 0.5))
+            camera_matrix = ((focal, 0.0, width * 0.5), (0.0, focal, height * 0.5), (0.0, 0.0, 1.0))
+        self.camera_matrix = np.asarray(camera_matrix, dtype=np.float64)
+        if self.camera_matrix.shape != (3, 3) or not np.isfinite(self.camera_matrix).all():
+            raise ValueError("camera_matrix must be a finite 3x3 matrix")
+        self.distortion_coefficients = None
+        if distortion_coefficients is not None:
+            coefficients = np.asarray(distortion_coefficients, dtype=np.float64).reshape(-1)
+            if not np.isfinite(coefficients).all():
+                raise ValueError("distortion_coefficients must be finite")
+            self.distortion_coefficients = coefficients
         self.orb = cv2.ORB_create(nfeatures=2400, scaleFactor=1.2, nlevels=8, fastThreshold=10)
         self.matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
         self.previous_keypoints = None
         self.previous_descriptors = None
         self._candidate = None
+
+    def prepare_frame(self, frame_bgr: np.ndarray) -> np.ndarray:
+        if self.distortion_coefficients is None:
+            return frame_bgr
+        return self.cv2.undistort(frame_bgr, self.camera_matrix, self.distortion_coefficients)
 
     def commit(self) -> None:
         if self._candidate is not None:
@@ -286,11 +308,20 @@ class ObjectScanSession:
         voxel_size_m: float = 0.012,
         max_range_m: float = 2.5,
         camera_from_lidar: np.ndarray | None = None,
+        camera_matrix: np.ndarray | None = None,
+        distortion_coefficients: np.ndarray | None = None,
+        rig_metadata: dict | None = None,
         motion_mode: str = "free",
     ):
         if motion_mode not in {"free", "pivot"}:
             raise ValueError("motion_mode must be 'free' or 'pivot'")
-        self.visual = _VisualOdometry(frame_width, frame_height, horizontal_fov_deg)
+        self.visual = _VisualOdometry(
+            frame_width,
+            frame_height,
+            horizontal_fov_deg,
+            camera_matrix,
+            distortion_coefficients,
+        )
         self.cloud = ColoredVoxelCloud(voxel_size_m=voxel_size_m)
         self.max_range_m = float(max_range_m)
         # Lidar frame: +X forward, +Y left, +Z up. OpenCV camera frame:
@@ -302,6 +333,9 @@ class ObjectScanSession:
                 dtype=np.float64,
             )
         self.camera_from_lidar = np.asarray(camera_from_lidar, dtype=np.float64)
+        if self.camera_from_lidar.shape != (4, 4) or not np.isfinite(self.camera_from_lidar).all():
+            raise ValueError("camera_from_lidar must be a finite 4x4 matrix")
+        self.rig_metadata = rig_metadata or {}
         self.motion_mode = motion_mode
         self.world_from_camera = np.eye(4, dtype=np.float64)
         self.frame_index = 0
@@ -330,7 +364,7 @@ class ObjectScanSession:
             yield float(scale), self.world_from_camera @ np.linalg.inv(relative)
 
     def add_frame(self, frame_bgr: np.ndarray, polar_points: Iterable[Sequence[float]], timestamp_s: float) -> ScanUpdate:
-        frame = np.asarray(frame_bgr)
+        frame = self.visual.prepare_frame(np.asarray(frame_bgr))
         self.frame_index += 1
         lidar_camera = lidar_polar_to_camera(
             polar_points,
@@ -435,6 +469,12 @@ class ObjectScanSession:
             "points": len(self.cloud),
             "voxel_size_m": self.cloud.voxel_size_m,
             "camera_from_lidar": self.camera_from_lidar.tolist(),
+            "camera_matrix": self.visual.camera_matrix.tolist(),
+            "distortion_coefficients": (
+                self.visual.distortion_coefficients.tolist()
+                if self.visual.distortion_coefficients is not None else []
+            ),
+            "sensor_rig": self.rig_metadata,
             "motion_mode": self.motion_mode,
             "extrinsics_status": "PROVISIONAL",
             "intrinsics_status": "APPROXIMATE_FOV",

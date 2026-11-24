@@ -1,0 +1,28 @@
+[Unit]
+Description=APEX META-1 Command Center
+Wants=network-online.target apex-spine-usb.service apex-vision.service
+After=network-online.target apex-spine-usb.service
+
+[Service]
+Type=simple
+User=perseverance
+Group=perseverance
+WorkingDirectory=/opt/apex/control_station
+Environment=PYTHONUNBUFFERED=1
+Environment=ESP32_URL=http://192.168.7.50
+Environment=CAMERA_STREAM_URL=http://127.0.0.1:8888
+Environment=LIDAR_PORT=/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
+EnvironmentFile=/etc/apex/control.env
+ExecStart=/opt/apex/venvs/control/bin/python -m uvicorn apex_server:app --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=60
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/apex/control_station/.runtime
+
+[Install]
+WantedBy=multi-user.target

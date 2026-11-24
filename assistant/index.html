@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>APEX Kurtarma Konsolu</title>
+<style>
+:root{color-scheme:dark;--bg:#050708;--panel:#0b1011;--line:#173431;--cyan:#00f0bc;--amber:#ffad17;--red:#ff364d;--text:#d9fff6;--muted:#77958f}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px ui-monospace,SFMono-Regular,Consolas,monospace;min-height:100vh}
+header{height:52px;padding:0 16px;display:flex;align-items:center;gap:14px;border-bottom:2px solid var(--cyan);background:#080b0c}h1{margin:0;font-size:17px;letter-spacing:1.5px;color:var(--cyan)}
+.status{margin-left:auto;color:var(--amber);font-size:12px}.layout{height:calc(100vh - 52px);display:grid;grid-template-columns:minmax(360px,48%) 1fr;gap:10px;padding:10px}
+.panel{border:1px solid var(--line);background:var(--panel);min-height:0;position:relative}.camera{display:flex;flex-direction:column}.title{height:40px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--line);color:var(--cyan);letter-spacing:.8px}
+.feed{flex:1;min-height:0;background:#000;position:relative;overflow:hidden}.feed img{width:100%;height:100%;object-fit:contain;display:block}.feed canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.chip{font-size:11px;padding:3px 8px;border:1px solid var(--line);color:var(--muted);letter-spacing:.5px;white-space:nowrap}.chip.human{border-color:var(--red);color:#fff;background:#3a0f16;animation:pulse 1.2s infinite}@keyframes pulse{50%{background:#5c1420}}
+.scene{padding:9px 12px;color:var(--text);border-top:1px solid var(--line);font-size:12px;min-height:52px;line-height:1.5}.scene small{color:var(--muted);display:block}
+.chat{display:flex;flex-direction:column}.messages{flex:1;overflow:auto;padding:14px;scroll-behavior:smooth}.msg{max-width:88%;margin:0 0 12px;padding:10px 12px;border:1px solid #23433f;line-height:1.48;white-space:pre-wrap;overflow-wrap:anywhere}.user{margin-left:auto;background:#13201e;border-color:#00a780}.ai{background:#0b1112;border-left:3px solid var(--amber)}.ai.critical{border-color:var(--red);border-left-width:5px;background:#1c0d10}.sys{background:transparent;border-style:dashed;color:var(--muted);font-size:12px}.meta{font-size:10px;color:var(--muted);margin-bottom:5px;letter-spacing:.6px}.typing::after{content:'▋';color:var(--amber);animation:blink .7s infinite}@keyframes blink{50%{opacity:0}}
+.alert{display:none;padding:8px 12px;background:#5c1420;color:#fff;border-bottom:1px solid var(--red);font-weight:700;letter-spacing:.6px;cursor:pointer}.alert.on{display:block}
+.controls{border-top:1px solid var(--line);padding:10px}.switches{display:flex;gap:12px;margin-bottom:8px;color:var(--muted);font-size:12px;align-items:center;flex-wrap:wrap}.switches label{cursor:pointer}.switches input{accent-color:var(--cyan)}
+select{background:#050808;color:var(--text);border:1px solid #28504a;font:inherit;font-size:12px;padding:4px 6px}
+.sounds{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:8px}.sound{height:34px;padding:0 8px;font-size:11px;letter-spacing:.4px}.sound[data-sound="caution"]{border-color:var(--amber);color:var(--amber)}.sound[data-sound="red_alert"]{border-color:var(--red);color:#ff8391;background:#241014}.sound[data-sound="rescue"]{border-color:#46a8ff;color:#76c2ff}
+.composer{display:grid;grid-template-columns:1fr auto;gap:8px}textarea{resize:none;height:68px;background:#050808;color:var(--text);border:1px solid #28504a;padding:10px;font:inherit;outline:none}textarea:focus{border-color:var(--cyan)}button{background:#13201e;border:1px solid var(--cyan);color:var(--cyan);padding:0 20px;font:inherit;font-weight:700;cursor:pointer}button:hover{background:#17322d}button:disabled{opacity:.4;cursor:not-allowed}.small{padding:4px 9px;font-size:11px;font-weight:400;border-color:#4f5d5b;color:#9fb7b2}.reset{margin-left:auto}.error{border-color:var(--red);color:#ffc8cf}
+@media(max-width:900px){.layout{height:auto;min-height:calc(100vh - 52px);grid-template-columns:1fr}.camera{height:46vh}.chat{height:60vh}.status{font-size:0}.status::after{content:'●';font-size:14px}}
+</style></head><body>
+<header><h1>APEX KURTARMA KONSOLU</h1><span>HAILO-10H · QWEN2-VL + YOLOX</span><span id="status" class="status">BAŞLATILIYOR</span></header>
+<main class="layout">
+  <section class="panel camera">
+    <div class="title">CSI0 / CANLI GÖRÜŞ <span id="people" class="chip">İNSAN: –</span><span id="ir" class="chip">–</span></div>
+    <div class="feed"><img id="feed" alt="APEX camera"><canvas id="overlay"></canvas></div>
+    <div id="scene" class="scene">Algılayıcı bekleniyor…</div>
+  </section>
+  <section class="panel chat">
+    <div class="title">KURTARMA ASİSTANI <button id="reset" class="small reset">SOHBETİ TEMİZLE</button></div>
+    <div id="alert" class="alert">▲ KRİTİK DURUM BİLDİRİLDİ — OPERATÖR MÜDAHALESİ GEREKİYOR (kapatmak için tıkla)</div>
+    <div id="messages" class="messages"><div class="msg sys"><div class="meta">SİSTEM</div>Yaralanma veya yardım isteği yazıldığında robot kişiye bakarak durumu değerlendirir. İnsan ve nesne algılama sürekli çalışır. İnternet yoktur.</div></div>
+    <div class="controls">
+      <div class="switches">
+        <label title="Açık: görsel sorularda ve yaralanma bildirimlerinde kare eklenir. Kapalı: hiç eklenmez."><input id="camera" type="checkbox" checked> OTOMATİK KAMERA</label>
+        <label><input id="speak" type="checkbox"> SESLİ YANIT</label>
+        <select id="voice" title="Ses karakteri"></select><button id="tryvoice" class="small">SESİ DENE</button>
+        <span id="timing"></span>
+      </div>
+      <div class="sounds"><button class="sound" data-sound="caution">⚠ DİKKAT İKAZI</button><button class="sound" data-sound="rescue">✦ YARDIM GELİYOR</button><button class="sound" data-sound="red_alert">▲ KIRMIZI ALARM</button></div>
+      <div class="composer"><textarea id="input" placeholder="Mesajını yaz…  (Enter: gönder, Shift+Enter: yeni satır)"></textarea><button id="send">GÖNDER</button></div>
+    </div>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id),messages=$('messages'),input=$('input'),send=$('send'),statusEl=$('status'),feed=$('feed'),overlay=$('overlay');
+feed.src=`http://${location.hostname}:8888/stream`;
+function store(key,value){try{if(value===undefined)return localStorage.getItem(key);localStorage.setItem(key,value)}catch{return null}}
+function bubble(kind,text=''){const el=document.createElement('div');el.className=`msg ${kind}`;const meta=document.createElement('div');meta.className='meta';meta.textContent=kind==='user'?'SEN':kind==='sys'?'SİSTEM':'APEX';const body=document.createElement('span');body.textContent=text;el.append(meta,body);messages.append(el);messages.scrollTop=messages.scrollHeight;return {el,body,meta}}
+
+let voicesLoaded=false;
+function loadVoices(j){if(voicesLoaded||!j.voices)return;voicesLoaded=true;const sel=$('voice'),saved=store('apex_voice')||j.default_voice;for(const [name,label] of Object.entries(j.voices)){const o=document.createElement('option');o.value=name;o.textContent=label;sel.append(o)}sel.value=saved in j.voices?saved:j.default_voice;sel.onchange=()=>store('apex_voice',sel.value)}
+
+async function health(){try{const r=await fetch('/api/health',{cache:'no-store'}),j=await r.json();loadVoices(j);const low=j.undervoltage_now||(j.power_voltage_v&&j.power_voltage_v<4.9);
+statusEl.textContent=low?`GÜÇ DÜŞÜK · ${j.power_voltage_v?.toFixed(2)||'?'} V`:j.busy?'DÜŞÜNÜYOR':j.speaking?'KONUŞUYOR':j.ok?(j.audio_available?'HAZIR':'HAZIR · USB SES YOK'):'MODEL BEKLENİYOR';
+statusEl.style.color=low?'var(--red)':j.ok&&j.audio_available?'var(--cyan)':'var(--amber)';
+document.querySelectorAll('.sound').forEach(b=>b.disabled=j.speaking||!j.audio_available);$('tryvoice').disabled=j.speaking||!j.audio_available}catch{statusEl.textContent='SERVİS YOK';statusEl.style.color='var(--red)'}}
+
+function drawScene(s){const box=overlay.getBoundingClientRect(),dpr=window.devicePixelRatio||1;overlay.width=box.width*dpr;overlay.height=box.height*dpr;const c=overlay.getContext('2d');c.scale(dpr,dpr);c.clearRect(0,0,box.width,box.height);
+const nw=feed.naturalWidth||16,nh=feed.naturalHeight||9,k=Math.min(box.width/nw,box.height/nh),w=nw*k,h=nh*k,ox=(box.width-w)/2,oy=(box.height-h)/2;
+for(const o of (s.objects||[])){const [x1,y1,x2,y2]=o.box,human=o.label==='person',col=human?'#ff364d':'#00f0bc';c.strokeStyle=col;c.lineWidth=human?3:1.5;c.strokeRect(ox+x1*w,oy+y1*h,(x2-x1)*w,(y2-y1)*h);
+const tag=`${o.label_tr.toUpperCase()} ${Math.round(o.conf*100)}%`;c.font='12px ui-monospace,Consolas,monospace';const tw=c.measureText(tag).width+8,ty=Math.max(oy+y1*h-16,0);c.fillStyle=col;c.fillRect(ox+x1*w,ty,tw,16);c.fillStyle='#000';c.fillText(tag,ox+x1*w+4,ty+12)}}
+async function scene(){try{const r=await fetch('/api/scene',{cache:'no-store'}),s=await r.json(),p=$('people');
+if(!s.enabled){p.textContent='ALGILAYICI KAPALI';p.className='chip';$('scene').textContent='Nesne algılayıcı çalışmıyor: '+(s.error||'model bulunamadı');drawScene({});return}
+p.textContent=`İNSAN: ${s.ok?s.people:'–'}`;p.className='chip'+(s.ok&&s.people>0?' human':'');$('ir').textContent=s.infrared?'GECE GÖRÜŞÜ':'GÜNDÜZ';
+$('scene').innerHTML='';$('scene').append(document.createTextNode(s.ok?('Algılanan: '+s.summary_tr):'Algılayıcı verisi bekleniyor…'));const small=document.createElement('small');small.textContent=s.ok?`algılama ${Math.round(s.infer_ms||0)} ms · ${s.age_s?.toFixed(1)} sn önce`:(s.error||'');$('scene').append(small);drawScene(s.ok?s:{})}catch{}}
+
+async function ask(){const message=input.value.trim();if(!message||send.disabled)return;bubble('user',message);input.value='';send.disabled=true;const ai=bubble('ai','');ai.el.classList.add('typing');$('timing').textContent='';
+try{const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,camera:$('camera').checked?'auto':'off',speak:$('speak').checked,voice:$('voice').value})});if(!r.ok)throw new Error(await r.text());
+const reader=r.body.getReader(),decoder=new TextDecoder();let pending='';while(true){const {value,done}=await reader.read();pending+=decoder.decode(value||new Uint8Array(),{stream:!done});const lines=pending.split('\n');pending=lines.pop();
+for(const line of lines){if(!line)continue;const evt=JSON.parse(line);
+if(evt.type==='phase'){$('timing').textContent=evt.text;ai.meta.textContent='APEX · '+evt.text;if(evt.critical){ai.el.classList.add('critical');$('alert').classList.add('on')}}
+if(evt.type==='delta')ai.body.textContent+=evt.text;
+if(evt.type==='done')$('timing').textContent=`YANIT ${(evt.seconds||0).toFixed(1)} sn · İLK CÜMLE ${(evt.first_sentence_seconds||0).toFixed(1)} sn`;
+if(evt.type==='error')throw new Error(evt.error)}
+messages.scrollTop=messages.scrollHeight;if(done)break}}catch(e){ai.body.textContent=`Hata: ${e.message}`;ai.el.classList.add('error')}finally{ai.el.classList.remove('typing');send.disabled=false;input.focus();health()}}
+
+async function post(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(!r.ok)throw new Error(j.error||'İstek başarısız');return j}
+async function playSound(name,button){document.querySelectorAll('.sound').forEach(b=>b.disabled=true);$('timing').textContent='SES BAŞLATILIYOR';try{await post('/api/sound',{name});$('timing').textContent=`${button.textContent.trim()} AKTİF`}catch(e){$('timing').textContent=`SES HATASI: ${e.message}`}finally{setTimeout(health,500)}}
+$('tryvoice').onclick=async()=>{try{await post('/api/say',{text:'Merhaba, ben kurtarma robotu APEX. Sizi duyuyorum. Lütfen sakin olun ve bana durumunuzu anlatın.',voice:$('voice').value});$('timing').textContent='SES DENENİYOR'}catch(e){$('timing').textContent=`SES HATASI: ${e.message}`}};
+$('alert').onclick=()=>$('alert').classList.remove('on');
+send.onclick=ask;input.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ask()}};document.querySelectorAll('.sound').forEach(b=>b.onclick=()=>playSound(b.dataset.sound,b));
+$('reset').onclick=async()=>{const b=$('reset');b.disabled=true;try{const r=await fetch('/api/reset',{method:'POST'});if(!r.ok)throw new Error(await r.text());messages.innerHTML='';$('alert').classList.remove('on');bubble('sys','Sohbet belleği temizlendi.')}catch(e){bubble('sys',`Temizleme hatası: ${e.message}`)}finally{b.disabled=false;input.focus()}};
+setInterval(health,1500);setInterval(scene,1000);health();scene();input.focus();
+</script></body></html>

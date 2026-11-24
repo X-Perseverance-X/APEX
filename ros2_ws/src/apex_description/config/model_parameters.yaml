@@ -1,0 +1,75 @@
+# PROVISIONAL means the value came from current software, not a verified CAD/scale measurement.
+body:
+  length_m: {value: 0.430, status: provisional, source: default_robot.json}
+  width_m:  {value: 0.260, status: provisional, source: default_robot.json}
+  height_m: {value: 0.080, status: provisional, source: default_robot.json}
+  mass_kg:  {value: 8.0, status: provisional, source: default_robot.json}
+legs:
+  coxa_m:  {value: 0.06966, status: firmware, source: v55}
+  femur_m: {value: 0.10324, status: firmware, source: v55}
+  tibia_m: {value: 0.16841, status: firmware, source: v55}
+  link_radius_m: {value: 0.012, status: assumed, source: simulation-only}
+  link_masses_kg:
+    coxa: {value: 0.15, status: assumed}
+    femur: {value: 0.25, status: assumed}
+    tibia: {value: 0.35, status: assumed}
+  # Measured 2026-11 chassis revision: rectangular, fully mirrored legs.
+  order: [RF, RM, RR, LF, LM, LR]
+  hip_xyz_m:
+    RF: [0.125, -0.098, 0.000]
+    RM: [0.000, -0.098, 0.000]
+    RR: [-0.125, -0.098, 0.000]
+    LF: [0.125, 0.098, 0.000]
+    LM: [0.000, 0.098, 0.000]
+    LR: [-0.125, 0.098, 0.000]
+  mount_yaw_deg:
+    RF: -90.000
+    RM: -90.000
+    RR: -90.000
+    LF: 90.000
+    LM: 90.000
+    LR: 90.000
+  stance:
+    radial_m: {value: 0.150, status: firmware, source: "v55 gaitY"}
+    z_m: {value: -0.100, status: firmware, source: "v55 gaitZ"}
+  gait:
+    phase: {RF: 0.0, RM: 0.5, RR: 0.0, LF: 0.5, LM: 0.0, LR: 0.5}
+    step_length_m: {value: 0.100, status: firmware, source: v55}
+    step_lift_m: {value: 0.050, status: firmware, source: v55}
+    cycle_s_at_full_command: {value: 1.0, status: firmware, source: v55}
+arm:
+  base_height_m: {value: 0.070, status: software, source: apex_server.py}
+  link1_m: {value: 0.200, status: software, source: apex_server.py}
+  link2_m: {value: 0.270, status: software, source: apex_server.py}
+
+# The user confirmed that LiDAR, ToF and IMU are grouped near the robot's
+# front.  No CAD drawing or tape measurement exists in the repository, so the
+# cluster below is a geometrically consistent provisional layout.  All child
+# poses are expressed in sensor_cluster_link (+X forward, +Y left, +Z up).
+# Replace only these values after measuring the physical bracket.
+sensor_cluster:
+  parent: base_link
+  xyz_m: {value: [0.000, 0.000, 0.000], status: measured, source: robot-center reference 2026-11}
+  camera:
+    xyz_m: {value: [0.213, 0.000, 0.050], status: measured}
+    rpy_deg: {value: [0.0, -8.0, 0.0], status: software, source: previous camera configuration}
+    horizontal_fov_deg: {value: 60.0, status: software, source: detection_hud.py}
+  tof:
+    xyz_m: {value: [0.040, -0.028, -0.018], status: provisional}
+    rpy_deg: {value: [0.0, 0.0, 0.0], status: provisional}
+  imu:
+    # Z=48 mm is retained from the previous bracket record; X/Y are newly measured.
+    xyz_m: {value: [0.115, 0.015, 0.048], status: partially_measured}
+    rpy_deg: {value: [0.0, 0.0, 0.0], status: provisional}
+  lidar:
+    xyz_m: {value: [0.135, 0.000, 0.108], status: measured}
+    rpy_deg: {value: [0.0, 0.0, 0.0], status: provisional}
+    forward_ray_deg: {value: 0.0, status: software, source: apex_server.py}
+  camera_gimbal:
+    pan_axis_xyz_m: {value: [0.130, 0.000, 0.000], status: measured}
+    tilt_axis_xyz_m: {value: [0.178, 0.000, 0.040], status: measured}
+  gps:
+    xyz_m_from_base: {value: [-0.120, 0.000, 0.072], status: provisional}
+
+# Before dynamics results are trusted, replace every assumed/provisional mass,
+# inertia, center of mass, collision dimension, joint axis, and mount position.

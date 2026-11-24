@@ -1,0 +1,18 @@
+[Unit]
+Description=APEX META-1 ESP32-S3 wired USB telemetry and peripheral bridge
+
+[Service]
+Type=simple
+User=perseverance
+Group=dialout
+WorkingDirectory=/opt/apex/control_station
+ExecStart=/usr/bin/python3 /opt/apex/control_station/tools/apex_spine_usb_bridge.py
+Restart=always
+RestartSec=1
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
