@@ -1892,6 +1892,20 @@ async def _navigation_direct_request(
     safe cache entry. Therefore this lock is normally acquired at
     once and every heartbeat actually reaches the ESP32 deadman.
     """
+    if SPINE_USB_PREFER:
+        if path == "/joy":
+            params = {"device": "SPINE", "action": "JOY", "value": ",".join(
+                str(query[key]) for key in ("x", "y", "r"))}
+        elif path == "/mode":
+            params = {"device": "SPINE", "action": "MODE",
+                      "value": "1" if query.get("m") == "bezier_joy" else "0"}
+        elif path == "/params":
+            params = {"device": "SPINE", "action": "PARAMS", "value": ",".join(
+                str(query[key]) for key in ("z", "len", "lift", "spd"))}
+        else:
+            raise RuntimeError(f"USB navigation command unsupported: {path}")
+        return await client.get(f"{SPINE_USB_URL}/command", params=params,
+                                timeout=max(0.35, timeout or 0.35))
     async with esp32_lock:
         if timeout is None:
             return await client.get(f"{ESP32_URL}{path}", params=query)
@@ -1903,6 +1917,7 @@ async def _navigation_send_heartbeat(
     client: httpx.AsyncClient,
     joy_x: float,
     joy_y: float,
+    joy_r: float = 0.0,
 ) -> httpx.Response:
     """Deliver the current state packet, retrying one transient HTTP stall.
 
@@ -1913,7 +1928,7 @@ async def _navigation_send_heartbeat(
         try:
             return await _navigation_direct_request(
                 client, "/joy",
-                {"x": f"{joy_x:.3f}", "y": f"{joy_y:.3f}", "r": "0"},
+                {"x": f"{joy_x:.3f}", "y": f"{joy_y:.3f}", "r": f"{joy_r:.3f}"},
                 timeout=NAV_PLATFORM_TEST_REQUEST_BUDGET_S,
             )
         except (TimeoutError, httpx.TimeoutException):
@@ -1965,6 +1980,32 @@ def _navigation_segment_command(
     joy_y = magnitude * forward / distance
     speed_mps = max(0.01, NAV_ROUTE_FULL_SPEED_MPS * max(magnitude, 0.01))
     return joy_x, joy_y, distance / speed_mps, distance
+
+
+def _navigation_arc_command(
+    position: list[float], target: list[float], yaw_rad: float, magnitude: float,
+) -> tuple[float, float, float]:
+    """Pure pursuit style heading correction while translating.
+
+    Body +X is forward, positive firmware yaw turns right. A waypoint behind
+    the body is approached in reverse so a heading-only pivot is unnecessary.
+    The ESP bounds the inside-leg stroke to keep an arc rather than a pivot.
+    """
+    dx = float(target[0]) - float(position[0])
+    dy = float(target[1]) - float(position[1])
+    if math.hypot(dx, dy) < 0.01:
+        return 0.0, 0.0, 0.0
+    heading = math.atan2(dy, dx) - yaw_rad
+    heading = (heading + math.pi) % (2 * math.pi) - math.pi
+    forward_sign = 1.0
+    if abs(heading) > math.pi / 2:
+        forward_sign = -1.0
+        heading = (heading - math.copysign(math.pi, heading) + math.pi) % (2 * math.pi) - math.pi
+    amplitude = max(0.0, min(float(magnitude), NAV_ROUTE_JOY_MAG))
+    forward = forward_sign * amplitude * max(0.45, math.cos(heading))
+    right_turn = -heading * amplitude * 0.7
+    right_turn = max(-abs(forward) * 0.8, min(abs(forward) * 0.8, right_turn))
+    return 0.0, forward, right_turn
 
 
 def _navigation_next_waypoint(route: list[list[float]], pose: dict) -> tuple[list[float], int, float]:
@@ -2096,7 +2137,7 @@ async def _run_navigation_platform_test(route: list[list[float]], previous_param
                     raise RuntimeError("LiDAR-SLAM hedefe ilerleme doğrulamadı; rota güvenli durduruldu")
                 target, target_index, target_distance = _navigation_next_waypoint(active_route, pose)
                 speed_scale = max(0.50, min(1.0, target_distance / 0.40))
-                joy_x, joy_y, _unused_duration, _unused_distance = _navigation_segment_command(
+                joy_x, joy_y, joy_r = _navigation_arc_command(
                     [px, py], target, float(pose.get("yaw_rad") or 0.0), NAV_ROUTE_JOY_MAG * speed_scale,
                 )
                 with _lidar_lock:
@@ -2108,12 +2149,12 @@ async def _run_navigation_platform_test(route: list[list[float]], previous_param
                 obstacle_m = _get_lidar_distance_at_angle(points, direction_deg, 25.0)
                 if obstacle_m is not None and obstacle_m < NAV_ROUTE_OBSTACLE_STOP_M:
                     raise RuntimeError(f"Rota koridorunda {obstacle_m:.2f} m engel algılandı")
-                command = await _navigation_send_heartbeat(motion_client, joy_x, joy_y)
+                command = await _navigation_send_heartbeat(motion_client, joy_x, joy_y, joy_r)
                 _navigation_require_ok(command, "Omurilik hareket komutunu reddetti")
                 progress = max(0.0, min(1.0, 1.0 - goal_distance / initial_goal_distance))
                 _navigation_platform_status.update(
                     message=f"LiDAR-SLAM rota takibi · {target_index}/{len(active_route)-1} · %{progress*100:.0f}",
-                    joy_x=round(joy_x, 3), joy_y=round(joy_y, 3),
+                    joy_x=round(joy_x, 3), joy_y=round(joy_y, 3), joy_r=round(joy_r, 3),
                     waypoint=target_index, waypoint_count=len(active_route) - 1, progress=round(progress, 3),
                     elapsed_s=round(time.monotonic() - started, 1), pose_yaw_deg=round(math.degrees(float(pose.get("yaw_rad") or 0.0)), 1),
                     obstacle_m=None if obstacle_m is None else round(obstacle_m, 3),
@@ -2159,6 +2200,17 @@ async def _begin_navigation_execution() -> dict:
     if safety_error:
         raise ValueError(safety_error)
     previous_params = telemetry.get("gaitParams")
+    if SPINE_USB_PREFER:
+        params_response = await _usb_peripheral_command("SPINE", "PARAMS")
+        if params_response.status_code != 200:
+            raise ValueError("USB omurilik yürüyüş ayarları okunamadı")
+        try:
+            fields = json.loads(bytes(params_response.body))["message"].split("_")
+            if len(fields) != 5 or fields[0] != "PARAMS":
+                raise ValueError("parametre yanıtı")
+            previous_params = dict(zip(("z", "len", "lift", "spd"), map(float, fields[1:])))
+        except (ValueError, KeyError, TypeError) as exc:
+            raise ValueError("USB omurilik yürüyüş ayarları geçersiz") from exc
     if not isinstance(previous_params, dict) or not all(
         isinstance(previous_params.get(key), (int, float)) and math.isfinite(previous_params[key])
         for key in ("z", "len", "lift", "spd")
@@ -2692,7 +2744,7 @@ async def _usb_spine_telemetry() -> JSONResponse | None:
             "cmdAgeMs": -1,
             "usbTelemetry": True,
             "usbTelemetryReadOnly": False,
-            "usbMotionWrites": False,
+            "usbMotionWrites": True,
             "usbStandWrites": "home_set" in spine,
             "systemNominal": system_nominal,
             "usbImuHz": float(raw.get("imu_fps", 0.0)),
@@ -2868,6 +2920,40 @@ async def _proxy_to_esp32(path: str, query: dict, *, force_fresh: bool = False) 
         if query.get("confirm") != "start":
             return JSONResponse({"ok": False, "error": "confirm=start gerekli"}, status_code=400)
         return await _usb_peripheral_command("SPINE", "STAND")
+    if SPINE_USB_PREFER and path == "/joy":
+        try:
+            axes = [float(query[key]) for key in ("x", "y", "r")]
+        except (KeyError, TypeError, ValueError):
+            return JSONResponse({"ok": False, "error": "x/y/r gerekli"}, status_code=400)
+        if any(not math.isfinite(axis) or abs(axis) > 1 for axis in axes):
+            return JSONResponse({"ok": False, "error": "gecersiz joystick"}, status_code=400)
+        return await _usb_peripheral_command("SPINE", "JOY", ",".join(f"{axis:.3f}" for axis in axes))
+    if SPINE_USB_PREFER and path == "/mode":
+        requested = query.get("m")
+        if requested not in {"idle", "bezier_joy"}:
+            return JSONResponse({"ok": False, "error": "USB mod yalniz idle/bezier_joy"}, status_code=400)
+        return await _usb_peripheral_command("SPINE", "MODE", "1" if requested == "bezier_joy" else "0")
+    if SPINE_USB_PREFER and path == "/params":
+        parameter_keys = ("z", "len", "lift", "spd")
+        source = dict(query)
+        if any(key not in source for key in parameter_keys):
+            current = await _usb_peripheral_command("SPINE", "PARAMS")
+            if current.status_code != 200:
+                return current
+            try:
+                fields = json.loads(bytes(current.body))["message"].split("_")
+                if len(fields) != 5 or fields[0] != "PARAMS":
+                    raise ValueError("bad parameters")
+                source = {**dict(zip(parameter_keys, fields[1:])), **source}
+            except (KeyError, TypeError, ValueError):
+                return JSONResponse({"ok": False, "error": "USB yuruyus ayarlari okunamadi"}, status_code=502)
+        try:
+            parameters = [float(source[key]) for key in parameter_keys]
+        except (KeyError, TypeError, ValueError):
+            return JSONResponse({"ok": False, "error": "z/len/lift/spd gerekli"}, status_code=400)
+        if any(not math.isfinite(value) for value in parameters):
+            return JSONResponse({"ok": False, "error": "gecersiz yuruyus ayari"}, status_code=400)
+        return await _usb_peripheral_command("SPINE", "PARAMS", ",".join(f"{value:.1f}" for value in parameters))
     if SPINE_USB_PREFER and path == "/legStatus":
         # Wi-Fi is intentionally disabled in v57.12. Avoid a 900 ms polling
         # storm against the retired ESP AP while the motion protocol remains

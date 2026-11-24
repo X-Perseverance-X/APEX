@@ -2,14 +2,15 @@
 """META-1 ESP32-S3 wired USB telemetry and peripheral bridge.
 
 The high-rate IMU packet and slower system packet are cached as local HTTP
-JSON.  Serial writes are restricted to a small non-motion allow-list (laser,
-thermal fan and DFPlayer); this process cannot arm PWM or move a servo.
+JSON. Serial writes are allow-listed. Motion packets require an explicitly
+armed WALK state in firmware and its independent 750 ms command watchdog.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import select
 import termios
@@ -196,7 +197,7 @@ def send_peripheral_command(
         "CAM_GIMBAL": {"CENTER", "ON", "OFF", "SET", "STABILIZE"},
         "AUDIO": {"INIT", "PLAY", "STOP", "NEXT", "PREV", "VOL"},
         "LEG_LAB": {"SET", "POSE", "ON", "OFF"},
-        "SPINE": {"STAND"},
+        "SPINE": {"STAND", "MODE", "JOY", "PARAMS"},
     }
     if device not in allowed or action not in allowed[device]:
         return {"ok": False, "message": "command not allowed", "status": "ERR"}
@@ -206,12 +207,33 @@ def send_peripheral_command(
     allowed_value_chars = "-+.0123456789,"
     if any(ch not in allowed_value_chars for ch in value):
         return {"ok": False, "message": "invalid value", "status": "ERR"}
+    if device == "SPINE":
+        if action == "STAND" and value:
+            return {"ok": False, "message": "invalid stand value", "status": "ERR"}
+        if action == "MODE" and value not in {"0", "1"}:
+            return {"ok": False, "message": "invalid mode", "status": "ERR"}
+        if action == "JOY":
+            try:
+                axes = [float(part) for part in value.split(",")]
+            except ValueError:
+                axes = []
+            if len(axes) != 3 or any(not math.isfinite(axis) or abs(axis) > 1 for axis in axes):
+                return {"ok": False, "message": "invalid joystick", "status": "ERR"}
+        if action == "PARAMS" and value:
+            try:
+                params = [float(part) for part in value.split(",")]
+            except ValueError:
+                params = []
+            if len(params) != 4 or any(not math.isfinite(param) for param in params):
+                return {"ok": False, "message": "invalid parameters", "status": "ERR"}
     if "," in value:
         atomic_pair = device == "CAM_GIMBAL" and action == "SET" and value.count(",") == 1
         leg_lab_set = device == "LEG_LAB" and action == "SET" and value.count(",") == 2
         leg_lab_pose = device == "LEG_LAB" and action == "POSE" and value.count(",") == 3
         leg_lab_switch = device == "LEG_LAB" and action in {"ON", "OFF"} and value.count(",") == 1
-        if not (atomic_pair or leg_lab_set or leg_lab_pose or leg_lab_switch):
+        spine_joy = device == "SPINE" and action == "JOY" and value.count(",") == 2
+        spine_params = device == "SPINE" and action == "PARAMS" and value.count(",") == 3
+        if not (atomic_pair or leg_lab_set or leg_lab_pose or leg_lab_switch or spine_joy or spine_params):
             return {"ok": False, "message": "invalid value", "status": "ERR"}
 
     with state.lock:
@@ -223,7 +245,9 @@ def send_peripheral_command(
         return {"ok": False, "message": "serial disconnected", "status": "ERR"}
 
     line = f"@CMD1,{command_id},{device},{action}"
-    if value:
+    if device == "SPINE" and action == "MODE":
+        line += ",WALK" if value == "1" else ",IDLE"
+    elif value:
         line += f",{value}"
     line += "\n"
     try:
@@ -362,7 +386,7 @@ def snapshot(state: BridgeState) -> dict[str, Any]:
             "foot_age_s": foot_age,
             "foot_gaps": state.foot_gaps,
             "foot": None if state.foot is None else dict(state.foot),
-            "motion_writes": False,
+            "motion_writes": True,
             "peripheral_writes": True,
             "commands_sent": state.commands_sent,
             "command_errors": state.command_errors,

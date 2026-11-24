@@ -35,7 +35,7 @@
 #include "DFRobotDFPlayerMini.h"
 #include "Adafruit_VL53L1X.h"
 
-#define APEX_FIRMWARE_VERSION "v57.29-smooth-crawl-gait"
+#define APEX_FIRMWARE_VERSION "v57.30-usb-arc-gait"
 #define APEX_BUILD_PROFILE    "esp32s3-n16r8-generic"
 
 WebServer server(80);
@@ -1239,6 +1239,73 @@ void handleUsbPeripheralCommand(const String& line) {
   String action = fields[3]; action.toUpperCase();
 
   if (device == "SPINE") {
+    if (action == "PARAMS" && count == 4) {
+      usbAck(id, true, "PARAMS_" + String(gaitZ, 1) + "_" + String(stepLen, 1) +
+             "_" + String(stepLift, 1) + "_" + String(baseSpeed, 1));
+      return;
+    }
+    if (action == "PARAMS" && count == 8) {
+      const float z = fields[4].toFloat(), len = fields[5].toFloat();
+      const float lift = fields[6].toFloat(), speed = fields[7].toFloat();
+      if (!isfinite(z) || !isfinite(len) || !isfinite(lift) || !isfinite(speed)) {
+        usbAck(id, false, "PARAMS_NONFINITE");
+        return;
+      }
+      gaitZ = constrain(z, -300.0f, 0.0f);
+      stepLen = constrain(len, 0.0f, 180.0f);
+      stepLift = constrain(lift, 0.0f, 180.0f);
+      baseSpeed = constrain(speed, 250.0f, 5000.0f);
+      usbAck(id, true, "PARAMS_SET");
+      return;
+    }
+    if (action == "JOY" && count == 7) {
+      const float x = fields[4].toFloat(), y = fields[5].toFloat(), r = fields[6].toFloat();
+      if (!isfinite(x) || !isfinite(y) || !isfinite(r) ||
+          fabsf(x) > 1.0f || fabsf(y) > 1.0f || fabsf(r) > 1.0f ||
+          (!legOutputsArmed || spineState != SPINE_WALK) &&
+              (fabsf(x) + fabsf(y) + fabsf(r) > 0.02f)) {
+        usbAck(id, false, "JOY_STATE_OR_RANGE");
+        return;
+      }
+      joyX = x; joyY = y; joyR = r;
+      markMotionCommand();
+      usbAck(id, true, "JOY_OK");
+      return;
+    }
+    if (action == "MODE" && count == 5) {
+      String requested = fields[4]; requested.toUpperCase();
+      if (requested == "WALK") {
+        if (!legOutputsArmed || (spineState != SPINE_STAND && spineState != SPINE_WALK)) {
+          usbAck(id, false, "STAND_REQUIRED");
+          return;
+        }
+        if (currentMode != BEZIER_JOY) {
+          currentPhase = 0.0f;
+          gaitCommandWasActive = false;
+          s_joyX = s_joyY = s_joyR = 0.0f;
+          gaitTrackingErrorDeg = 0.0f;
+          gaitPhaseRateScale = 1.0f;
+          pureTurnGaitActive = false;
+        }
+        joyX = joyY = joyR = 0.0f;
+        markMotionCommand();
+        linkFailsafeActive = false;
+        spineState = SPINE_WALK;
+        currentMode = BEZIER_JOY;
+        usbAck(id, true, "WALK_READY");
+        return;
+      }
+      if (requested == "IDLE") {
+        joyX = joyY = joyR = 0.0f;
+        currentMode = IDLE;
+        linkFailsafeActive = false;
+        spineState = legOutputsArmed ? SPINE_STAND : SPINE_DISARMED;
+        safeTransitionActive = true;
+        safeTransitionStartMs = millis();
+        usbAck(id, true, "IDLE_READY");
+        return;
+      }
+    }
     if (action != "STAND" || count != 4) {
       usbAck(id, false, "SPINE_ACTION");
       return;
@@ -3345,7 +3412,11 @@ void loop() {
       // Araba diferansiyeli: sağ/sol taraf farklı BOYUNA adım uzunluğu, yanal bileşen YOK
       // joyR > 0: sağ taraf iç (kısa), sol taraf dış (uzun) → sağa viraj
       // joyR < 0: sağ taraf dış (uzun), sol taraf iç (kısa) → sola viraj
+      // During translation the inside feet must never reverse their ground
+      // stroke. Preserve the already tuned on-the-spot turn when vX is zero.
       float diff = s_joyR * s_len;
+      if (fabsf(vX) > 0.01f)
+        diff = constrain(diff, -0.85f * fabsf(vX), 0.85f * fabsf(vX));
       bool preservePureTurnGait = pureTurnGaitActive;
 
       for(int i=0; i<6; i++) {

@@ -1,0 +1,18 @@
+[Unit]
+Description=APEX META-1 PS3 Bluetooth controller gateway
+After=bluetooth.service apex-spine-usb.service
+Requires=apex-spine-usb.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /opt/apex/control_station/tools/apex_ps3_gateway.py
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

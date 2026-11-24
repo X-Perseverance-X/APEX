@@ -126,7 +126,7 @@ class SpineSafeBootContractTests(unittest.TestCase):
 
     def test_wired_deadman_remains_bounded(self):
         self.assertIn("MOTION_COMMAND_TIMEOUT_MS = 750UL", self.source)
-        self.assertIn('APEX_FIRMWARE_VERSION "v57.29-smooth-crawl-gait"', self.source)
+        self.assertIn('APEX_FIRMWARE_VERSION "v57.30-usb-arc-gait"', self.source)
         self.assertLess(750, 1000)
 
     def test_failsafe_holds_last_joint_commands_without_idle_ik_jump(self):
@@ -158,7 +158,7 @@ class SpineSafeBootContractTests(unittest.TestCase):
         self.assertIn("st*st*st*(10.0f + st*(-15.0f + 6.0f*st))", gait)
 
     def test_translation_gait_has_continuous_ground_speed_and_lag_governor(self):
-        self.assertIn('APEX_FIRMWARE_VERSION "v57.29-smooth-crawl-gait"', self.source)
+        self.assertIn('APEX_FIRMWARE_VERSION "v57.30-usb-arc-gait"', self.source)
         gait = self.source.split("else if (currentMode == BEZIER_JOY)", 1)[1].split(
             "else if (currentMode == HOME_RISE)", 1
         )[0]

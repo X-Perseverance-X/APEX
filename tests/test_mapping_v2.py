@@ -543,6 +543,25 @@ class MappingV2Tests(unittest.TestCase):
         self.assertEqual(target, [0.5, 0.0])
         self.assertAlmostEqual(distance, 0.5)
 
+    def test_route_arc_turns_while_translating_and_inner_side_stays_forward(self):
+        _, forward, turn = server._navigation_arc_command(
+            [0.0, 0.0], [1.0, -0.7], 0.0, 0.16,
+        )
+        self.assertGreater(forward, 0.0)
+        self.assertGreater(turn, 0.0)  # target on robot's right
+        self.assertLess(turn, 0.8 * forward + 1e-6)
+        inner = forward - turn
+        outer = forward + turn
+        self.assertGreater(inner, 0.0)
+        self.assertGreater(outer, inner)
+
+    def test_route_arc_reverses_instead_of_pivoting_for_rear_waypoint(self):
+        _, forward, turn = server._navigation_arc_command(
+            [0.0, 0.0], [-1.0, 0.2], 0.0, 0.16,
+        )
+        self.assertLess(forward, 0.0)
+        self.assertNotEqual(turn, 0.0)
+
     def test_sensor_timestamp_freshness_never_accepts_missing_or_future_data(self):
         now = 10_000_000_000
         self.assertFalse(server._sensor_timestamp_is_fresh(0, now))

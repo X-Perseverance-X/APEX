@@ -1,10 +1,11 @@
 # META-1 PS3 kumandası: uygulanacak bağlantı ve güvenlik sözleşmesi
 
 Durum (2026-11-25): Orijinal Sony `054c:0268` kol Pi 5'e USB ile tanıtıldı,
-ardından USB çıkarılarak Bluetooth üzerinden `Connected: yes` ve Linux
-`/dev/input/js0` ile doğrulandı. X düğmesinin kablosuz basma/bırakma olayları
-okundu. Yürüyüş komutları ve diğer tuş kodları henüz doğrulanmadı; bu belge
-onlar için önerilen atamaları gösterir.
+ardından Bluetooth üzerinden `/dev/input/js0` olarak doğrulandı. Linux
+joystick aygıtı 6 eksen ve 17 düğme bildiriyor; düğme haritası ioctl ile
+okundu (0=BTN_SOUTH/X, 4=BTN_TL/L1, 8=SELECT, 9=START, 10=PS,
+13..16=D-pad). `apex-ps3-gateway.service` Pi'de etkin. Gerçek servo kartları
+bu oturumda bağlı olmadığı için fiziksel gait/tuş davranışı doğrulanmadı.
 
 ## Donanım yolu
 
@@ -29,22 +30,29 @@ eşleştirme desteği ayrı bakım işidir.
 
 | Giriş | Amaç |
 | --- | --- |
-| L1 basılı | Hareket için deadman; bırakınca sıfır hız |
+| L1 basılı | Hareket için deadman; bırakınca sıfır hız ve IDLE |
 | Sol çubuk | +X ileri/geri, +Y sol/sağ öteleme |
 | Sağ çubuk yatay | Yaw; dikey eksen kamera tilt |
 | L2 / R2 | Kamerayı sola / sağa çevir |
-| Çarpı + L1, 2 sn | Kontrollü CAPTURE → STAND isteği |
-| Daire | Sıfır hız; kontrollü HOME/oturuş (ayrı komut hazır olunca) |
+| Çarpı + L1, 2 sn | Kontrollü CAPTURE → STAND isteği; PCA yoksa reddedilir |
+| Daire | Sıfır hız ve IDLE/STAND; HOME/oturuş henüz bağlı değil |
 | Üçgen | LiDAR motorunu aç/kapat |
 | Kare | AI takip modunu aç/kapat |
 | D-pad yukarı/aşağı | Hız sınırını küçük adımlarla değiştir |
 | D-pad sol/sağ | Kamera hedefini sola/sağa ince ayarla |
-| L3 | Yürüyüş modu seçimi; hız sıfırken |
+| L3 | Yavaş/normal hız profili; hareket yokken |
 | R3 | Kamerayı merkeze al |
-| SELECT | Durumu sesli bildir / HUD'da göster |
+| SELECT | Durumu servis günlüğüne yaz; sesli bildirim henüz yok |
 | START | Otonom/manual seçim isteği; ancak sıfır hızda |
 | SELECT + START, 3 sn | Sıfır hız, hareket kilidi, sonra Pi ağ profilini robot/ev arasında değiştir |
-| PS | Yazılımsal STOP ve PWM kesme isteği; fiziksel kill switch'in yerine geçmez |
+| PS | Yazılımsal STOP/IDLE; PWM'yi kesmez, fiziksel kill switch'in yerine geçmez |
+
+USB hareket protokolü `SPINE MODE=1/0`, `JOY=x,y,r`, `PARAMS` ve `STAND`
+komutlarını içerir. Firmware, PWM açık ve STAND/WALK tamam değilse sıfırdan
+farklı JOY komutunu reddeder. WALK sırasında 750 ms komut gelmezse son fiziksel
+eklem komutlarında HOLD failsafe'e geçer. Kumanda servisi 10 Hz günceller.
+Rota yönlendirmesi de USB protokolünü kullanır ve yön hatasını ilerleme ile
+aynı anda gönderir. İç tarafın adımı ileri hareket sırasında tersine dönmez.
 
 ## Ağ geçişi
 
@@ -59,8 +67,8 @@ edilmeden güvenilir sayılmaz. Ethernet bakım yolu korunur.
 
 ## Doğrulama kapıları
 
-1. USB kimliği, Sixaxis eşleştirmesi ve kablosuz X tuşu doğrulandı. Geri kalan
-   tuş/eksen kodlarını olay okuyucusuyla tek tek kaydet.
+1. USB kimliği, Sixaxis eşleştirmesi, kablosuz bağlantı ve Linux tuş haritası
+   doğrulandı. Fiziksel tuş/eksen yönlerini gerçek robot üzerinde sırayla doğrula.
 2. 30 dakika bağlantı/deadman testi; kopuşta 750 ms içinde hız sıfır.
 3. Ev Wi-Fi profilini kaydet ve Ethernet bağlıyken ağ geçişi/geri dönüşünü dene.
 4. PCA ve servo gücü bağlı, robot platformdayken ayrı izinli fiziksel test yap.
