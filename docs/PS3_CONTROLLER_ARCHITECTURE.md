@@ -1,8 +1,10 @@
 # META-1 PS3 kumandası: uygulanacak bağlantı ve güvenlik sözleşmesi
 
-Durum (2026-11-24): Kumanda henüz Pi'ye USB veya Bluetooth ile bağlanmadı;
-eşleştirme, tuş olay kodları ve fiziksel yürüyüş doğrulanmadı. Bu belge tuş
-atamalarını ve etkinleştirme koşullarını sabitler, çalışıyor iddiası taşımaz.
+Durum (2026-11-25): Orijinal Sony `054c:0268` kol Pi 5'e USB ile tanıtıldı,
+ardından USB çıkarılarak Bluetooth üzerinden `Connected: yes` ve Linux
+`/dev/input/js0` ile doğrulandı. X düğmesinin kablosuz basma/bırakma olayları
+okundu. Yürüyüş komutları ve diğer tuş kodları henüz doğrulanmadı; bu belge
+onlar için önerilen atamaları gösterir.
 
 ## Donanım yolu
 
@@ -12,6 +14,16 @@ denetleyicisi kumandayı alır; Pi'deki tek giriş servisi Linux input olayları
 okur ve omuriliğe mevcut FT232 USB hattından komut yollar. Kumandayı ilk kez
 eşleştirmek için veri taşıyan USB kablosuyla Pi'ye takıp model ve olay kodları
 okunmalıdır. Klon PS3 kolları farklı eşleştirme davranışı gösterebilir.
+
+Bu Pi'de BlueZ 5.82, Sixaxis'in kablosuz HID bağlantısını varsayılan ayarda
+kesiyordu. Kullanıcının geçici onayıyla `/etc/bluetooth/input.conf` içinde
+`ClassicBondedOnly=false` etkinleştirildi. Önceki dosya
+`/etc/bluetooth/input.conf.apex-pre-ps3-20261125` konumunda saklıdır. Bu ayar
+klasik Bluetooth HID güvenliğini düşürür; `Pairable` test sonunda tekrar
+`no` yapıldı. Güvenli varsayılana dönmek için yedek dosyayı geri yükleyip
+`bluetooth.service` yeniden başlatılmalıdır. Bu durumda PS3'ün tekrar
+kablosuz bağlanması beklenmez; daha yeni BlueZ'in hedefli Sixaxis kablo
+eşleştirme desteği ayrı bakım işidir.
 
 ## Tuşlar (fiziksel doğrulamadan önce yürüyüş etkinleştirilmez)
 
@@ -47,9 +59,9 @@ edilmeden güvenilir sayılmaz. Ethernet bakım yolu korunur.
 
 ## Doğrulama kapıları
 
-1. Kumandayı Pi'ye USB ile tak; `lsusb`, `bluetoothctl` ve `/dev/input` olaylarını
-   okuyup gerçek modelin tuş/eksen kodlarını eşleştir.
-2. Eşleştirme ve 30 dakika bağlantı/deadman testi; kopuşta 750 ms içinde hız sıfır.
+1. USB kimliği, Sixaxis eşleştirmesi ve kablosuz X tuşu doğrulandı. Geri kalan
+   tuş/eksen kodlarını olay okuyucusuyla tek tek kaydet.
+2. 30 dakika bağlantı/deadman testi; kopuşta 750 ms içinde hız sıfır.
 3. Ev Wi-Fi profilini kaydet ve Ethernet bağlıyken ağ geçişi/geri dönüşünü dene.
 4. PCA ve servo gücü bağlı, robot platformdayken ayrı izinli fiziksel test yap.
 
