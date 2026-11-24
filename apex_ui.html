@@ -502,11 +502,11 @@
 
                     <span class="lbl" style="color:var(--c-cyan);">POWER + TOF400C TELEMETRY</span>
                     <div class="power-grid">
-                        <div class="power-card" id="batRCard"><div class="name">RIGHT 3S / 0x40</div><div class="big" id="batRVal">-- V</div><div class="sub" id="batRCellVal">-- V/CELL</div></div>
-                        <div class="power-card" id="batLCard"><div class="name">LEFT 3S / 0x41</div><div class="big" id="batLVal">-- V</div><div class="sub" id="batLCellVal">-- V/CELL</div></div>
+                        <div class="power-card" id="batRCard"><div class="name">TEK 2S PİL · GPIO1</div><div class="big" id="batRVal">-- V</div><div class="sub" id="batRCellVal">-- V/CELL</div></div>
+                        <div class="power-card" id="batLCard"><div class="name">GPIO2 · OPSİYONEL</div><div class="big" id="batLVal">BAĞLI DEĞİL</div><div class="sub" id="batLCellVal">--</div></div>
                         <div class="power-card" id="tofCard"><div class="name">TOF400C FRONT</div><div class="big" id="tofVal">-- mm</div><div class="sub" id="tofState">I2C 0x29</div><div class="sub" id="tofSampleState">SAMPLE --</div></div>
                     </div>
-                    <div class="lab-mini" style="margin-bottom:6px;">ADC: sağ pil GPIO1, sol pil GPIO2. ToF: mevcut I²C SDA=8 / SCL=9. Pil renkleri yük altındaki anlık gerilime göre uyarı verir.</div>
+                    <div class="lab-mini" style="margin-bottom:6px;">Pil ölçümü GPIO1 üzerinden tek 2S hat. GPIO2 şu an boş. ToF: mevcut I²C SDA=8 / SCL=9. Gerilimi ilk kurulumda multimetreyle doğrula.</div>
 
                     <div style="border-top: 1px solid var(--panel-border); margin: 6px 0;"></div>
 
@@ -2143,7 +2143,6 @@
         }
         async function startControlledStand() {
             if (standArmPending) return;
-            if (!confirm('Robot gövde destek çıkıntıları üzerinde mi, ayakların çevresi tamamen boş mu? CAPTURE → STAND başlatılsın mı?')) return;
             standArmPending = true;
             const generation = ++standArmGeneration;
             const btn = document.getElementById('btnStandArm');
@@ -2155,8 +2154,16 @@
                 if (!tr.ok) throw new Error('ESP bağlantısı yok');
                 const t = await tr.json();
                 updateArmStatus(t);
-                if (t.proxyStale || t.spineState !== 'DISARMED' || t.outputsArmed || !t.pcaRightOnline || !t.pcaLeftOnline || !t.configValid || !t.homeSet)
-                    throw new Error('DISARMED, iki PCA ve geçerli HOME gerekli. Durumu kontrol et.');
+                if (t.proxyStale) throw new Error('Omurilik verisi güncel değil; ARM gönderilmedi.');
+                if (t.spineState !== 'DISARMED' || t.outputsArmed)
+                    throw new Error('Omurilik DISARMED durumda değil; ARM gönderilmedi.');
+                if (!t.pcaRightOnline || !t.pcaLeftOnline) {
+                    const missing = [!t.pcaRightOnline ? 'sağ 0x40' : '', !t.pcaLeftOnline ? 'sol 0x41' : ''].filter(Boolean).join(' ve ');
+                    throw new Error('PCA9685 ' + missing + ' çevrimdışı; ARM güvenlik nedeniyle engellendi.');
+                }
+                if (!t.configValid) throw new Error('Servo kalibrasyonu geçersiz; ARM gönderilmedi.');
+                if (!t.homeSet) throw new Error('Kayıtlı HOME/CAPTURE pozu yok; ARM gönderilmedi.');
+                if (!confirm('Robot gövde destek çıkıntıları üzerinde mi, ayakların çevresi tamamen boş mu? CAPTURE → STAND başlatılsın mı?')) return;
                 if (generation !== standArmGeneration) throw new Error('Kalkış iptal edildi');
                 const r = await fetch('/goHome?confirm=start', {cache:'no-store', signal:AbortSignal.timeout(8000)});
                 const body = await r.text();
@@ -2629,14 +2636,14 @@
             const setText = (id, text) => { const e=document.getElementById(id); if(e) e.innerText=text; };
             if (typeof data.batR === 'number') {
                 setText('batRVal', data.batR.toFixed(2) + ' V');
-                setText('batRCellVal', (data.batRCell ?? data.batR/3).toFixed(2) + ' V/CELL');
+                setText('batRCellVal', data.batR >= 5.0 && data.batR <= 9.0 ?
+                    (data.batRCell ?? data.batR/2).toFixed(2) + ' V/CELL' : 'GPIO1 ADC / KABLO KONTROL');
                 powerCardClass('batRCard', data.batR);
             }
-            if (typeof data.batL === 'number') {
-                setText('batLVal', data.batL.toFixed(2) + ' V');
-                setText('batLCellVal', (data.batLCell ?? data.batL/3).toFixed(2) + ' V/CELL');
-                powerCardClass('batLCard', data.batL);
-            }
+            setText('batLVal', 'BAĞLI DEĞİL');
+            setText('batLCellVal', 'GPIO2 BOŞ');
+            const unusedCard=document.getElementById('batLCard');
+            if (unusedCard) unusedCard.classList.remove('warn','crit');
             if (typeof data.tofMm === 'number') setText('tofVal', data.tofMm >= 0 ? data.tofMm + ' mm' : '-- mm');
             if (typeof data.tofOnline === 'boolean') {
                 setText('tofState', data.tofOnline ? 'ONLINE · I2C 0x29' : 'OFFLINE · I2C 0x29');
@@ -2651,8 +2658,8 @@
         function powerCardClass(id, packV) {
             const c=document.getElementById(id); if(!c) return;
             c.classList.remove('warn','crit');
-            if (packV > 0 && packV < 10.2) c.classList.add('crit');
-            else if (packV > 0 && packV < 10.8) c.classList.add('warn');
+            if (packV > 0 && packV < 7.0) c.classList.add('crit');
+            else if (packV > 0 && packV < 7.4) c.classList.add('warn');
         }
 
         // MÜZİK/SES SİSTEMİ — 0001..0009 doğrudan seçim + ileri/geri

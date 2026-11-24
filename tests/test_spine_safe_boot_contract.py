@@ -64,6 +64,13 @@ class SpineSafeBootContractTests(unittest.TestCase):
         self.assertIn("!configValid", stand)
         self.assertIn("spineState = SPINE_CAPTURE;", stand)
 
+    def test_hud_names_missing_pca_before_home_and_shows_single_2s_pack(self):
+        self.assertIn("PCA9685 ' + missing + ' çevrimdışı", self.ui)
+        self.assertIn("if (!t.homeSet) throw new Error('Kayıtlı HOME/CAPTURE", self.ui)
+        self.assertIn('TEK 2S PİL · GPIO1', self.ui)
+        self.assertIn("data.batR/2", self.ui)
+        self.assertNotIn('DISARMED, iki PCA ve geçerli HOME gerekli', self.ui)
+
     def test_stand_ramp_is_slow_and_cannot_fall_through_to_fast_slew(self):
         self.assertIn("STAND_RAMP_MS   = 3000UL", self.source)
         self.assertIn("STAND_MAX_SPEED_DEG_S = 30.0f", self.source)

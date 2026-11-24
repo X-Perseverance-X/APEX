@@ -2919,6 +2919,20 @@ async def _proxy_to_esp32(path: str, query: dict, *, force_fresh: bool = False) 
     if SPINE_USB_PREFER and path == "/goHome":
         if query.get("confirm") != "start":
             return JSONResponse({"ok": False, "error": "confirm=start gerekli"}, status_code=400)
+        current = await _usb_spine_telemetry()
+        if current is None:
+            return JSONResponse({"ok": False, "error": "Omurilik telemetrisi güncel değil"}, status_code=503)
+        state = json.loads(bytes(current.body))
+        if not state.get("pcaRightOnline") or not state.get("pcaLeftOnline"):
+            missing = [name for key, name in (("pcaRightOnline", "sağ 0x40"),
+                                              ("pcaLeftOnline", "sol 0x41")) if not state.get(key)]
+            return JSONResponse({"ok": False, "error": "PCA9685 çevrimdışı: " + ", ".join(missing)}, status_code=409)
+        if not state.get("configValid"):
+            return JSONResponse({"ok": False, "error": "Servo kalibrasyonu geçersiz"}, status_code=409)
+        if not state.get("homeSet"):
+            return JSONResponse({"ok": False, "error": "Kayıtlı HOME/CAPTURE pozu yok"}, status_code=409)
+        if state.get("spineState") != "DISARMED" or state.get("outputsArmed"):
+            return JSONResponse({"ok": False, "error": "Omurilik DISARMED durumda değil"}, status_code=409)
         return await _usb_peripheral_command("SPINE", "STAND")
     if SPINE_USB_PREFER and path == "/joy":
         try:
