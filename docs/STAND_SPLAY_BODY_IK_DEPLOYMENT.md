@@ -1,11 +1,19 @@
 # Stand coxa + USB body IK: deployment state
 
-2026-11-25: Source is committed on `codex/backup-2026-11-24` at `5ff5f07`.
-ESP firmware `v57.31-stand-splay-body-ik` compiled locally for ESP32-S3;
-26 firmware contract tests passed. **Not deployed to Pi/ESP.** The PC is on
-`192.168.1.10/24` home Wi-Fi, Ethernet is disconnected, `apex.local` does not
-resolve, and SSH to the Pi Ethernet address `192.168.50.1` times out. The last
-verified deployed firmware is `v57.30-usb-arc-gait`.
+2026-11-25: Deployed to Pi and ESP over home Wi-Fi. The Pi joined
+`TURKNET_AB0AF`, and `apex.local` SSH worked without Ethernet. The PS3 gateway
+has `APEX_HOME_PROFILE=TURKNET_AB0AF`. Pi application files were backed up to
+`/opt/apex/backups/2026-11-25-130355-stand-body-ik` before installation.
+ESP flash verified its data hash and now reports `v57.31-stand-splay-body-ik`.
+All three services returned `active`. Telemetry initially showed `DISARMED`
+and `outputs_armed=false`. Twenty-six firmware contract tests passed locally.
+
+With the robot supported on a platform and the operator at the kill switch,
+one STAND command reached `STAND` after about 20 seconds. The operator confirmed
+front/rear coxas splayed correctly with no collision or strain. Bounded +3°
+pitch and +3° roll commands each received `BODY_OK`, were returned to zero,
+and were physically confirmed smooth and correct by the operator. No walking
+command was sent during this deployment.
 
 ## Changes awaiting deployment
 
