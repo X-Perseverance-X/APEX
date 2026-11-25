@@ -135,6 +135,16 @@ class VisionRuntimeContractTests(unittest.TestCase):
         namespace["process_target_selection"]([person], {"ts": 3.0, "x": 0.95, "y": 0.05, "clear": False})
         self.assertEqual(namespace["selection_status"]["state"], "missed")
 
+        bottle = {"label": "bottle", "confidence": 0.81, "track_id": None,
+                  "bbox": (0.12, 0.25, 0.30, 0.70)}
+        selected, processed = namespace["process_target_selection"](
+            [bottle], {"ts": 4.0, "x": 0.20, "y": 0.50, "clear": False}
+        )
+        self.assertTrue(processed)
+        self.assertIsNone(selected)
+        self.assertEqual(namespace["selection_status"]["state"], "locked")
+        self.assertEqual(namespace["selected_bbox"], bottle["bbox"])
+
 
 if __name__ == "__main__":
     unittest.main()

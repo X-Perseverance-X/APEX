@@ -35,7 +35,7 @@
 #include "DFRobotDFPlayerMini.h"
 #include "Adafruit_VL53L1X.h"
 
-#define APEX_FIRMWARE_VERSION "v57.32-body-frame-gait"
+#define APEX_FIRMWARE_VERSION "v57.33-gait-clearance-camera"
 #define APEX_BUILD_PROFILE    "esp32s3-n16r8-generic"
 
 WebServer server(80);
@@ -277,7 +277,7 @@ const float CAMERA_GIMBAL_MAX_DEG = 135.0f;
 const float CAMERA_GIMBAL_CENTER_DEG = 90.0f;
 const int CAMERA_GIMBAL_MIN_US = 500;
 const int CAMERA_GIMBAL_MAX_US = 2500;
-const float CAMERA_GIMBAL_SPEED_DEG_S = 60.0f;
+const float CAMERA_GIMBAL_SPEED_DEG_S = 90.0f;
 // MPU6050 has no magnetometer, so absolute yaw inevitably drifts.  Preserve
 // fast chicken-head compensation but bleed the yaw reference toward the
 // current heading over a few seconds so an idle camera cannot wander sideways.
@@ -322,7 +322,7 @@ float gaitX = 0.0, gaitY = 150.0, gaitZ = -100.0;
 // bu yeni hızı fiziksel olarak ne kadar düzgün/sarsıntısız karşıladığı
 // SADECE gerçek donanımda görülebilir — IK/geometri güvenli ama servo
 // slew rate'i yazılımdan doğrulayamadım, ilk testte dikkatle izle.
-float stepLen = 100.0, stepLift = 50.0, baseSpeed = 1000.0;
+float stepLen = 100.0, stepLift = 65.0, baseSpeed = 1000.0;
 float joyX = 0.0, joyY = 0.0, joyR = 0.0;
 
 float bodyPitch = 0.0, bodyRoll = 0.0, bodyYaw = 0.0;
@@ -373,7 +373,7 @@ const float SAFE_TRANSITION_MAX_SPEED_DEG_S = 60.0f;
 const float MANUAL_LAB_MAX_SPEED_DEG_S = 24.0f;
 const float MANUAL_LAB_MAX_ACCEL_DEG_S2 = 60.0f;
 float manualJointVelocityDegS[6][3] = {{0.0f}};
-const float MIN_DYNAMIC_GAIT_CYCLE_MS = 900.0f;
+const float MIN_DYNAMIC_GAIT_CYCLE_MS = 850.0f;
 const float GAIT_LAG_SOFT_DEG = 5.0f;
 const float GAIT_LAG_HARD_DEG = 15.0f;
 // The PS3 gateway sends 0.18 at full stick in its default speed mode.
@@ -403,7 +403,7 @@ unsigned long homeRisePhaseMs = 0;
 int           standSplayIndex = 0;
 const int     STAND_SPLAY_ORDER[4] = {0, 5, 3, 2};
 const unsigned long STAND_SPLAY_LEG_MS = 3200UL;
-const float   STAND_SPLAY_LIFT_MM = 25.0f;
+const float   STAND_SPLAY_LIFT_MM = 35.0f;
 
 // --- HOME POZİSYONU ---
 float homeAngles[6][3];  // NVS'den yüklenen başlangıç açıları

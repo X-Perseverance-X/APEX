@@ -565,6 +565,7 @@
                         <button onclick="audioCmd('play')" style="color:var(--c-orange); border-color:var(--c-orange)">&#9654; OYNAT (DÖNGÜ)</button>
                         <button onclick="audioCmd('stop')" style="border-color:#555;">&#9209; DUR</button>
                     </div>
+                    <button onclick="audioCmd('init')" style="width:100%;margin-bottom:6px;border-color:rgba(255,165,0,.45);color:var(--c-orange)">SES MODÜLÜNÜ YENİDEN BAĞLA</button>
                     <span class="lbl" style="color:var(--c-orange)">VOLUME <span class="val-text" style="color:var(--c-orange)" id="vVol">15</span></span>
                     <input type="range" class="s-orange" id="volSlider" min="0" max="30" value="15" oninput="setVolume(this.value)">
     
@@ -598,10 +599,10 @@
                     <input type="range" class="s-cyan" id="gz" min="-250" max="-50" value="-100" oninput="sendParams()">
                     <span class="lbl" style="color:var(--c-cyan)">ADIM UZUNLUĞU <span class="val-text" style="color:var(--c-cyan)" id="vSl">50</span></span>
                     <input type="range" class="s-cyan" id="sl" min="10" max="150" value="50" oninput="sendParams()">
-                    <span class="lbl" style="color:var(--c-cyan)">ADIM YÜKSEKLİĞİ <span class="val-text" style="color:var(--c-cyan)" id="vSh">40</span></span>
-                    <input type="range" class="s-cyan" id="sh" min="10" max="150" value="40" oninput="sendParams()">
-                    <span class="lbl" style="color:var(--c-cyan)">MAKS HIZ (ms) <span class="val-text" style="color:var(--c-cyan)" id="vSp">2000</span></span>
-                    <input type="range" class="s-cyan" id="sp" min="500" max="4000" value="2000" oninput="sendParams()">
+                    <span class="lbl" style="color:var(--c-cyan)">ADIM YÜKSEKLİĞİ <span class="val-text" style="color:var(--c-cyan)" id="vSh">65</span></span>
+                    <input type="range" class="s-cyan" id="sh" min="10" max="150" value="65" oninput="sendParams()">
+                    <span class="lbl" style="color:var(--c-cyan)">MAKS HIZ (ms) <span class="val-text" style="color:var(--c-cyan)" id="vSp">1000</span></span>
+                    <input type="range" class="s-cyan" id="sp" min="500" max="4000" value="1000" oninput="sendParams()">
 
                 </div>
             </div>

@@ -95,8 +95,8 @@ GIMBAL_COMMAND_HZ = 10.0
 GIMBAL_MIN_DEG = 45.0
 GIMBAL_MAX_DEG = 135.0
 GIMBAL_CENTER_DEG = 90.0
-GIMBAL_PAN_RATE_DPS = 42.0
-GIMBAL_TILT_RATE_DPS = 34.0
+GIMBAL_PAN_RATE_DPS = 65.0
+GIMBAL_TILT_RATE_DPS = 55.0
 GIMBAL_X_DEADBAND = 0.045
 GIMBAL_Y_DEADBAND = 0.055
 
@@ -475,7 +475,7 @@ def process_target_selection(dets, sel):
     click_x, click_y = float(sel.get('x', 0.0)), float(sel.get('y', 0.0))
     candidates = []
     for d in dets:
-        if d.get('label') != 'person' or d.get('confidence', 0.0) < 0.35:
+        if d.get('confidence', 0.0) < 0.35:
             continue
         x1, y1, x2, y2 = d['bbox']
         # MJPEG görüntüsü ile en yeni inference karesi arasında küçük bir zaman
@@ -567,7 +567,7 @@ def draw_hud(frame,dets,fps):
         dc=math.hypot(bx-cx,by-cy); locked=dc<LOCK_RADIUS
         id_match = selected_track_id is not None and det.get('track_id') == selected_track_id
         bbox_match = selected_track_id is None and selected_bbox is not None and bbox_iou(det['bbox'], selected_bbox) >= 0.18
-        is_selected = det['label'] == 'person' and (id_match or bbox_match)
+        is_selected = id_match or bbox_match
         col=(0,140,255) if is_selected else (RED if locked else AMBER)
         # Sistem şeridini tespit köşelerinden de koru. Gerçek bbox ve
         # takip merkezi değişmez; yalnızca ekrana çizilen üst kenar kırpılır.
