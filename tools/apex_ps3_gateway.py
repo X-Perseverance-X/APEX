@@ -16,6 +16,7 @@ import subprocess
 import time
 import urllib.parse
 import urllib.request
+from collections import deque
 
 
 BRIDGE = "http://127.0.0.1:8091"
@@ -107,7 +108,10 @@ def run() -> None:
         stand_latched = False
         switch_latched = False
         moving = False
+        walking = False
         drive_inhibit = False
+        button_changes = deque()
+        noisy_until = 0.0
         next_tick = time.monotonic()
         last_camera_tick = 0.0
         try:
@@ -120,6 +124,8 @@ def run() -> None:
                     _, value, kind, number = struct.unpack("<IhBB", data)
                     kind &= 0x7F
                     if kind == 1 and number < len(buttons):
+                        if bool(value) != buttons[number]:
+                            button_changes.append(time.monotonic())
                         if value and not buttons[number]:
                             edges.add(number)
                         buttons[number] = bool(value)
@@ -130,6 +136,19 @@ def run() -> None:
                     continue
                 next_tick = now + PERIOD
                 pressed, edges = edges, set()
+                while button_changes and now - button_changes[0] > 1.0:
+                    button_changes.popleft()
+                if len(button_changes) >= 8:
+                    if now >= noisy_until:
+                        print("[PS3] Noisy button input; motion inhibited", flush=True)
+                    noisy_until = now + 3.0
+                if now < noisy_until:
+                    if walking or moving:
+                        command("SPINE", "JOY", "0,0,0")
+                        command("SPINE", "MODE", "0")
+                        walking = moving = False
+                    drive_inhibit = True
+                    continue
                 held = buttons[BUTTON["l1"]]
                 cross = buttons[BUTTON["cross"]]
                 combo = buttons[BUTTON["select"]] and buttons[BUTTON["start"]]
@@ -138,7 +157,7 @@ def run() -> None:
                     if now - switch_since >= 3 and not switch_latched:
                         command("SPINE", "JOY", "0,0,0")
                         command("SPINE", "MODE", "0")
-                        moving = False
+                        walking = moving = False
                         drive_inhibit = True
                         switch_latched = True
                         network_toggle()
@@ -148,7 +167,7 @@ def run() -> None:
                 if BUTTON["ps"] in pressed or BUTTON["circle"] in pressed:
                     command("SPINE", "JOY", "0,0,0")
                     command("SPINE", "MODE", "0")
-                    moving = False
+                    walking = moving = False
                     drive_inhibit = True
                     stand_latched = True
                     continue
@@ -201,41 +220,52 @@ def run() -> None:
                     if not cross:
                         stand_latched = False
                 if cross:
-                    if moving:
+                    if walking or moving:
                         command("SPINE", "JOY", "0,0,0")
                         command("SPINE", "MODE", "0")
-                        moving = False
+                        walking = moving = False
                     continue
-                if not held:
+                if not held and not button_changes:
                     drive_inhibit = False
                 if not held or combo or drive_inhibit or state.get("spine_state") not in {"STAND", "WALK"}:
-                    if moving:
+                    if walking or moving:
                         command("SPINE", "JOY", "0,0,0")
                         command("SPINE", "MODE", "0")
-                        moving = False
+                        walking = moving = False
                     continue
+                x = shaped(axes[0]) * speed
+                y = -shaped(axes[1]) * speed
+                r = shaped(axes[2]) * speed
                 if state.get("spine_state") == "STAND":
+                    if max(abs(x), abs(y), abs(r)) <= 0.02:
+                        continue
                     result = command("SPINE", "MODE", "1")
                     if not result.get("ok"):
+                        drive_inhibit = True
                         continue
+                    walking = True
                 if buttons[BUTTON["up"]] and speed < 0.35:
                     speed = min(0.35, speed + 0.01)
                 elif buttons[BUTTON["down"]] and speed > 0.08:
                     speed = max(0.08, speed - 0.01)
-                x = shaped(axes[0]) * speed
-                y = -shaped(axes[1]) * speed
-                r = shaped(axes[2]) * speed
                 # Preserve a forward arc. Pure yaw is possible only with the
                 # left stick centered and is separately limited by the gait.
                 if abs(y) > 0.02:
                     r = max(-abs(y) * 0.8, min(abs(y) * 0.8, r))
                 result = command("SPINE", "JOY", f"{x:.3f},{y:.3f},{r:.3f}")
-                moving = bool(result.get("ok"))
+                if result.get("ok"):
+                    moving = max(abs(x), abs(y), abs(r)) > 0.02
+                else:
+                    print(f"[PS3] JOY failed; stopping: {result.get('message')}", flush=True)
+                    command("SPINE", "JOY", "0,0,0")
+                    command("SPINE", "MODE", "0")
+                    walking = moving = False
+                    drive_inhibit = True
         except (OSError, ValueError) as exc:
             print(f"[PS3] Controller disconnected: {exc}", flush=True)
         finally:
             # The ESP independently times out within 750 ms if USB is lost.
-            if moving:
+            if walking or moving:
                 command("SPINE", "JOY", "0,0,0")
                 command("SPINE", "MODE", "0")
             os.close(fd)

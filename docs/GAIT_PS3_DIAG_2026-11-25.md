@@ -6,7 +6,8 @@
 - ESP USB telemetrisi canlıydı; inceleme başında `FAILSAFE`, PWM açık, PCA kartları çevrimiçiydi.
 - Kablosuz PS3 kolu BlueZ'de bağlı ve `/dev/input/js0` olarak görünüyordu. Hareket servisi durduruldu.
 - Ham joystick ölçümünde üç gerçek tuş basışına karşı 411 tuş olayı vardı. Yalnız L1 tutulduğunda başka tuşlar da çok sayıda yanlış olay üretti. Bluetooth oturumu yeniden kurulduktan sonra bile kol dokunulmazken 12 saniyede 135 tuş değişimi sayıldı.
-- Bu giriş güvenli bir deadman kaynağı değildir. `apex-ps3-gateway` kapalı bırakıldı; USB kablolu karşılaştırma henüz yapılamadı.
+- Bu giriş güvenli bir deadman kaynağı değildir. `apex-ps3-gateway` yeniden açılışta da sahte komut üretmesin diye `disabled` ve `inactive` bırakıldı; USB kablolu karşılaştırma henüz yapılamadı. Doğrulamadan sonra `sudo systemctl enable --now apex-ps3-gateway` ile geri açılabilir.
+- Pi'deki PS3 gateway yedeklenip giriş gürültüsü koruması yüklendi. Bir saniyede sekiz tuş değişimi görüldüğünde hareketi durdurur ve üç saniye sessiz giriş bekler; hareket komutu onayı başarısız olursa WALK durumunda kalmaz. Bu koruma kablosuz kolu kullanılabilir ilan etmez; servis hâlâ kapalıdır.
 - USB köprüsünde 15 salt-okunur `PARAMS` çağrısı 12–50 ms sürdü; 350 ms üstü örnek görülmedi. Canlı ayarlar `z=-132`, `len=50`, `lift=40`, `spd=2000` idi.
 
 ## Hazırlanan firmware
