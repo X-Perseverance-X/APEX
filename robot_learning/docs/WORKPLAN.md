@@ -56,7 +56,8 @@ take longer if there is no encoder, current sensor or calibrated scale.
 ## Engineering practices
 
 1. Keep source assets/config, generated MJCF and training outputs separate.
-2. Pin a dependency lock after the first reproducible run; record simulator,
+2. Use the committed Windows/Python 3.12 dependency snapshot for workstation
+   reruns; maintain a separate Linux lock for Linux training. Record simulator,
    Python and learner versions plus contract hash with every experiment.
 3. Run model compile, stand physics, Gym API and geometry parity tests in CI.
 4. Evaluate on held-out seeds and several measured parameter distributions;

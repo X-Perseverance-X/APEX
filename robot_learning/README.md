@@ -23,6 +23,7 @@ PWM, SSH, or live command module. It cannot move the physical robot.
 ```text
 robot_learning/
   pyproject.toml                  installable Python package and tool configuration
+  requirements-win-py312.lock    captured Windows/Python 3.12 dependency set
   src/apex_rl/assets/meta1.json  versioned robot geometry/dynamics contract
   src/apex_rl/contract.py         units, frame, leg order, symmetry validation
   src/apex_rl/model.py            MJCF generator (physics proxy)
@@ -52,6 +53,10 @@ repository root in PowerShell:
 
 For a new machine, create a Python 3.12 virtual environment and install the
 package from `robot_learning` with `python -m pip install -e ".[dev,train]"`.
+To reproduce the tested Windows environment precisely, install
+`requirements-win-py312.lock` first and then the editable package with
+`--no-deps`. This lock is platform-specific; Linux CI resolves from
+`pyproject.toml` and records its own versions.
 Train and compare one **simulation-only** pilot:
 
 ```powershell
