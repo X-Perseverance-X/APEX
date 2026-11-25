@@ -3,6 +3,8 @@ import pathlib
 import threading
 import time
 import unittest
+import cv2
+import numpy as np
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -106,7 +108,7 @@ class VisionRuntimeContractTests(unittest.TestCase):
         tree = ast.parse(self.source)
         functions = [
             node for node in tree.body
-            if isinstance(node, ast.FunctionDef) and node.name in {"process_target_selection", "bbox_iou"}
+            if isinstance(node, ast.FunctionDef) and node.name in {"process_target_selection", "bbox_iou", "visual_frame", "initialize_visual_target", "follow_visual_target"}
         ]
         namespace = {
             "threading": threading,
@@ -118,6 +120,9 @@ class VisionRuntimeContractTests(unittest.TestCase):
             "tracking_lock": threading.Lock(),
             "selection_status": {},
             "tracking_state": {},
+            "visual_target": {"patch": None, "center": None, "last_seen": 0.0},
+            "cv2": cv2,
+            "np": np,
         }
         exec(compile(ast.Module(body=functions, type_ignores=[]), "selection-unit", "exec"), namespace)
         person = {"label": "person", "confidence": 0.92, "track_id": 7, "bbox": (0.30, 0.20, 0.60, 0.85)}
@@ -144,6 +149,29 @@ class VisionRuntimeContractTests(unittest.TestCase):
         self.assertIsNone(selected)
         self.assertEqual(namespace["selection_status"]["state"], "locked")
         self.assertEqual(namespace["selected_bbox"], bottle["bbox"])
+
+        # Detector classes without persistent IDs (such as a cup) must keep
+        # the selected image patch, otherwise the next detector frame loses it.
+        rng = np.random.default_rng(9)
+        image = rng.integers(0, 256, (180, 320, 3), dtype=np.uint8)
+        namespace["process_target_selection"](
+            [bottle], {"ts": 4.5, "x": 0.20, "y": 0.50, "clear": False}, image
+        )
+        self.assertIsNotNone(namespace["visual_target"]["patch"])
+        moved = np.zeros_like(image)
+        moved[:, 10:] = image[:, :-10]
+        self.assertIsNotNone(namespace["follow_visual_target"](moved))
+
+        # An object outside the detector's label set still locks via its
+        # visible image patch and follows a small translation.
+        namespace["process_target_selection"]([], {"ts": 5.0, "x": 0.40, "y": 0.50, "clear": False}, image)
+        self.assertEqual(namespace["selection_status"]["state"], "locked")
+        moved = np.zeros_like(image)
+        moved[:, 10:] = image[:, :-10]
+        match = namespace["follow_visual_target"](moved)
+        self.assertIsNotNone(match)
+        self.assertGreater(match[1], 0.90)
+        self.assertAlmostEqual(sum(match[0][::2]) / 2, 0.40 + 10 / 320, places=2)
 
 
 if __name__ == "__main__":

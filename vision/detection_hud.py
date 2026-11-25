@@ -95,8 +95,8 @@ GIMBAL_COMMAND_HZ = 10.0
 GIMBAL_MIN_DEG = 45.0
 GIMBAL_MAX_DEG = 135.0
 GIMBAL_CENTER_DEG = 90.0
-GIMBAL_PAN_RATE_DPS = 65.0
-GIMBAL_TILT_RATE_DPS = 55.0
+GIMBAL_PAN_RATE_DPS = 110.0
+GIMBAL_TILT_RATE_DPS = 90.0
 GIMBAL_X_DEADBAND = 0.045
 GIMBAL_Y_DEADBAND = 0.055
 
@@ -127,6 +127,7 @@ telemetry={
     'mode':'IDLE', 'connected':False, 'ai_track':False, 'sel':None,
     'mpu_online':False, 'mpu_pitch':0.0, 'mpu_yaw':0.0,
     'camera_pan_deg':90.0, 'camera_tilt_deg':90.0,
+    'spine_state':'DISARMED', 'outputs_armed':False,
 }
 vision_control_seen_at = [0.0]
 latest_frame=[None]
@@ -185,6 +186,56 @@ selection_status = {
     'state': 'none', 'track_id': None, 'visible': False,
     'processed_ts': 0.0, 'last_seen': 0.0, 'bbox': None,
 }
+visual_target = {'patch': None, 'center': None, 'last_seen': 0.0}
+
+
+def visual_frame(frame):
+    h, w = frame.shape[:2]
+    return cv2.cvtColor(cv2.resize(frame, (320, max(1, round(h * 320 / w)))), cv2.COLOR_BGR2GRAY)
+
+
+def initialize_visual_target(frame, x, y):
+    """Lock a textured patch at any clicked image point without a detector box."""
+    gray = visual_frame(frame)
+    size = 32
+    if gray.shape[0] < size or gray.shape[1] < size:
+        return None
+    cx = max(size // 2, min(gray.shape[1] - size // 2, round(x * gray.shape[1])))
+    cy = max(size // 2, min(gray.shape[0] - size // 2, round(y * gray.shape[0])))
+    patch = gray[cy-size//2:cy+size//2, cx-size//2:cx+size//2].copy()
+    if patch.std() < 4.0:
+        return None
+    visual_target.update({'patch': patch, 'center': (cx, cy), 'last_seen': time.time()})
+    return ((cx-size//2)/gray.shape[1], (cy-size//2)/gray.shape[0],
+            (cx+size//2)/gray.shape[1], (cy+size//2)/gray.shape[0])
+
+
+def follow_visual_target(frame):
+    """Search near the last position; stop on poor match instead of drifting."""
+    patch, center = visual_target['patch'], visual_target['center']
+    if patch is None or center is None:
+        return None
+    gray = visual_frame(frame)
+    size = patch.shape[0]
+    x0 = max(0, center[0] - 72 - size//2)
+    y0 = max(0, center[1] - 72 - size//2)
+    x1 = min(gray.shape[1], center[0] + 72 + size//2)
+    y1 = min(gray.shape[0], center[1] + 72 + size//2)
+    search = gray[y0:y1, x0:x1]
+    if search.shape[0] < size or search.shape[1] < size:
+        return None
+    _, score, _, position = cv2.minMaxLoc(cv2.matchTemplate(search, patch, cv2.TM_CCOEFF_NORMED))
+    if score < 0.62:
+        return None
+    left, top = x0 + position[0], y0 + position[1]
+    if score > 0.85:
+        observed = gray[top:top+size, left:left+size]
+        visual_target['patch'] = cv2.addWeighted(patch, 0.92, observed, 0.08, 0)
+    visual_target['center'] = (left + size//2, top + size//2)
+    visual_target['last_seen'] = time.time()
+    bbox = (left/gray.shape[1], top/gray.shape[0],
+            (left+size)/gray.shape[1], (top+size)/gray.shape[0])
+    return bbox, score
 
 def telemetry_poller():
     """Eski serial_reader()'ın yerini alıyor — gerçek mimariye (WiFi HTTP,
@@ -207,12 +258,15 @@ def telemetry_poller():
             telemetry['mpu_yaw'] = float(data.get('mpuY', 0.0) or 0.0)
             telemetry['camera_pan_deg'] = float(data.get('cameraPanDeg', GIMBAL_CENTER_DEG) or GIMBAL_CENTER_DEG)
             telemetry['camera_tilt_deg'] = float(data.get('cameraTiltDeg', GIMBAL_CENTER_DEG) or GIMBAL_CENTER_DEG)
+            telemetry['spine_state'] = data.get('spineState', 'DISARMED')
+            telemetry['outputs_armed'] = bool(data.get('outputsArmed', False))
             telemetry['connected'] = True
             if not was_connected:
                 print('[HUD] Telemetri bağlantısı aktif.', flush=True)
             was_connected = True
         except Exception as e:
             telemetry['connected'] = False
+            telemetry['outputs_armed'] = False
             now = time.monotonic()
             # Omurilik kapalıyken beklenen timeout'u her iki saniyede bir
             # diske yazmak kamera sürecine gereksiz I/O yükü bindiriyordu.
@@ -266,6 +320,17 @@ def send_gimbal_mode(action):
         urllib.request.urlopen(f"{APEX_GIMBAL_URL}?action={action}", timeout=0.8).read()
     except Exception as e:
         print('[AI-TRACK] Gimbal modu gonderilemedi:', e)
+
+
+def send_body_target(pitch, yaw, ai=True):
+    """Small body IK compensation, subject to the command center's fresh safety gate."""
+    source = 'ai' if ai else 'manual'
+    url = f'http://localhost:8080/bodyIk?p={pitch:.1f}&r=0&y={yaw:.1f}&source={source}'
+    try:
+        with urllib.request.urlopen(url, timeout=0.7) as response:
+            return bool(jsonlib.loads(response.read().decode('utf-8')).get('ok'))
+    except Exception:
+        return False
 
 def compute_forward(dm, err, tof_mm=None):
     """Mesafeye göre ileri hız — SADECE yaklaşma, ASLA geri gitme (robot
@@ -331,6 +396,11 @@ def tracking_commander():
     command_tilt = GIMBAL_CENTER_DEG
     last_mode = None
     last_command_at = time.monotonic()
+    body_pitch = body_yaw = 0.0
+    body_owned = False
+    last_body_command = 0.0
+    last_seen_at = 0.0
+    last_err_x = last_err_y = 0.0
     while True:
         time.sleep(1.0 / GIMBAL_COMMAND_HZ)
         tracking_enabled = bool(telemetry.get('ai_track', False))
@@ -359,6 +429,8 @@ def tracking_commander():
                 err_x = 0.0
             if abs(err_y) < GIMBAL_Y_DEADBAND:
                 err_y = 0.0
+            last_err_x, last_err_y = err_x, err_y
+            last_seen_at = tick
             # Hedef görüntüde sağdaysa mekanizma sağa dönmeli: PAN açısı azalır.
             # Hedef aşağıdaysa TILT açısı artar.
             command_pan = max(GIMBAL_MIN_DEG, min(
@@ -366,6 +438,20 @@ def tracking_commander():
             command_tilt = max(GIMBAL_MIN_DEG, min(
                 GIMBAL_MAX_DEG, command_tilt + err_y * GIMBAL_TILT_RATE_DPS * dt))
             send_gimbal_target(command_pan, command_tilt)
+            if (telemetry.get('connected') and telemetry.get('outputs_armed') and
+                    telemetry.get('spine_state') == 'STAND' and tick - last_body_command >= 0.25):
+                pan_actual = telemetry.get('camera_pan_deg', 90.0)
+                tilt_actual = telemetry.get('camera_tilt_deg', 90.0)
+                yaw_direction = (-1 if err_x > 0.08 and pan_actual <= 48 else
+                                  1 if err_x < -0.08 and pan_actual >= 132 else 0)
+                pitch_direction = (1 if err_y < -0.08 and tilt_actual <= 48 else
+                                   -1 if err_y > 0.08 and tilt_actual >= 132 else 0)
+                next_pitch = max(-8.0, min(8.0, body_pitch + pitch_direction * 3.0 * dt))
+                next_yaw = max(-8.0, min(8.0, body_yaw + yaw_direction * 3.0 * dt))
+                if (abs(next_pitch - body_pitch) >= 0.2 or abs(next_yaw - body_yaw) >= 0.2) and send_body_target(next_pitch, next_yaw):
+                    body_pitch, body_yaw = next_pitch, next_yaw
+                    body_owned = True
+                    last_body_command = tick
             last_mode = 'track'
             with gimbal_control_lock:
                 gimbal_control_state.update({
@@ -376,6 +462,33 @@ def tracking_commander():
         else:
             # Takip kapalı veya hedef kayıp: baş merkezde, IMU varsa dünya
             # doğrultusunu tutacak STABILIZE modu. Aynı komutu sürekli yollama.
+            # Kısa algılama boşluğunda son bakış yönünü koru; hemen merkeze
+            # dönmek hedefi kadrajın kenarında tekrar bulmayı engelliyordu.
+            with selection_lock:
+                selected_recently = (selection_status.get('state') == 'lost' and
+                                     time.time() - selection_status.get('last_seen', 0.0) < 1.2)
+            if tracking_enabled and selected_recently and last_mode == 'track':
+                tick = time.monotonic()
+                if (tick - last_seen_at < 0.6 and tick - last_body_command >= 0.25 and
+                        telemetry.get('outputs_armed') and telemetry.get('spine_state') == 'STAND'):
+                    yaw_direction = -1 if last_err_x > 0.08 and command_pan <= 48 else 1 if last_err_x < -0.08 and command_pan >= 132 else 0
+                    pitch_direction = 1 if last_err_y < -0.08 and command_tilt <= 48 else -1 if last_err_y > 0.08 and command_tilt >= 132 else 0
+                    next_pitch = max(-8.0, min(8.0, body_pitch + pitch_direction * 0.6))
+                    next_yaw = max(-8.0, min(8.0, body_yaw + yaw_direction * 0.6))
+                    if (next_pitch != body_pitch or next_yaw != body_yaw) and send_body_target(next_pitch, next_yaw):
+                        body_pitch, body_yaw = next_pitch, next_yaw
+                        body_owned = True
+                        last_body_command = tick
+                continue
+            if body_owned and tracking_enabled and time.monotonic() - last_body_command >= 0.25:
+                if send_body_target(0.0, 0.0):
+                    body_pitch = body_yaw = 0.0
+                    body_owned = False
+                    last_body_command = time.monotonic()
+            if body_owned and not tracking_enabled:
+                if send_body_target(0.0, 0.0, ai=False):
+                    body_pitch = body_yaw = 0.0
+                    body_owned = False
             if last_mode != 'stabilize':
                 send_gimbal_mode('stabilize')
                 command_pan = GIMBAL_CENTER_DEG
@@ -446,7 +559,7 @@ def put(img,s,x,y,col,sz=0.6,th=1):
     cv2.putText(img,s,(x,y),cv2.FONT_HERSHEY_SIMPLEX,sz,col,th)
 
 
-def process_target_selection(dets, sel):
+def process_target_selection(dets, sel, frame=None):
     """Yeni bir tıklama/temizleme olayı var mı kontrol eder, varsa
     selected_track_id'yi günceller. Saf mantık dışarı çıkarıldı ki izole
     test edilebilsin (thread/global'den ayrı).
@@ -461,6 +574,7 @@ def process_target_selection(dets, sel):
         return selected_track_id, False
     last_processed_sel_ts = sel['ts']
     if sel.get('clear'):
+        visual_target.update({'patch': None, 'center': None, 'last_seen': 0.0})
         with selection_lock:
             selected_track_id = None
             selected_bbox = None
@@ -488,18 +602,26 @@ def process_target_selection(dets, sel):
 
     with selection_lock:
         if not candidates:
+            visual_bbox = initialize_visual_target(frame, click_x, click_y) if frame is not None else None
             selected_track_id = None
-            selected_bbox = None
+            selected_bbox = visual_bbox
             selection_status.update({
-                'state': 'missed', 'track_id': None, 'visible': False,
-                'processed_ts': time.time(), 'last_seen': 0.0, 'bbox': None,
+                'state': 'locked' if visual_bbox else 'missed', 'track_id': None,
+                'visible': bool(visual_bbox), 'processed_ts': time.time(),
+                'last_seen': time.time() if visual_bbox else 0.0,
+                'bbox': list(visual_bbox) if visual_bbox else None,
             })
             with tracking_lock:
                 tracking_state.update({'visible': False, 'bx': None, 'by': None, 'dm': None, 'last_seen': 0.0})
             return None, True
         candidate = min(candidates, key=lambda item: item[0])[1]
-        selected_track_id = candidate.get('track_id')
-        selected_bbox = tuple(candidate['bbox'])
+        stable_id = candidate.get('track_id') if candidate.get('label') == 'person' else None
+        visual_bbox = (initialize_visual_target(frame, click_x, click_y)
+                       if stable_id is None and frame is not None else None)
+        if stable_id is not None or visual_bbox is None:
+            visual_target.update({'patch': None, 'center': None, 'last_seen': 0.0})
+        selected_track_id = stable_id
+        selected_bbox = visual_bbox or tuple(candidate['bbox'])
         selection_status.update({
             'state': 'locked', 'track_id': selected_track_id, 'visible': True,
             'processed_ts': time.time(), 'last_seen': time.time(),
@@ -520,7 +642,8 @@ def bbox_iou(a, b):
 def draw_hud(frame,dets,fps):
     global selected_bbox
     h,w=frame.shape[:2]; cx,cy=w//2,h//2
-    process_target_selection(dets, telemetry.get('sel'))
+    process_target_selection(dets, telemetry.get('sel'), frame)
+    visual_match = follow_visual_target(frame) if visual_target['patch'] is not None else None
     cv2.rectangle(frame,(6,6),(w-6,h-6),DIM,1)
     crosshair(frame,cx,cy,AMBER)
     front_tof_readout(frame,cx,cy)
@@ -566,7 +689,7 @@ def draw_hud(frame,dets,fps):
         bx,by=(x1+x2)//2,(y1+y2)//2
         dc=math.hypot(bx-cx,by-cy); locked=dc<LOCK_RADIUS
         id_match = selected_track_id is not None and det.get('track_id') == selected_track_id
-        bbox_match = selected_track_id is None and selected_bbox is not None and bbox_iou(det['bbox'], selected_bbox) >= 0.18
+        bbox_match = visual_target['patch'] is None and selected_track_id is None and selected_bbox is not None and bbox_iou(det['bbox'], selected_bbox) >= 0.18
         is_selected = id_match or bbox_match
         col=(0,140,255) if is_selected else (RED if locked else AMBER)
         # Sistem şeridini tespit köşelerinden de koru. Gerçek bbox ve
@@ -614,6 +737,19 @@ def draw_hud(frame,dets,fps):
                     'visible': True, 'last_seen': time.time(),
                     'bbox': list(selected_bbox),
                 })
+
+    if visual_match is not None:
+        visual_bbox, visual_score = visual_match
+        x1, y1, x2, y2 = (int(visual_bbox[0]*w), int(visual_bbox[1]*h),
+                          int(visual_bbox[2]*w), int(visual_bbox[3]*h))
+        bracket(frame, x1, y1, x2, y2, (0, 140, 255), 24, 2)
+        best_person = {'bx': (x1+x2)//2, 'by': (y1+y2)//2, 'dm': None}
+        best = {'bx': best_person['bx'], 'by': best_person['by'],
+                'label': 'visual', 'conf': visual_score, 'locked': False, 'dm': 0.0}
+        with selection_lock:
+            selected_bbox = visual_bbox
+            selection_status.update({'state': 'locked', 'visible': True,
+                                     'last_seen': time.time(), 'bbox': list(visual_bbox)})
 
     # Takip durumunu güncelle — tracking_commander() thread'i bunu okuyup
     # hareket komutu üretecek. SADECE seçili kişi, SADECE bx/zaman bilgisi.

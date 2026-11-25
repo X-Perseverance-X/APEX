@@ -1368,15 +1368,15 @@ async def ai_tracking(state: str = "1"):
         if tracking.get("state") != "locked" or not tracking.get("visible"):
             _ai_tracking_enabled = False
             return JSONResponse(
-                {"enabled": False, "error": "Önce görüntüde görünen bir kişiyi seçip kilitle"},
+                {"enabled": False, "error": "Önce görüntüde görünen bir hedef seçip kilitle"},
                 status_code=409,
             )
         _ai_tracking_enabled = True
-        log.info("[AI-TRACK] Kamera gimbali açıldı — bacak hareket kanalı kapalı")
+        log.info("[AI-TRACK] Kamera gimbali açıldı; sınırda güvenlik kapılı 8° gövde IK etkin")
     else:
         _ai_tracking_enabled = False
         log.info("[AI-TRACK] Kamera takibi kapatıldı — gimbal stabilizasyona dönecek")
-    return JSONResponse({"enabled": _ai_tracking_enabled, "mode": "camera-gimbal", "leg_motion": False})
+    return JSONResponse({"enabled": _ai_tracking_enabled, "mode": "camera-gimbal-body-ik", "leg_motion": _ai_tracking_enabled})
 
 
 @app.get("/api/vision/status")
@@ -3083,6 +3083,29 @@ async def _proxy_to_esp32(path: str, query: dict, *, force_fresh: bool = False) 
 async def _operator_proxy(path: str, query: dict):
     global _lidar_nav_enabled, _ai_tracking_enabled
     query = dict(query)
+    if path == "/bodyIk":
+        source = query.pop("source", "manual")
+        if source == "ai":
+            if not _ai_tracking_enabled or _lidar_nav_enabled or _navigation_platform_status.get("active"):
+                return JSONResponse({"error": "AI gövde kontrolü etkin değil"}, status_code=409)
+            with _lidar_lock:
+                scan_fresh = _lidar_enabled and _lidar_online and _lidar_last_scan_ts and time.monotonic() - _lidar_last_scan_ts < 0.8
+            if not scan_fresh:
+                return JSONResponse({"error": "AI gövde kontrolü için taze LiDAR gerekli"}, status_code=409)
+            state = await _navigation_read_telemetry()
+            if (not state.get("outputsArmed") or state.get("spineState") != "STAND" or
+                    state.get("mode") != "IDLE" or state.get("failsafe") or
+                    not state.get("mpuOnline") or float(state.get("batR", 0)) < 6.4 or
+                    abs(float(state.get("mpuP", 0))) > 15 or abs(float(state.get("mpuR", 0))) > 15):
+                return JSONResponse({"error": "AI gövde kontrolü güvenlik koşulları sağlanmadı"}, status_code=409)
+            try:
+                p, r, y = (float(query[key]) for key in ("p", "r", "y"))
+            except (KeyError, TypeError, ValueError):
+                return JSONResponse({"error": "Geçersiz AI gövde açısı"}, status_code=400)
+            if not all(math.isfinite(a) for a in (p, r, y)) or abs(p) > 8 or abs(y) > 8 or abs(r) > 0.01:
+                return JSONResponse({"error": "AI gövde açısı 8 derece sınırını aştı"}, status_code=400)
+        elif _ai_tracking_enabled:
+            return JSONResponse({"error": "AI takip açıkken manuel gövde IK kapalı"}, status_code=409)
     if path == "/joy":
         source = query.pop("source", "manual")
         if _navigation_platform_status.get("active"):
