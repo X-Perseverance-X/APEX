@@ -22,6 +22,7 @@ class MappingEngine:
     """Sensor/route state only; actuator transport remains in apex_server."""
 
     EXECUTION_LOCKED = False
+    MIN_BOOTSTRAP_ENDPOINT_CELLS = 40
 
     def __init__(self, config: GridConfig | None = None):
         self._lock = threading.RLock()
@@ -84,6 +85,30 @@ class MappingEngine:
                         imu_delta_rad = math.radians(delta_deg)
 
             scan = self.outlier_filter.filter(scan, yaw_delta_deg)
+
+            # A motor-start fragment can contain many packets but cover only
+            # a few distinct cells. Anchoring the whole map to it leaves every
+            # subsequent full scan at LOW_CORRELATION forever.
+            endpoint_cells = self._distinct_endpoint_cells(scan)
+            quality_scan = len(scan.points) >= self.scan_matcher.config.min_scan_points
+            if (self.grid.scan_count == 0 and quality_scan and
+                    endpoint_cells < self.MIN_BOOTSTRAP_ENDPOINT_CELLS):
+                self.last_match = MatchResult(False, self.pose, 0.0, 0.0,
+                                              len(scan.points), reason="WAITING_FULL_SCAN")
+                self.last_lidar_ns = scan.timestamp_ns
+                if self.mapping_state != "FROZEN":
+                    self._update_sparse_cloud_locked(scan)
+                self._revision += 1
+                return False
+
+            if (self.mapping_state == "LIVE_PREVIEW" and self.goal is None and
+                    self.grid.scan_count == 1 and self._accepted_matches == 0 and
+                    self._rejected_matches >= 6 and
+                    endpoint_cells >= self.MIN_BOOTSTRAP_ENDPOINT_CELLS):
+                # Recover a previous bad one-scan preview without waiting for
+                # an operator to clear it. Never reset an active/saved map.
+                self._reset_map_locked()
+                self._last_input_key = input_key
 
             first_scan = self.grid.scan_count == 0
             frozen = self.mapping_state == "FROZEN"
@@ -163,6 +188,18 @@ class MappingEngine:
                 # limit repeated identical failures to avoid UI churn.
                 self._revision += 1
             return changed
+
+    def _distinct_endpoint_cells(self, scan: LidarScan) -> int:
+        resolution = self.grid.config.resolution_m
+        cells = set()
+        for angle_deg, distance_mm in scan.points:
+            distance_m = float(distance_mm) / 1000.0
+            if not math.isfinite(distance_m) or not self.grid.config.min_range_m <= distance_m <= self.grid.config.max_range_m:
+                continue
+            angle = math.radians(float(angle_deg))
+            cells.add((round(distance_m * math.cos(angle) / resolution),
+                       round(distance_m * math.sin(angle) / resolution)))
+        return len(cells)
 
     def _update_sparse_cloud_locked(self, scan: LidarScan) -> None:
         if not self.last_imu or not self.last_imu.valid or len(scan.points) < 1:

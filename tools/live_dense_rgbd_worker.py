@@ -78,6 +78,15 @@ def encode_points(xyz: np.ndarray, rgb: np.ndarray) -> list[list[float | int]]:
     return output
 
 
+def sensor_pair_skew_s(lidar_age_s: float, camera_age_s: float,
+                       elapsed_after_lidar_s: float) -> float:
+    """Compare frame ages in one time domain despite mixed source clocks."""
+    ages = (lidar_age_s, camera_age_s, elapsed_after_lidar_s)
+    if not all(math.isfinite(value) and value >= 0 for value in ages):
+        raise ValueError("invalid sensor frame age")
+    return abs(camera_age_s - (lidar_age_s + elapsed_after_lidar_s))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sensor-url", default="http://192.168.1.76:8090")
@@ -162,6 +171,7 @@ def main() -> int:
             display_mode = "MAPPING" if session == "MAPPING" else "LIVE_PREVIEW"
 
             lidar = client.get(f"{args.sensor_url}/api/lidar/snapshot").json()
+            lidar_received_at = time.monotonic()
             imu = client.get(f"{args.sensor_url}/api/imu/snapshot").json()
             scan = int(lidar.get("scan_seq") or -1)
             if not lidar.get("fresh") or scan < 0 or scan == last_scan:
@@ -184,12 +194,14 @@ def main() -> int:
             image = cv2.imdecode(np.frombuffer(camera_response.content, np.uint8), cv2.IMREAD_COLOR)
             if image is None:
                 raise RuntimeError("kamera JPEG karesi çözülemedi")
-            camera_ts = camera_response.headers.get("x-apex-frame-ts")
-            lidar_ts = lidar.get("timestamp_monotonic_s")
-            if camera_ts is not None and lidar_ts is not None:
-                skew_s = abs(float(camera_ts) - float(lidar_ts))
-                if skew_s > 0.35:
-                    raise RuntimeError(f"kamera/LiDAR zaman farkı yüksek: {skew_s * 1000:.0f}ms")
+            camera_age = camera_response.headers.get("x-apex-frame-age")
+            lidar_age = lidar.get("scan_age_s")
+            if camera_age is None or lidar_age is None:
+                raise RuntimeError("kamera/LiDAR yaş damgası eksik")
+            skew_s = sensor_pair_skew_s(float(lidar_age), float(camera_age),
+                                        time.monotonic() - lidar_received_at)
+            if skew_s > 0.35:
+                raise RuntimeError(f"kamera/LiDAR zaman farkı yüksek: {skew_s * 1000:.0f}ms")
             h, w = image.shape[:2]
             intrinsics = camera_matrix(rig, w, h)
             if intrinsics is None:

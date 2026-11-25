@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><title>APEX RGB-D önizleme</title>
+<style>html,body{margin:0;height:100%;background:#030506;color:#dce5e8;font:12px monospace}#scene{position:absolute;inset:0}#hud{position:absolute;left:12px;top:12px;padding:12px;background:#080d0ed9;border:1px solid #257c73;max-width:420px}b{color:#00e5b0}small{color:#9ba9ae}</style>
+</head><body><div id="scene"></div><div id="hud"><b>APEX RGB-D · TEK KARE ÖNİZLEME</b><p id="count"></p><small>Sol sürükle: döndür · Teker: yakınlaştır · Shift+sürükle: kaydır<br>Renk gerçek kamera pikselinden; yoğun derinlik tek kameradan tahmin edilip LiDAR ile ölçeklendi. Bu görüntü ölçülmüş tam 3B harita veya Gaussian splat değildir.</small></div>
+<script src="./three.min.js"></script><script>
+const data=/*POINTS_PLACEHOLDER*/;
+document.getElementById('count').textContent=data.length.toLocaleString('tr-TR')+' renkli nokta';
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x030506);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+document.getElementById('scene').appendChild(renderer.domElement);
+const camera=new THREE.PerspectiveCamera(65,1,.01,100);
+const coords=new Float32Array(data.length*3),colors=new Float32Array(data.length*3);
+let min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];
+data.forEach((p,i)=>{const q=[-p[1],p[2],-p[0]];for(let j=0;j<3;j++){coords[i*3+j]=q[j];colors[i*3+j]=p[3+j]/255;min[j]=Math.min(min[j],q[j]);max[j]=Math.max(max[j],q[j])}});
+const center=new THREE.Vector3((min[0]+max[0])/2,(min[1]+max[1])/2,(min[2]+max[2])/2);
+const extent=Math.max(...max.map((v,i)=>v-min[i]));let radius=Math.max(1,extent*1.1),azimuth=.55,elevation=.28;
+const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(coords,3));geometry.setAttribute('color',new THREE.BufferAttribute(colors,3));
+scene.add(new THREE.Points(geometry,new THREE.PointsMaterial({size:.025,vertexColors:true,sizeAttenuation:true})));
+scene.add(new THREE.GridHelper(10,20,0x17343b,0x0b2026));
+function view(){const c=Math.cos(elevation);camera.position.set(center.x+radius*c*Math.sin(azimuth),center.y+radius*Math.sin(elevation),center.z+radius*c*Math.cos(azimuth));camera.lookAt(center)}
+let drag=false,lastX=0,lastY=0;renderer.domElement.addEventListener('pointerdown',e=>{drag=true;lastX=e.clientX;lastY=e.clientY;renderer.domElement.setPointerCapture(e.pointerId)});
+renderer.domElement.addEventListener('pointerup',()=>drag=false);renderer.domElement.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-lastX,dy=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;if(e.shiftKey){const right=new THREE.Vector3().setFromMatrixColumn(camera.matrix,0);const up=new THREE.Vector3().setFromMatrixColumn(camera.matrix,1);center.addScaledVector(right,-dx*radius/700).addScaledVector(up,dy*radius/700)}else{azimuth-=dx*.006;elevation=Math.max(-1.48,Math.min(1.48,elevation+dy*.006))}view()});
+renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();radius=Math.max(.25,Math.min(30,radius*Math.exp(e.deltaY*.001)));view()},{passive:false});
+function resize(){renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}addEventListener('resize',resize);resize();view();
+(function tick(){requestAnimationFrame(tick);renderer.render(scene,camera)})();
+</script></body></html>

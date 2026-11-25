@@ -169,15 +169,14 @@ class CorrelativeScanMatcher:
             return MatchResult(False, previous, 0.0, 0.0, len(points), reason="INITIALIZING_SUBMAP")
 
         field = self._likelihood(grid)
+        # MPU6050 yaw is gyro-integrated and may jump even on a stationary
+        # robot. Always retain the scan-only prediction as a candidate.
         seeds: list[tuple[int, float]] = [(0, previous.yaw_rad)]
         if imu_yaw_delta_rad is not None and math.isfinite(imu_yaw_delta_rad):
-            if imu_sign in (-1, 1):
-                seeds = [(imu_sign, normalize_angle(previous.yaw_rad + imu_sign * imu_yaw_delta_rad))]
-            elif abs(imu_yaw_delta_rad) >= math.radians(0.5):
-                seeds = [
-                    (1, normalize_angle(previous.yaw_rad + imu_yaw_delta_rad)),
-                    (-1, normalize_angle(previous.yaw_rad - imu_yaw_delta_rad)),
-                ]
+            if math.radians(0.5) <= abs(imu_yaw_delta_rad) <= math.radians(8.0):
+                signs = (imu_sign,) if imu_sign in (-1, 1) else (1, -1)
+                seeds.extend((sign, normalize_angle(previous.yaw_rad + sign * imu_yaw_delta_rad))
+                             for sign in signs)
 
         best: tuple[float, float, float, float, float, int] | None = None
         for sign, yaw_seed in seeds:

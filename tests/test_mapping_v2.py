@@ -140,6 +140,38 @@ class MappingV2Tests(unittest.TestCase):
         self.assertTrue(result.accepted, result)
         self.assertAlmostEqual(math.degrees(result.pose.yaw_rad), 7.0, delta=2.0)
 
+    def test_startup_fragment_cannot_anchor_map_and_preview_recovers_old_fragment(self):
+        engine = MappingEngine(GridConfig(width=161, height=161, resolution_m=0.05, max_range_m=3.8))
+        now = time.monotonic_ns()
+        full = [(float(angle), 1800.0) for angle in range(0, 360, 4)]
+        fragment = full[:25] * 4
+        self.assertFalse(engine.ingest_lidar(LidarScan(now, 1, fragment)))
+        self.assertEqual(engine.grid.scan_count, 0)
+        self.assertEqual(engine.last_match.reason, "WAITING_FULL_SCAN")
+        self.assertTrue(engine.ingest_lidar(LidarScan(now + 1, 2, full)))
+        self.assertGreater(engine.grid.scan_count, 0)
+
+        # A map already poisoned by an earlier firmware/startup fragment gets
+        # one bounded recovery in live preview, without touching saved maps.
+        old = MappingEngine(GridConfig(width=161, height=161, resolution_m=0.05, max_range_m=3.8))
+        old.grid.update_lidar(LidarScan(now, 1, fragment))
+        old._rejected_matches = 6
+        self.assertTrue(old.ingest_lidar(LidarScan(now + 1, 2, full)))
+        self.assertEqual(old.grid.scan_count, 1)
+        self.assertEqual(old._rejected_matches, 0)
+
+    def test_scan_only_seed_survives_spurious_imu_yaw_jump(self):
+        grid = OccupancyGrid(GridConfig(width=161, height=161, resolution_m=0.05, max_range_m=3.8))
+        now = time.monotonic_ns()
+        points = [(float(angle), 1800.0) for angle in range(0, 360, 4)]
+        grid.update_lidar(LidarScan(now, 1, points))
+        matched = CorrelativeScanMatcher().match(
+            LidarScan(now + 1, 2, points), grid, Pose2D(),
+            imu_yaw_delta_rad=math.radians(38), imu_sign=1,
+        )
+        self.assertTrue(matched.accepted)
+        self.assertAlmostEqual(matched.pose.yaw_rad, 0.0, delta=math.radians(2))
+
     def test_engine_marks_pose_trusted_only_after_repeated_good_matches(self):
         config = GridConfig(width=161, height=161, resolution_m=0.05, max_range_m=3.8)
         engine = MappingEngine(config)
@@ -577,6 +609,7 @@ class MappingV2Tests(unittest.TestCase):
         self.assertEqual(server.NAV_ROUTE_GAIT_LEN_MM, 32)
         self.assertEqual(server.NAV_ROUTE_GAIT_LIFT_MM, 12)
         self.assertGreater(server.NAV_ROUTE_GAIT_CYCLE_MS, 1000)
+
 
 
 class MappingApiTests(unittest.IsolatedAsyncioTestCase):

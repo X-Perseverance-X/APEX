@@ -62,7 +62,7 @@ class VisionRuntimeContractTests(unittest.TestCase):
         self.assertIn("APEX_GIMBAL_URL", self.source)
         self.assertIn("def send_gimbal_target", self.source)
         self.assertIn("send_gimbal_target(command_pan, command_tilt)", self.source)
-        self.assertIn("send_gimbal_mode('stabilize')", self.source)
+        self.assertIn("send_gimbal_mode('center')", self.source)
         self.assertNotIn("APEX_JOY_URL", self.source)
         self.assertNotIn("send_joy(", self.source)
 
@@ -172,6 +172,12 @@ class VisionRuntimeContractTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertGreater(match[1], 0.90)
         self.assertAlmostEqual(sum(match[0][::2]) / 2, 0.40 + 10 / 320, places=2)
+        # A single shaken frame can jump beyond the cheap local search.
+        moved_far = np.zeros_like(image)
+        moved_far[:, 115:] = image[:, :-115]
+        recovered = namespace["follow_visual_target"](moved_far)
+        self.assertIsNotNone(recovered)
+        self.assertGreater(recovered[1], 0.90)
 
 
 if __name__ == "__main__":

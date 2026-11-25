@@ -186,7 +186,7 @@ selection_status = {
     'state': 'none', 'track_id': None, 'visible': False,
     'processed_ts': 0.0, 'last_seen': 0.0, 'bbox': None,
 }
-visual_target = {'patch': None, 'center': None, 'last_seen': 0.0}
+visual_target = {'patch': None, 'center': None, 'last_seen': 0.0, 'label': None}
 
 
 def visual_frame(frame):
@@ -217,15 +217,23 @@ def follow_visual_target(frame):
         return None
     gray = visual_frame(frame)
     size = patch.shape[0]
-    x0 = max(0, center[0] - 72 - size//2)
-    y0 = max(0, center[1] - 72 - size//2)
-    x1 = min(gray.shape[1], center[0] + 72 + size//2)
-    y1 = min(gray.shape[0], center[1] + 72 + size//2)
-    search = gray[y0:y1, x0:x1]
-    if search.shape[0] < size or search.shape[1] < size:
-        return None
-    _, score, _, position = cv2.minMaxLoc(cv2.matchTemplate(search, patch, cv2.TM_CCOEFF_NORMED))
-    if score < 0.62:
+    score = -1.0
+    position = (0, 0)
+    x0 = y0 = 0
+    # A brief camera shake can move the target outside the normal window.
+    # Retry a wider region only after the cheap local match fails.
+    for radius, threshold in ((72, 0.62), (120, 0.70)):
+        x0 = max(0, center[0] - radius - size//2)
+        y0 = max(0, center[1] - radius - size//2)
+        x1 = min(gray.shape[1], center[0] + radius + size//2)
+        y1 = min(gray.shape[0], center[1] + radius + size//2)
+        search = gray[y0:y1, x0:x1]
+        if search.shape[0] < size or search.shape[1] < size:
+            return None
+        _, score, _, position = cv2.minMaxLoc(cv2.matchTemplate(search, patch, cv2.TM_CCOEFF_NORMED))
+        if score >= threshold:
+            break
+    else:
         return None
     left, top = x0 + position[0], y0 + position[1]
     if score > 0.85:
@@ -389,8 +397,8 @@ def tracking_commander():
     """Seçili kişiyi pan/tilt ile görüntü merkezinde tutar.
 
     Bu iş parçacığı bilinçli olarak /joy kullanmaz; robot bacakları DISARMED
-    durumda kalabilir. Takip kapalıyken firmware STABILIZE moduna geçirilir:
-    IMU varsa tavuk-kafası pitch/yaw telafisi, yoksa 90°/90° merkez uygulanır.
+    durumda kalabilir. Takip kapalıyken kafa 90°/90° merkeze döner. MPU6050
+    yaw sürüklenmesi hareketsiz robotta sahte sağ/sol bakış üretmemelidir.
     """
     command_pan = GIMBAL_CENTER_DEG
     command_tilt = GIMBAL_CENTER_DEG
@@ -460,8 +468,8 @@ def tracking_commander():
                     'last_command': time.time(),
                 })
         else:
-            # Takip kapalı veya hedef kayıp: baş merkezde, IMU varsa dünya
-            # doğrultusunu tutacak STABILIZE modu. Aynı komutu sürekli yollama.
+            # Takip kapalı veya hedef kayıp: baş merkezde. Aynı komutu
+            # sürekli yollama; MPU yaw driftine göre sağa/sola gezinme.
             # Kısa algılama boşluğunda son bakış yönünü koru; hemen merkeze
             # dönmek hedefi kadrajın kenarında tekrar bulmayı engelliyordu.
             with selection_lock:
@@ -489,14 +497,14 @@ def tracking_commander():
                 if send_body_target(0.0, 0.0, ai=False):
                     body_pitch = body_yaw = 0.0
                     body_owned = False
-            if last_mode != 'stabilize':
-                send_gimbal_mode('stabilize')
+            if last_mode != 'center':
+                send_gimbal_mode('center')
                 command_pan = GIMBAL_CENTER_DEG
                 command_tilt = GIMBAL_CENTER_DEG
-                last_mode = 'stabilize'
+                last_mode = 'center'
                 with gimbal_control_lock:
                     gimbal_control_state.update({
-                        'mode': 'stabilize', 'pan': command_pan, 'tilt': command_tilt,
+                        'mode': 'center', 'pan': command_pan, 'tilt': command_tilt,
                         'last_error_x': 0.0, 'last_error_y': 0.0,
                         'last_command': time.time(),
                     })
@@ -574,8 +582,9 @@ def process_target_selection(dets, sel, frame=None):
         return selected_track_id, False
     last_processed_sel_ts = sel['ts']
     if sel.get('clear'):
-        visual_target.update({'patch': None, 'center': None, 'last_seen': 0.0})
+        visual_target.update({'patch': None, 'center': None, 'last_seen': 0.0, 'label': None})
         with selection_lock:
+            visual_target['label'] = None
             selected_track_id = None
             selected_bbox = None
             selection_status.update({
@@ -619,7 +628,9 @@ def process_target_selection(dets, sel, frame=None):
         visual_bbox = (initialize_visual_target(frame, click_x, click_y)
                        if stable_id is None and frame is not None else None)
         if stable_id is not None or visual_bbox is None:
-            visual_target.update({'patch': None, 'center': None, 'last_seen': 0.0})
+            visual_target.update({'patch': None, 'center': None, 'last_seen': 0.0, 'label': None})
+        else:
+            visual_target['label'] = candidate.get('label')
         selected_track_id = stable_id
         selected_bbox = visual_bbox or tuple(candidate['bbox'])
         selection_status.update({
@@ -644,6 +655,22 @@ def draw_hud(frame,dets,fps):
     h,w=frame.shape[:2]; cx,cy=w//2,h//2
     process_target_selection(dets, telemetry.get('sel'), frame)
     visual_match = follow_visual_target(frame) if visual_target['patch'] is not None else None
+    if visual_match is None and visual_target['patch'] is not None and visual_target['label']:
+        # Reacquire the SAME detector class near the last image location.
+        # Reinitializing the template from an unrelated box caused target swaps.
+        last_x, last_y = visual_target['center']
+        gray_h = max(1, round(frame.shape[0] * 320 / frame.shape[1]))
+        candidates = [d for d in dets if d.get('label') == visual_target['label']
+                      and d.get('confidence', 0.0) >= 0.45
+                      and abs((d['bbox'][0] + d['bbox'][2]) * 160 - last_x) < 48
+                      and abs((d['bbox'][1] + d['bbox'][3]) * gray_h / 2 - last_y) < 36]
+        if len(candidates) == 1:
+            box = candidates[0]['bbox']
+            target_x, target_y = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+            recovered = initialize_visual_target(frame, target_x, target_y)
+            if recovered is not None:
+                visual_target['label'] = candidates[0]['label']
+                visual_match = (recovered, candidates[0]['confidence'])
     cv2.rectangle(frame,(6,6),(w-6,h-6),DIM,1)
     crosshair(frame,cx,cy,AMBER)
     front_tof_readout(frame,cx,cy)
