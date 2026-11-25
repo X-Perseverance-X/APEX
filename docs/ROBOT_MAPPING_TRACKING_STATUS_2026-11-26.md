@@ -12,7 +12,8 @@
   always tried, and IMU yaw jumps greater than 8° are ignored by scan matching.
 - The post-deploy live read showed TRACKING, 23 accepted matches, zero rejected
   matches, and 129 confirmed map cells. These counts reflect a short stationary
-  test, not a completed room survey.
+  test, not a completed room survey. The LiDAR motor was turned off after the
+  test, and the laptop was returned to its home Wi-Fi network.
 - PWM was DISARMED/CUT. No servo movement was commanded during this check.
 
 ## Dense color prototype
