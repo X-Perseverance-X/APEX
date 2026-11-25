@@ -88,13 +88,19 @@ class SpineSafeBootContractTests(unittest.TestCase):
         self.assertIsNotNone(match)
         offsets = [float(value.strip().rstrip("f")) for value in match.group(1).split(",")]
         self.assertEqual(len(offsets), 6)
-        geometric = [math.degrees(math.atan2(150.0, x)) for x in offsets]
+        outward_match = re.search(r"legNeutralOutwardY\[6\]\s*=\s*\{([^}]+)\}", self.source)
+        self.assertIsNotNone(outward_match)
+        outward = [float(value.strip().rstrip("f")) for value in outward_match.group(1).split(",")]
+        for x, y in zip(offsets, outward):
+            self.assertAlmostEqual(math.hypot(x, y), 150.0, places=2)
+        geometric = [math.degrees(math.atan2(y, x)) for x, y in zip(offsets, outward)]
         servo = [180.0 - angle if leg < 3 else angle for leg, angle in enumerate(geometric)]
         for actual, expected in zip(servo, [135, 90, 45, 45, 90, 135]):
             self.assertAlmostEqual(actual, expected)
         self.assertIn("homeRisePhase = 2;", self.source)
         self.assertIn("STAND_SPLAY_LIFT_MM * lift", self.source)
         self.assertIn("STAND_SPLAY_ORDER[standSplayIndex]", self.source)
+        self.assertIn("gaitY*gaitY - neutralX*neutralX", self.source)
 
     def test_body_ik_is_guarded_on_both_usb_ends(self):
         self.assertIn('if (action == "BODY" && count == 7)', self.source)

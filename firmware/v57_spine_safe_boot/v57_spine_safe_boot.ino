@@ -304,10 +304,12 @@ unsigned long lastCameraGimbalUpdateMs = 0;
 float armGripperOpenDeg  = 90.0f;
 float armGripperCloseDeg = 120.0f;
 
-// 150 mm dışa Y hedefiyle ön/arka X hedefleri ±150 mm: geometrik coxa
-// 45°/135°. Sağ servolar mekanik ayna olduğu için RF=135, RR=45;
-// sol LF=45, LR=135. Orta bacaklar nötr kalır.
-const float legNeutralFwdOffset[6] = {150.0f, 0.0f, -150.0f, 150.0f, 0.0f, -150.0f};
+// Ön/arka ayağın yatay erişimini 150 mm sabit tutarak 45°/135° coxa:
+// X=±150/sqrt(2), outward-Y=150/sqrt(2). Yalnız X'i değiştirmek femur ve
+// tibiayı da uzatıyordu; yay üzerinde dönüş mevcut stand yüksekliğini korur.
+// Sağ servo aynası: RF=135, RR=45; sol LF=45, LR=135.
+const float legNeutralFwdOffset[6] = {106.066f, 0.0f, -106.066f, 106.066f, 0.0f, -106.066f};
+const float legNeutralOutwardY[6]  = {106.066f, 150.0f, 106.066f, 106.066f, 150.0f, 106.066f};
 
 int pwmMin[6][3], pwmMax[6][3], offset[6][3];
 
@@ -3381,7 +3383,8 @@ void loop() {
       s_joyR = approach(s_joyR, 0.0, 0.12);
 
       for(int i=0; i<6; i++) {
-        calculate_body_ik_and_move(i, gaitX + legNeutralFwdOffset[i], (i < 3) ? -gaitY : gaitY, s_gaitZ);
+        calculate_body_ik_and_move(i, gaitX + legNeutralFwdOffset[i],
+                                   (i < 3) ? -legNeutralOutwardY[i] : legNeutralOutwardY[i], s_gaitZ);
       }
     }
     else if (currentMode == BEZIER_JOY) {
@@ -3468,7 +3471,7 @@ void loop() {
 
         float legBaseX = gaitX + legNeutralFwdOffset[i];
         float legX, legY, legZ;
-        float baseLegY = (i < 3) ? -gaitY : gaitY;
+        float baseLegY = (i < 3) ? -legNeutralOutwardY[i] : legNeutralOutwardY[i];
 
         if (t_leg < 0.5) {
           float bt = t_leg * 2.0;
@@ -3579,15 +3582,17 @@ void loop() {
           lift = 1.0f - u*u*u*(10.0f + u*(-15.0f + 6.0f*u));
         }
         for (int i = 0; i < 6; i++) {
-          float x = gaitX;
+          float neutralX = 0.0f;
           float z = s_gaitZ;
           for (int done = 0; done < standSplayIndex; done++)
-            if (STAND_SPLAY_ORDER[done] == i) x += legNeutralFwdOffset[i];
+            if (STAND_SPLAY_ORDER[done] == i) neutralX = legNeutralFwdOffset[i];
           if (STAND_SPLAY_ORDER[standSplayIndex] == i) {
-            x += legNeutralFwdOffset[i] * sweep;
+            neutralX = legNeutralFwdOffset[i] * sweep;
             z += STAND_SPLAY_LIFT_MM * lift;
           }
-          calculate_body_ik_and_move(i, x, (i < 3) ? -gaitY : gaitY, z);
+          const float outwardY = sqrtf(max(0.0f, gaitY*gaitY - neutralX*neutralX));
+          calculate_body_ik_and_move(i, gaitX + neutralX,
+                                     (i < 3) ? -outwardY : outwardY, z);
         }
         if (t >= 1.0f && maxDiffThisFrame < 1.0f) {
           standSplayIndex++;
