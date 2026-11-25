@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "frame": "X_FORWARD_Y_LEFT_Z_UP",
+  "units": "m_kg_rad_s",
+  "source": "firmware/v57_spine_safe_boot/v57_spine_safe_boot.ino (v57.33); masses and actuator dynamics are provisional",
+  "leg_order": ["RF", "RM", "RR", "LF", "LM", "LR"],
+  "hip_xyz_m": {
+    "RF": [0.125, -0.098, 0.0],
+    "RM": [0.0, -0.098, 0.0],
+    "RR": [-0.125, -0.098, 0.0],
+    "LF": [0.125, 0.098, 0.0],
+    "LM": [0.0, 0.098, 0.0],
+    "LR": [-0.125, 0.098, 0.0]
+  },
+  "mount_yaw_deg": {"RF": -90, "RM": -90, "RR": -90, "LF": 90, "LM": 90, "LR": 90},
+  "stand_coxa_rad": {"RF": 0.7853981634, "RM": 0, "RR": -0.7853981634, "LF": -0.7853981634, "LM": 0, "LR": 0.7853981634},
+  "links_m": {"coxa": 0.06966, "femur": 0.10324, "tibia": 0.16841},
+  "stand_joint_rad": {"femur": 0.723981492, "tibia": -2.276991532},
+  "body": {"size_m": [0.430, 0.260, 0.080], "mass_kg": 8.0, "status": "provisional"},
+  "link_mass_kg": {"coxa": 0.15, "femur": 0.25, "tibia": 0.35, "foot": 0.05, "status": "provisional"},
+  "foot_radius_m": 0.018,
+  "joint_torque_limit_nm": {"coxa": 4.0, "femur": 4.0, "tibia": 4.0, "status": "provisional"},
+  "actuator": {"kp": 100.0, "kv": 5.0, "status": "provisional"},
+  "ground_friction": 1.0
+}

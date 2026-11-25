@@ -1,0 +1,28 @@
+name: Robot learning offline checks
+
+on:
+  push:
+    paths:
+      - robot_learning/**
+      - .github/workflows/robot-learning.yml
+  pull_request:
+    paths:
+      - robot_learning/**
+      - .github/workflows/robot-learning.yml
+
+jobs:
+  physics-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: robot_learning/pyproject.toml
+      - run: python -m pip install -e './robot_learning[dev]'
+      - run: python -m ruff check robot_learning
+      - run: python -m ruff format --check robot_learning
+      - run: python -m pytest robot_learning/tests -q
+      - run: python -m apex_rl.cli build
+      - run: python -m apex_rl.cli smoke --steps 100

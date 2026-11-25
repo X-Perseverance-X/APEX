@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "frame": "X_FORWARD_Y_LEFT_Z_UP",
+  "notes": "Fill with measured values, method, instrument, uncertainty and date. Null means unknown; never replace with a guessed value.",
+  "total_mass_kg": null,
+  "body_mass_kg": null,
+  "center_of_mass_m": {"xyz": null, "uncertainty": null},
+  "link_mass_kg": {"coxa": null, "femur_ds3240": null, "tibia": null},
+  "foot_radius_m": null,
+  "foot_surface": null,
+  "servo": {
+    "DS3240_femur": {
+      "supply_v": null,
+      "angle_vs_pwm_us": null,
+      "step_response_loaded_csv": null,
+      "max_rate_rad_s_loaded": null,
+      "deadband_rad": null,
+      "current_a_idle": null,
+      "current_a_moving": null
+    },
+    "BLS3225_coxa_tibia": {
+      "supply_v": null,
+      "angle_vs_pwm_us": null,
+      "step_response_loaded_csv": null,
+      "max_rate_rad_s_loaded": null,
+      "deadband_rad": null,
+      "current_a_idle": null,
+      "current_a_moving": null
+    }
+  },
+  "sensors": {
+    "imu_alignment_rpy_rad": null,
+    "foot_switch_delay_s": null,
+    "camera_intrinsics_file": null,
+    "lidar_to_body_transform_file": null
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "task": "stand",
+  "timesteps": 2048,
+  "seed": 42,
+  "domain_randomization": false,
+  "geometry_sha256": "8f14b57c1fb5916aea7442290dbbc3c3ca0ae17e54defb8bc0d9b9e857394621",
+  "python": "3.12.9",
+  "mujoco": "3.17.0",
+  "stable_baselines3": "2.9.2",
+  "policy_export_allowed": false,
+  "reason": "physical mass, torque, lag and contact parameters are not identified"
+}

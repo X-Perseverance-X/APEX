@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "episodes": 3,
+  "seed_start": 10042,
+  "task": "stand",
+  "results": {
+    "zero": {"mean_reward": 2498.4911371535563, "mean_length": 1000.0, "falls": 0},
+    "policy": {"mean_reward": 2498.314359828709, "mean_length": 1000.0, "falls": 0}
+  },
+  "interpretation": "pipeline smoke test only; trained policy did not outperform zero-action baseline",
+  "hardware_validated": false
+}
