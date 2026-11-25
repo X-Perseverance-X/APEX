@@ -35,7 +35,7 @@
 #include "DFRobotDFPlayerMini.h"
 #include "Adafruit_VL53L1X.h"
 
-#define APEX_FIRMWARE_VERSION "v57.31-stand-splay-body-ik"
+#define APEX_FIRMWARE_VERSION "v57.32-body-frame-gait"
 #define APEX_BUILD_PROFILE    "esp32s3-n16r8-generic"
 
 WebServer server(80);
@@ -374,8 +374,12 @@ const float MANUAL_LAB_MAX_SPEED_DEG_S = 24.0f;
 const float MANUAL_LAB_MAX_ACCEL_DEG_S2 = 60.0f;
 float manualJointVelocityDegS[6][3] = {{0.0f}};
 const float MIN_DYNAMIC_GAIT_CYCLE_MS = 900.0f;
-const float GAIT_LAG_SOFT_DEG = 2.5f;
-const float GAIT_LAG_HARD_DEG = 9.0f;
+const float GAIT_LAG_SOFT_DEG = 5.0f;
+const float GAIT_LAG_HARD_DEG = 15.0f;
+// The PS3 gateway sends 0.18 at full stick in its default speed mode.
+// Reach usable stride/clearance there without making small inputs abrupt.
+const float GAIT_FULL_STRIDE_INPUT = 0.25f;
+const float GAIT_FULL_LIFT_INPUT = 0.18f;
 const float GAIT_CONTACT_SLOPE = -0.55f;
 float controlFrameDtS = 0.020f;
 float gaitTrackingErrorDeg = 0.0f;
@@ -3411,7 +3415,7 @@ void loop() {
         // bölgeyi eski 1/mag yasası gibi aşırı yavaşlatmaz. DS3240 femurların
         // yetişemeyeceği çevrim ayrıca fiziksel alt sınıra sıkıştırılır.
         float speedMultiplier = pureTurnGaitActive ? max(s_joyMag, 0.1f)
-                                                   : sqrtf(max(s_joyMag, 0.08f));
+                                                   : sqrtf(max(s_joyMag, 0.04f) / GAIT_FULL_LIFT_INPUT);
         float cycleDuration = pureTurnGaitActive
                             ? baseSpeed / speedMultiplier
                             : max(baseSpeed / speedMultiplier, MIN_DYNAMIC_GAIT_CYCLE_MS);
@@ -3419,12 +3423,12 @@ void loop() {
         // Açık çevrim servoda gerçek konum geri bildirimi yok; buna rağmen
         // yazılımın sınırladığı currentPhysicalAngle ile istenen IK arasındaki
         // hata güvenilir bir hedefi-geride-bırakma göstergesidir. Fazı
-        // durdurmadan 0.22x'e kadar yavaşlatır; toparlanınca yumuşakça açar.
+        // durdurmadan en fazla 0.60x'e yavaşlatır; uzun takılmayı önler.
         float lagPhaseScale = 1.0f;
         if (!pureTurnGaitActive && gaitTrackingErrorDeg > GAIT_LAG_SOFT_DEG) {
           float lag = constrain((gaitTrackingErrorDeg - GAIT_LAG_SOFT_DEG) /
                                 (GAIT_LAG_HARD_DEG - GAIT_LAG_SOFT_DEG), 0.0f, 1.0f);
-          lagPhaseScale = 1.0f - 0.78f * lag;
+          lagPhaseScale = 1.0f - 0.40f * lag;
         }
         float phaseBlend = min(1.0f, controlFrameDtS * 7.0f);
         if (pureTurnGaitActive) gaitPhaseRateScale = 1.0f;
@@ -3435,8 +3439,12 @@ void loop() {
       }
       gaitCommandWasActive = joyMag > 0.05f || s_joyMag > 0.02f;
 
-      float vX =  s_joyY * s_len;
-      float vY = -s_joyX * s_len;
+      // The IK target is already in the robot's body frame (+X forward).
+      // Scale stick magnitude to a useful stride, then send the same body-X
+      // displacement to all six feet. A second hip-axis projection here made
+      // the front/rear ground strokes diagonal and nearly invisible.
+      float vX = constrain(s_joyY / GAIT_FULL_STRIDE_INPUT, -1.0f, 1.0f) * s_len;
+      float vY = -constrain(s_joyX / GAIT_FULL_STRIDE_INPUT, -1.0f, 1.0f) * s_len;
 
       // Araba diferansiyeli: sağ/sol taraf farklı BOYUNA adım uzunluğu, yanal bileşen YOK
       // joyR > 0: sağ taraf iç (kısa), sol taraf dış (uzun) → sağa viraj
@@ -3453,21 +3461,10 @@ void loop() {
 
         float sideSign = (i < 3) ? 1.0f : -1.0f;  // +1 sağ taraf, -1 sol taraf
 
-        // Coxa montaj düzlemi projeksiyonu (RF/RR açılı, RM dik; sol ayna).
-        // bodyOffset vektörü aynı zamanda bacağın radyal montaj yönünü verir.
-        // Gövde +X ileri komutu her bacağın kendi (local-X, outward-Y)
-        // düzlemine ayrılır. Böylece orta bacak coxası klasik sağ-sol süpürür;
-        // ön bacak hem teğetsel hem dışa, arka bacak teğetsel ve içe gider.
-        // Fiziksel ayak uçlarının üçünün de dünya/gövde izi yine dümdüz +X'tir.
-        const float mountRadius = sqrtf(bodyOffsetX[i]*bodyOffsetX[i] +
-                                        bodyOffsetY[i]*bodyOffsetY[i]);
-        const float forwardToLocalX = fabsf(bodyOffsetY[i]) / mountRadius;
-        const float forwardToLocalYOut = bodyOffsetX[i] / mountRadius;
-        const float outwardToBodyY = (i < 3) ? -1.0f : 1.0f;
-        float leg_vX = vX * forwardToLocalX - sideSign * diff;
-        // Mevcut ve fiziksel olarak başarılı yanal komut aynen korunur; yalnız
-        // ileri vektörün açılı coxa için gereken outward bileşeni eklenir.
-        float leg_vY = vY + outwardToBodyY * vX * forwardToLocalYOut;
+        // Pure yaw keeps its proven gait. Translation stays parallel to body
+        // X/Y for every leg; differential steering only changes X stroke.
+        float leg_vX = vX - sideSign * diff;
+        float leg_vY = vY;
 
         float legBaseX = gaitX + legNeutralFwdOffset[i];
         float legX, legY, legZ;
@@ -3498,7 +3495,9 @@ void loop() {
           legY = baseLegY + (leg_vY / 2.0) * swing_curve;
           // Small joystick input must not command full-height suspended legs.
           // At zero input the lift settles to zero with the smoothed command.
-          float liftBlend = constrain(s_joyMag / 0.35f, 0.0f, 1.0f);
+          float liftBlend = preservePureTurnGait
+                          ? constrain(s_joyMag / 0.35f, 0.0f, 1.0f)
+                          : constrain(s_joyMag / GAIT_FULL_LIFT_INPUT, 0.0f, 1.0f);
           float liftSin = sinf(bt * PI);
           float liftShape = preservePureTurnGait ? powf(liftSin, 4.0f)
                                                  : liftSin * liftSin;

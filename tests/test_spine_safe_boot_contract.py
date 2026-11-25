@@ -158,7 +158,7 @@ class SpineSafeBootContractTests(unittest.TestCase):
 
     def test_wired_deadman_remains_bounded(self):
         self.assertIn("MOTION_COMMAND_TIMEOUT_MS = 750UL", self.source)
-        self.assertIn('APEX_FIRMWARE_VERSION "v57.31-stand-splay-body-ik"', self.source)
+        self.assertIn('APEX_FIRMWARE_VERSION "v57.32-body-frame-gait"', self.source)
         self.assertLess(750, 1000)
 
     def test_failsafe_holds_last_joint_commands_without_idle_ik_jump(self):
@@ -190,7 +190,7 @@ class SpineSafeBootContractTests(unittest.TestCase):
         self.assertIn("st*st*st*(10.0f + st*(-15.0f + 6.0f*st))", gait)
 
     def test_translation_gait_has_continuous_ground_speed_and_lag_governor(self):
-        self.assertIn('APEX_FIRMWARE_VERSION "v57.31-stand-splay-body-ik"', self.source)
+        self.assertIn('APEX_FIRMWARE_VERSION "v57.32-body-frame-gait"', self.source)
         gait = self.source.split("else if (currentMode == BEZIER_JOY)", 1)[1].split(
             "else if (currentMode == HOME_RISE)", 1
         )[0]
@@ -200,15 +200,17 @@ class SpineSafeBootContractTests(unittest.TestCase):
             "gaitPhaseRateScale",
             "preservePureTurnGait",
             "GAIT_CONTACT_SLOPE*h10",
-            "forwardToLocalX",
-            "forwardToLocalYOut",
-            "outwardToBodyY",
+            "leg_vX = vX - sideSign * diff",
+            "leg_vY = vY",
+            "GAIT_FULL_STRIDE_INPUT",
+            "GAIT_FULL_LIFT_INPUT",
             "liftSin * liftSin",
         ):
             self.assertIn(contract, gait if contract not in {
                 "MIN_DYNAMIC_GAIT_CYCLE_MS", "gaitTrackingErrorDeg", "gaitPhaseRateScale"
             } else self.source)
         self.assertIn("pureTurnGaitActive ? max(s_joyMag, 0.1f)", gait)
+        self.assertNotIn("forwardToLocalX", gait)
         self.assertIn("maxStep = 120.0f * controlFrameDtS", self.source)
 
         # Translation swing and stance Hermite curves share the same non-zero
