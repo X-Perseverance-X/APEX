@@ -35,7 +35,7 @@
 #include "DFRobotDFPlayerMini.h"
 #include "Adafruit_VL53L1X.h"
 
-#define APEX_FIRMWARE_VERSION "v57.30-usb-arc-gait"
+#define APEX_FIRMWARE_VERSION "v57.31-stand-splay-body-ik"
 #define APEX_BUILD_PROFILE    "esp32s3-n16r8-generic"
 
 WebServer server(80);
@@ -304,9 +304,10 @@ unsigned long lastCameraGimbalUpdateMs = 0;
 float armGripperOpenDeg  = 90.0f;
 float armGripperCloseDeg = 120.0f;
 
-// Gerçek hexapod duruş açıları (leg-local IK çerçevesinde bacak nötr X ofseti):
-// Tüm bacaklar 90° nötr: simetrik duruş, maksimum yürüyüş hızı
-const float legNeutralFwdOffset[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+// 150 mm dışa Y hedefiyle ön/arka X hedefleri ±150 mm: geometrik coxa
+// 45°/135°. Sağ servolar mekanik ayna olduğu için RF=135, RR=45;
+// sol LF=45, LR=135. Orta bacaklar nötr kalır.
+const float legNeutralFwdOffset[6] = {150.0f, 0.0f, -150.0f, 150.0f, 0.0f, -150.0f};
 
 int pwmMin[6][3], pwmMax[6][3], offset[6][3];
 
@@ -393,6 +394,10 @@ float maxDiffThisFrame = 0.0;
 // --- KALKIŞ FAZ KONTROLÜ ---
 int           homeRisePhase   = 0;
 unsigned long homeRisePhaseMs = 0;
+int           standSplayIndex = 0;
+const int     STAND_SPLAY_ORDER[4] = {0, 5, 3, 2};
+const unsigned long STAND_SPLAY_LEG_MS = 3200UL;
+const float   STAND_SPLAY_LIFT_MM = 25.0f;
 
 // --- HOME POZİSYONU ---
 float homeAngles[6][3];  // NVS'den yüklenen başlangıç açıları
@@ -1256,6 +1261,26 @@ void handleUsbPeripheralCommand(const String& line) {
       stepLift = constrain(lift, 0.0f, 180.0f);
       baseSpeed = constrain(speed, 250.0f, 5000.0f);
       usbAck(id, true, "PARAMS_SET");
+      return;
+    }
+    if (action == "BODY" && count == 7) {
+      const float pitch = fields[4].toFloat(), roll = fields[5].toFloat();
+      const float yaw = fields[6].toFloat();
+      if (!isfinite(pitch) || !isfinite(roll) || !isfinite(yaw) ||
+          fabsf(pitch) > 30.0f || fabsf(roll) > 30.0f || fabsf(yaw) > 45.0f) {
+        usbAck(id, false, "BODY_RANGE");
+        return;
+      }
+      if (!legOutputsArmed || (spineState != SPINE_STAND && spineState != SPINE_WALK)) {
+        usbAck(id, false, "BODY_REQUIRES_STAND");
+        return;
+      }
+      if (currentMode != IDLE && currentMode != BEZIER_JOY) {
+        usbAck(id, false, "BODY_REQUIRES_IK_MODE");
+        return;
+      }
+      bodyPitch = pitch; bodyRoll = roll; bodyYaw = yaw;
+      usbAck(id, true, "BODY_OK");
       return;
     }
     if (action == "JOY" && count == 7) {
@@ -2273,6 +2298,7 @@ bool beginStandupSequence(String &reason) {
   manualTargetsInitialized = false;
   homeRisePhase = 0;
   homeRisePhaseMs = millis();
+  standSplayIndex = 0;
   bootSoftStart = false;
   bootMotionBlend = 1.0f;
   safeTransitionActive = true;
@@ -3530,12 +3556,52 @@ void loop() {
                                      (i < 3) ? -gaitY : gaitY, s_gaitZ);
 
         if (!bootSoftStart && maxDiffThisFrame < 1.0f) {
-          homeRisePhase   = 0;
-          homeRisePhaseMs = 0;
-          currentMode     = IDLE;
-          spineState      = SPINE_STAND;
-          safeTransitionActive = false;
-          addLog("[SAFETY] Kontrollu kalkis tamamlandi; STAND aktif.\n");
+          homeRisePhase = 2;
+          homeRisePhaseMs = currentMillis;
+          standSplayIndex = 0;
+          addLog("[SAFETY] Yukselme tamam; on/arka bacaklar tek tek kaldirilip aciliyor.\n");
+        }
+      }
+      else if (homeRisePhase == 2) {
+        const unsigned long elapsed = currentMillis - homeRisePhaseMs;
+        const float t = constrain(elapsed / (float)STAND_SPLAY_LEG_MS, 0.0f, 1.0f);
+        float sweep = 0.0f, lift = 0.0f;
+        if (t < 0.25f) {
+          const float u = t * 4.0f;
+          lift = u*u*u*(10.0f + u*(-15.0f + 6.0f*u));
+        } else if (t < 0.75f) {
+          const float u = (t - 0.25f) * 2.0f;
+          sweep = u*u*u*(10.0f + u*(-15.0f + 6.0f*u));
+          lift = 1.0f;
+        } else {
+          const float u = (t - 0.75f) * 4.0f;
+          sweep = 1.0f;
+          lift = 1.0f - u*u*u*(10.0f + u*(-15.0f + 6.0f*u));
+        }
+        for (int i = 0; i < 6; i++) {
+          float x = gaitX;
+          float z = s_gaitZ;
+          for (int done = 0; done < standSplayIndex; done++)
+            if (STAND_SPLAY_ORDER[done] == i) x += legNeutralFwdOffset[i];
+          if (STAND_SPLAY_ORDER[standSplayIndex] == i) {
+            x += legNeutralFwdOffset[i] * sweep;
+            z += STAND_SPLAY_LIFT_MM * lift;
+          }
+          calculate_body_ik_and_move(i, x, (i < 3) ? -gaitY : gaitY, z);
+        }
+        if (t >= 1.0f && maxDiffThisFrame < 1.0f) {
+          standSplayIndex++;
+          homeRisePhaseMs = currentMillis;
+          if (standSplayIndex >= 4) {
+            homeRisePhase = 0;
+            currentMode = IDLE;
+            spineState = SPINE_STAND;
+            safeTransitionActive = false;
+            addLog("[SAFETY] Coxalar acildi; kontrollu STAND aktif.\n");
+          }
+        } else if (elapsed > 7000UL) {
+          triggerMotionFailsafe();
+          addLog("[SAFETY] STAND coxa acilimi zaman asimi; eklemler HOLD.\n");
         }
       }
     }

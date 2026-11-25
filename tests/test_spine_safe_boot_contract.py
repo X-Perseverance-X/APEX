@@ -82,6 +82,25 @@ class SpineSafeBootContractTests(unittest.TestCase):
             "MANUAL_LAB_MAX_ACCEL_DEG_S2 * controlFrameDtS",
             self.source,
         )
+
+    def test_stand_splays_front_and_rear_to_mirrored_coxa_angles(self):
+        match = re.search(r"legNeutralFwdOffset\[6\]\s*=\s*\{([^}]+)\}", self.source)
+        self.assertIsNotNone(match)
+        offsets = [float(value.strip().rstrip("f")) for value in match.group(1).split(",")]
+        self.assertEqual(len(offsets), 6)
+        geometric = [math.degrees(math.atan2(150.0, x)) for x in offsets]
+        servo = [180.0 - angle if leg < 3 else angle for leg, angle in enumerate(geometric)]
+        for actual, expected in zip(servo, [135, 90, 45, 45, 90, 135]):
+            self.assertAlmostEqual(actual, expected)
+        self.assertIn("homeRisePhase = 2;", self.source)
+        self.assertIn("STAND_SPLAY_LIFT_MM * lift", self.source)
+        self.assertIn("STAND_SPLAY_ORDER[standSplayIndex]", self.source)
+
+    def test_body_ik_is_guarded_on_both_usb_ends(self):
+        self.assertIn('if (action == "BODY" && count == 7)', self.source)
+        self.assertIn('"BODY_REQUIRES_STAND"', self.source)
+        self.assertIn('if SPINE_USB_PREFER and path == "/bodyIk":', self.server)
+        self.assertIn('"SPINE", "BODY"', self.server)
         self.assertIn(
             "safeTransitionActive && currentMode != HOME_RISE",
             self.source,
@@ -133,7 +152,7 @@ class SpineSafeBootContractTests(unittest.TestCase):
 
     def test_wired_deadman_remains_bounded(self):
         self.assertIn("MOTION_COMMAND_TIMEOUT_MS = 750UL", self.source)
-        self.assertIn('APEX_FIRMWARE_VERSION "v57.30-usb-arc-gait"', self.source)
+        self.assertIn('APEX_FIRMWARE_VERSION "v57.31-stand-splay-body-ik"', self.source)
         self.assertLess(750, 1000)
 
     def test_failsafe_holds_last_joint_commands_without_idle_ik_jump(self):
@@ -165,7 +184,7 @@ class SpineSafeBootContractTests(unittest.TestCase):
         self.assertIn("st*st*st*(10.0f + st*(-15.0f + 6.0f*st))", gait)
 
     def test_translation_gait_has_continuous_ground_speed_and_lag_governor(self):
-        self.assertIn('APEX_FIRMWARE_VERSION "v57.30-usb-arc-gait"', self.source)
+        self.assertIn('APEX_FIRMWARE_VERSION "v57.31-stand-splay-body-ik"', self.source)
         gait = self.source.split("else if (currentMode == BEZIER_JOY)", 1)[1].split(
             "else if (currentMode == HOME_RISE)", 1
         )[0]

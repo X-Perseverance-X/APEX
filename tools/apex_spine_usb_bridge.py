@@ -197,7 +197,7 @@ def send_peripheral_command(
         "CAM_GIMBAL": {"CENTER", "ON", "OFF", "SET", "STABILIZE"},
         "AUDIO": {"INIT", "PLAY", "STOP", "NEXT", "PREV", "VOL"},
         "LEG_LAB": {"SET", "POSE", "ON", "OFF"},
-        "SPINE": {"STAND", "MODE", "JOY", "PARAMS"},
+        "SPINE": {"STAND", "MODE", "JOY", "PARAMS", "BODY"},
     }
     if device not in allowed or action not in allowed[device]:
         return {"ok": False, "message": "command not allowed", "status": "ERR"}
@@ -219,6 +219,14 @@ def send_peripheral_command(
                 axes = []
             if len(axes) != 3 or any(not math.isfinite(axis) or abs(axis) > 1 for axis in axes):
                 return {"ok": False, "message": "invalid joystick", "status": "ERR"}
+        if action == "BODY":
+            try:
+                orientation = [float(part) for part in value.split(",")]
+            except ValueError:
+                orientation = []
+            if len(orientation) != 3 or any(not math.isfinite(angle) for angle in orientation) or \
+                    abs(orientation[0]) > 30 or abs(orientation[1]) > 30 or abs(orientation[2]) > 45:
+                return {"ok": False, "message": "invalid body orientation", "status": "ERR"}
         if action == "PARAMS" and value:
             try:
                 params = [float(part) for part in value.split(",")]
@@ -232,8 +240,9 @@ def send_peripheral_command(
         leg_lab_pose = device == "LEG_LAB" and action == "POSE" and value.count(",") == 3
         leg_lab_switch = device == "LEG_LAB" and action in {"ON", "OFF"} and value.count(",") == 1
         spine_joy = device == "SPINE" and action == "JOY" and value.count(",") == 2
+        spine_body = device == "SPINE" and action == "BODY" and value.count(",") == 2
         spine_params = device == "SPINE" and action == "PARAMS" and value.count(",") == 3
-        if not (atomic_pair or leg_lab_set or leg_lab_pose or leg_lab_switch or spine_joy or spine_params):
+        if not (atomic_pair or leg_lab_set or leg_lab_pose or leg_lab_switch or spine_joy or spine_body or spine_params):
             return {"ok": False, "message": "invalid value", "status": "ERR"}
 
     with state.lock:

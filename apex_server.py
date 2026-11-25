@@ -2942,6 +2942,15 @@ async def _proxy_to_esp32(path: str, query: dict, *, force_fresh: bool = False) 
         if any(not math.isfinite(axis) or abs(axis) > 1 for axis in axes):
             return JSONResponse({"ok": False, "error": "gecersiz joystick"}, status_code=400)
         return await _usb_peripheral_command("SPINE", "JOY", ",".join(f"{axis:.3f}" for axis in axes))
+    if SPINE_USB_PREFER and path == "/bodyIk":
+        try:
+            angles = [float(query[key]) for key in ("p", "r", "y")]
+        except (KeyError, TypeError, ValueError):
+            return JSONResponse({"ok": False, "error": "pitch/roll/yaw gerekli"}, status_code=400)
+        if any(not math.isfinite(angle) for angle in angles) or \
+                abs(angles[0]) > 30 or abs(angles[1]) > 30 or abs(angles[2]) > 45:
+            return JSONResponse({"ok": False, "error": "body IK aci siniri asildi"}, status_code=400)
+        return await _usb_peripheral_command("SPINE", "BODY", ",".join(f"{angle:.1f}" for angle in angles))
     if SPINE_USB_PREFER and path == "/mode":
         requested = query.get("m")
         if requested not in {"idle", "bezier_joy"}:
