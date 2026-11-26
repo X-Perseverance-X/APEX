@@ -1,3 +1,4 @@
+import json
 import math
 import re
 import xml.etree.ElementTree as ET
@@ -9,7 +10,7 @@ import pytest
 
 from apex_rl.contract import LEG_ORDER, load_contract, validate_contract
 from apex_rl.env import Meta1Env
-from apex_rl.model import build_xml, stand_joint_angles
+from apex_rl.model import LEG_MESH_DIR, build_xml, stand_joint_angles
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -51,6 +52,26 @@ def test_mjcf_compiles_and_stands_on_six_contacts():
     assert np.isfinite(data.qpos).all()
     assert data.qpos[2] == pytest.approx(0.118, abs=0.01)
     assert data.ncon >= 6
+
+
+def test_mark2_mesh_alignment_and_conservative_limits():
+    cfg = load_contract()
+    cad = json.loads((LEG_MESH_DIR / "manifest.json").read_text(encoding="utf-8"))
+    model = mujoco.MjModel.from_xml_string(build_xml())
+    assert model.nmesh == 8
+    assert mujoco.mj_getTotalmass(model) == pytest.approx(cfg["mass_profile"]["design_total_kg"])
+    for leg in LEG_ORDER:
+        for joint, length in cfg["links_m"].items():
+            assert cad["cad_pivot_distances_mm"][joint] == pytest.approx(length * 1000, abs=1)
+            geom = model.geom(f"{leg.lower()}_{joint}_cad")
+            assert int(geom.contype[0]) == 0 and int(geom.conaffinity[0]) == 0
+            torque = cfg["joint_torque_limit_nm"][joint]
+            assert model.actuator(f"{leg.lower()}_{joint}_servo").forcerange == pytest.approx(
+                [-torque, torque]
+            )
+    for axis in ("pan", "tilt"):
+        servo_size = model.geom(f"camera_{axis}_SG90_case").size
+        assert 2 * servo_size == pytest.approx(cfg["servo_case_size_m"]["SG90"])
 
 
 def test_sensor_frames_and_camera_rotation():
@@ -95,8 +116,12 @@ def test_tof_measures_forward_obstacle():
     model = mujoco.MjModel.from_xml_string(ET.tostring(scene, encoding="unicode"))
     data = mujoco.MjData(model)
     mujoco.mj_resetDataKeyframe(model, data, 0)
-    mujoco.mj_forward(model, data)
-    assert data.sensor("forward_tof").data[0] == pytest.approx(1.0)
+    for pan in np.deg2rad([-45, 0, 45]):
+        for tilt in np.deg2rad([-45, 0, 45]):
+            data.joint("camera_pan_joint").qpos[0] = pan
+            data.joint("camera_tilt_joint").qpos[0] = tilt
+            mujoco.mj_forward(model, data)
+            assert data.sensor("forward_tof").data[0] == pytest.approx(1.0)
 
 
 def test_gymnasium_step_and_deterministic_seed():

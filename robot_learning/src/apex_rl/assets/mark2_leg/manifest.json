@@ -1,0 +1,48 @@
+{
+  "source": "MARK_2_LEG.SLDASM",
+  "source_sha256": {
+    "MARK_2_LEG.SLDASM": "91ffac4a8d24c556a69a3617840c7f20e661114cf13aba7fc5b8ac22d838cb7b",
+    "Coxa_Body.STL": "71085da581e1ab50836ff7f3a8b562242e3e23dc8d2880b83b52b89f92d1bf7c",
+    "Coxa_head.STL": "0cacffbe92c59a0c1f6ab0d2b00fdb69c3c0a62ce07123e812aa3fe118c6fdec",
+    "Tibia_Holder_1.STL": "1fb3fc8a12183a2557b684b30ed386d45c80f8e6c6348d821904023b1d4361fc",
+    "Tibia_Holder_3.STL": "c451e8935c45d66c6ab9b98a6be9eab3faa2eb6a234ed637ffa3122ff705a8c8",
+    "Tibia_1.STL": "b231c01c56a08e85c4e122dd0ad14a7b82e38ffeafe3446b5cd62d5a9566c6b6",
+    "Tibia_Head.STL": "d79ca2e003becf07cf5f39db253713fb75938dc8aee0afc7c18d6de97ff251ad",
+    "Tibia_Support_1.STL": "cb02ffd97042bab39f95963820db28eeb996f6bbe7db927d2c8c8cbaa8288936",
+    "Tibia_Support_2.STL": "3998f6a9efd6a91bf20b7dd5a79ed066af44256aab6277c25c9a72413a2d3c4c",
+    "Tibia_Support_3.STL": "99a3bda0755fec85909f15cdb49bbbc6e486d590848c266d595fcb74a74e4a46",
+    "Femur_Holder.STL": "e324929521b6842f6c374ceea8014f104b18c02aa86bcc8acd3273d693d89dc7",
+    "Tibia_Holder_2.STL": "4bdeacb2ce55c6852e61d1b614460bcc9713d52cb81d17afa7785acec4f7d48d"
+  },
+  "assembled_instances": {
+    "mount": [
+      "Coxa_Body-1"
+    ],
+    "coxa": [
+      "Coxa_head-1",
+      "AynalamaFemur_Holder-2"
+    ],
+    "femur": [
+      "Coxa_head-2",
+      "Coxa_head-3",
+      "Tibia_Holder_1-1",
+      "AynalamaTibia_Holder_2-2",
+      "Tibia_Holder_3-1"
+    ],
+    "tibia": [
+      "Tibia_1-1",
+      "Tibia_Head-1",
+      "Tibia_Support_1-1",
+      "Tibia_Support_2-1",
+      "Tibia_Support_3-1"
+    ]
+  },
+  "cad_pivot_distances_mm": {
+    "mount": 69.0,
+    "coxa": 69.0,
+    "femur": 103.238,
+    "tibia": 167.915
+  },
+  "units": "metres",
+  "mirror": "local Y"
+}

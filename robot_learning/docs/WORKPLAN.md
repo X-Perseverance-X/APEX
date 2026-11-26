@@ -44,8 +44,9 @@ take longer if there is no encoder, current sensor or calibrated scale.
   the existing Gazebo launch stays stable until parity tests are in place.
 - ROS/Gazebo xacro currently initializes all coxa joints at 0 rad. Firmware
   stand has front/rear coxa fan offsets of ±45°; the new MJCF uses those.
-- The kinematics lab body mass 8 kg and body dimensions 430×260×80 mm are
-  provisional. Actual batteries, AI HAT, wiring and head mass affect COM.
+- The 430×260×80 mm collision proxy and simulated 6 kg total mass are
+  provisional. The mass profile uses a 20% margin over the user's 5 kg estimate.
+  Actual batteries, AI HAT, wiring and head mass affect COM.
 - The hobby servos provide commands but no measured absolute joint angles in
   the current telemetry. Observation channels that require joint position
   feedback need an estimator or new encoders before real policy transfer.

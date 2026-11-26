@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import platform
+import shutil
 from pathlib import Path
 
 import mujoco
@@ -13,7 +14,7 @@ import numpy as np
 
 from .contract import load_contract
 from .env import Meta1Env
-from .model import build_xml
+from .model import LEG_MESH_DIR, build_xml
 
 PROJECT = Path(__file__).resolve().parents[2]
 
@@ -41,7 +42,10 @@ def main() -> None:
 
     if args.command == "build":
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(build_xml(), encoding="utf-8")
+        mesh_dir = args.output.parent / LEG_MESH_DIR.name
+        if mesh_dir.resolve() != LEG_MESH_DIR:
+            shutil.copytree(LEG_MESH_DIR, mesh_dir, dirs_exist_ok=True)
+        args.output.write_text(build_xml(mesh_dir=mesh_dir.name), encoding="utf-8")
         model = mujoco.MjModel.from_xml_path(str(args.output))
         print(
             json.dumps(

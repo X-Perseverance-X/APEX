@@ -8,8 +8,31 @@ from __future__ import annotations
 
 import math
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 from .contract import LEG_ORDER, load_contract
+
+LEG_MESH_DIR = Path(__file__).resolve().parent / "assets/mark2_leg"
+VISUAL_ONLY = {"mass": "0", "contype": "0", "conaffinity": "0", "group": "2"}
+
+
+def fmt(values):
+    return " ".join(f"{float(value):.9g}" for value in values)
+
+
+def add_servo_case(parent, name, dimensions, position, *, euler="0 0 0", color="0.08 0.09 0.10 1"):
+    length, width, height = dimensions
+    ET.SubElement(
+        parent,
+        "geom",
+        name=name,
+        type="box",
+        pos=fmt(position),
+        size=fmt([length / 2, width / 2, height / 2]),
+        euler=euler,
+        rgba=color,
+        **VISUAL_ONLY,
+    )
 
 
 def stand_joint_angles(config: dict | None = None) -> list[float]:
@@ -25,14 +48,18 @@ def stand_joint_angles(config: dict | None = None) -> list[float]:
     ]
 
 
-def build_xml(config: dict | None = None) -> str:
+def build_xml(config: dict | None = None, *, mesh_dir: str | Path = LEG_MESH_DIR) -> str:
     cfg = config or load_contract()
 
-    def fmt(values):
-        return " ".join(f"{float(value):.9g}" for value in values)
-
     root = ET.Element("mujoco", model="apex_meta1_rl_proxy")
-    ET.SubElement(root, "compiler", angle="radian", autolimits="true")
+    ET.SubElement(
+        root, "compiler", angle="radian", autolimits="true", meshdir=Path(mesh_dir).as_posix()
+    )
+    assets = ET.SubElement(root, "asset")
+    for side in ("left", "right"):
+        for link in ("mount", "coxa", "femur", "tibia"):
+            name = f"{link}_{side}"
+            ET.SubElement(assets, "mesh", name=name, file=f"{name}.stl")
     ET.SubElement(root, "option", timestep="0.002", integrator="implicitfast", gravity="0 0 -9.81")
     visual = ET.SubElement(root, "visual")
     ET.SubElement(visual, "global", offwidth="1280", offheight="720")
@@ -130,11 +157,32 @@ def build_xml(config: dict | None = None) -> str:
         name="tof_visual",
         type="box",
         pos=fmt(sensor_cfg["tof"]["xyz_m"]),
-        size="0.014 0.030 0.011",
+        size="0.004 0.011 0.006",
         mass="0",
         contype="0",
         conaffinity="0",
         rgba="0.02 0.02 0.025 1",
+    )
+    tof_x, tof_y, tof_z = sensor_cfg["tof"]["xyz_m"]
+    ET.SubElement(
+        torso,
+        "geom",
+        name="tof_mount",
+        type="capsule",
+        fromto=fmt([0.179, 0, 0.077, tof_x - 0.005, tof_y, tof_z]),
+        size="0.003",
+        rgba="0.15 0.17 0.18 1",
+        **VISUAL_ONLY,
+    )
+    ET.SubElement(
+        torso,
+        "geom",
+        name="tof_aperture",
+        type="box",
+        pos=fmt([tof_x + 0.004, tof_y, tof_z]),
+        size="0.0005 0.003 0.002",
+        rgba="0.28 0.34 0.40 1",
+        **VISUAL_ONLY,
     )
     # Approximate the narrow grey cage and recessed side slots in the photos.
     decorative = {"mass": "0", "contype": "0", "conaffinity": "0"}
@@ -191,27 +239,39 @@ def build_xml(config: dict | None = None) -> str:
         "femur": (-1.48353, 1.48353),
         "tibia": (-3.05433, -0.08727),
     }
-    colors = {"coxa": "0.05 0.06 0.07 1", "femur": "0.04 0.05 0.06 1", "tibia": "0.04 0.05 0.06 1"}
+    servo_sizes = cfg["servo_case_size_m"]
+    leg_color = "0.065 0.07 0.077 1"
     for leg in LEG_ORDER:
         prefix = leg.lower()
         mount = math.radians(float(cfg["mount_yaw_deg"][leg]))
+        yaw = f"0 0 {mount:.9g}"
+        side = "left" if leg.startswith("L") else "right"
+        mirror = -1 if side == "left" else 1
         x, y, z = cfg["hip_xyz_m"][leg]
         ET.SubElement(
             torso,
             "geom",
             name=f"{prefix}_hip_bracket",
-            type="box",
-            pos=fmt([x, y * 0.8, z + 0.009]),
-            size="0.024 0.026 0.012",
-            rgba="0.10 0.11 0.13 1",
-            **decorative,
+            type="mesh",
+            mesh=f"mount_{side}",
+            pos=fmt([x, y, z]),
+            euler=yaw,
+            rgba=leg_color,
+            **VISUAL_ONLY,
+        )
+        add_servo_case(
+            torso,
+            f"{prefix}_coxa_BLS3225_case",
+            servo_sizes["BLS3225"],
+            [x - 0.010 * math.cos(mount), y - 0.010 * math.sin(mount), z + 0.014],
+            euler=yaw,
         )
         hip = ET.SubElement(
             torso,
             "body",
             name=f"{prefix}_coxa",
             pos=fmt(cfg["hip_xyz_m"][leg]),
-            euler=f"0 0 {mount:.9g}",
+            euler=yaw,
         )
         parent = hip
         for joint in ("coxa", "femur", "tibia"):
@@ -241,36 +301,35 @@ def build_xml(config: dict | None = None) -> str:
                 fromto=f"0 0 0 {float(links[joint]):.9g} 0 0",
                 size="0.012",
                 mass=str(masses[joint]),
-                rgba=colors[joint],
+                rgba="0 0 0 0",
                 contype="0",
                 conaffinity="0",
             )
-            # Dual dark side plates approximate the visible 3D-printed leg
-            # brackets. They are visual-only, so photos do not invent inertia.
-            if joint in ("femur", "tibia"):
-                ET.SubElement(
+            ET.SubElement(
+                parent,
+                "geom",
+                name=f"{prefix}_{joint}_cad",
+                type="mesh",
+                mesh=f"{joint}_{side}",
+                rgba=leg_color,
+                **VISUAL_ONLY,
+            )
+            if joint == "coxa":
+                add_servo_case(
                     parent,
-                    "geom",
-                    name=f"{prefix}_{joint}_servo_case",
-                    type="box",
-                    pos=fmt([float(links[joint]) * 0.22, 0, 0.012]),
-                    size="0.021 0.015 0.012",
-                    rgba="0.10 0.11 0.13 1",
-                    **decorative,
+                    f"{prefix}_femur_DS3240_case",
+                    servo_sizes["DS3240"],
+                    [float(links["coxa"]) - 0.010, -0.007 * mirror, 0],
+                    euler="1.570796327 0 0",
                 )
-                for side, offset in (("inner", -0.016), ("outer", 0.016)):
-                    ET.SubElement(
-                        parent,
-                        "geom",
-                        name=f"{prefix}_{joint}_{side}_plate",
-                        type="box",
-                        pos=f"{float(links[joint]) / 2:.9g} {offset} 0",
-                        size=f"{float(links[joint]) / 2:.9g} 0.003 0.017",
-                        mass="0",
-                        contype="0",
-                        conaffinity="0",
-                        rgba="0.018 0.02 0.024 1",
-                    )
+            if joint == "tibia":
+                add_servo_case(
+                    parent,
+                    f"{prefix}_tibia_BLS3225_case",
+                    servo_sizes["BLS3225"],
+                    [0.012, -0.004 * mirror, 0],
+                    euler="1.570796327 0 0",
+                )
             torque = float(cfg["joint_torque_limit_nm"][joint])
             ET.SubElement(
                 actuators,
@@ -303,48 +362,91 @@ def build_xml(config: dict | None = None) -> str:
     pan_xyz = gimbal["pan_axis_xyz_m"]
     tilt_xyz = gimbal["tilt_axis_xyz_m"]
     camera_xyz = sensor_cfg["camera"]["xyz_m"]
+    add_servo_case(
+        torso,
+        "camera_pan_SG90_case",
+        servo_sizes["SG90"],
+        [pan_xyz[0] - 0.004, pan_xyz[1], pan_xyz[2] - 0.013],
+        color="0.06 0.22 0.48 1",
+    )
     pan = ET.SubElement(torso, "body", name="camera_pan_body", pos=fmt(pan_xyz))
     ET.SubElement(
-        pan, "inertial", pos="0 0 0", mass="0.001", diaginertia="0.000001 0.000001 0.000001"
+        pan,
+        "inertial",
+        pos="0.038 0 0.032",
+        mass=str(gimbal["pan_moving_mass_kg"]),
+        diaginertia="0.000002 0.000002 0.000002",
     )
     gimbal_range = fmt(map(math.radians, gimbal["limit_deg"]))
     ET.SubElement(
-        pan, "joint", name="camera_pan_joint", type="hinge", axis="0 0 1", range=gimbal_range
+        pan,
+        "joint",
+        name="camera_pan_joint",
+        type="hinge",
+        axis="0 0 1",
+        range=gimbal_range,
+        armature="0.000035",
+        damping="0.006",
     )
     ET.SubElement(
         pan,
         "geom",
-        name="camera_pan_visual",
-        type="cylinder",
-        pos="0 0 0.038",
-        size="0.038 0.014",
-        mass="0",
-        contype="0",
-        conaffinity="0",
-        rgba="0.02 0.025 0.03 1",
+        name="camera_pan_bracket",
+        type="box",
+        pos="0.025 0 0.022",
+        size="0.027 0.008 0.003",
+        rgba="0.10 0.12 0.14 1",
+        **VISUAL_ONLY,
     )
-    tilt = ET.SubElement(
-        pan, "body", name="camera_tilt_body", pos=fmt([b - a for a, b in zip(pan_xyz, tilt_xyz)])
+    tilt_local = [b - a for a, b in zip(pan_xyz, tilt_xyz)]
+    add_servo_case(
+        pan,
+        "camera_tilt_SG90_case",
+        servo_sizes["SG90"],
+        [tilt_local[0] - 0.004, tilt_local[1] - 0.013, tilt_local[2]],
+        euler="1.570796327 0 0",
+        color="0.06 0.22 0.48 1",
+    )
+    tilt = ET.SubElement(pan, "body", name="camera_tilt_body", pos=fmt(tilt_local))
+    ET.SubElement(
+        tilt,
+        "inertial",
+        pos="0.021 0 0.010",
+        mass=str(gimbal["tilt_moving_mass_kg"]),
+        diaginertia="0.000009 0.000003 0.000009",
     )
     ET.SubElement(
-        tilt, "inertial", pos="0 0 0", mass="0.001", diaginertia="0.000001 0.000001 0.000001"
-    )
-    ET.SubElement(
-        tilt, "joint", name="camera_tilt_joint", type="hinge", axis="0 1 0", range=gimbal_range
+        tilt,
+        "joint",
+        name="camera_tilt_joint",
+        type="hinge",
+        axis="0 1 0",
+        range=gimbal_range,
+        armature="0.000035",
+        damping="0.006",
     )
     ET.SubElement(
         tilt,
         "geom",
-        name="camera_head_visual",
+        name="camera_tilt_bracket",
         type="box",
         pos="0.008 0 0",
-        size="0.024 0.043 0.025",
-        mass="0",
-        contype="0",
-        conaffinity="0",
-        rgba="0.025 0.03 0.035 1",
+        size="0.018 0.025 0.003",
+        rgba="0.10 0.12 0.14 1",
+        **VISUAL_ONLY,
     )
     camera_local = [b - a for a, b in zip(tilt_xyz, camera_xyz)]
+    cx, cy, cz = camera_local
+    ET.SubElement(
+        tilt,
+        "geom",
+        name="camera_pcb",
+        type="box",
+        pos=fmt([cx - 0.015, cy, cz]),
+        size="0.001 0.0125 0.012",
+        rgba="0.06 0.21 0.15 1",
+        **VISUAL_ONLY,
+    )
     fov_h = math.radians(float(sensor_cfg["camera"]["horizontal_fov_deg"]))
     fov_v = math.degrees(2 * math.atan(math.tan(fov_h / 2) * 720 / 1280))
     ET.SubElement(
@@ -362,35 +464,46 @@ def build_xml(config: dict | None = None) -> str:
         type="cylinder",
         pos=fmt([camera_local[0] - 0.008, *camera_local[1:]]),
         euler=f"0 {math.pi / 2:.9g} 0",
-        size="0.011 0.006",
+        size="0.009 0.006",
         mass="0",
         contype="0",
         conaffinity="0",
         rgba="0.01 0.01 0.02 1",
     )
-    for side, y in (("right", -0.028), ("left", 0.028)):
+    for side, y in (("right", cy - 0.025), ("left", cy + 0.025)):
         ET.SubElement(
             tilt,
             "geom",
-            name=f"camera_ir_{side}_visual",
-            type="sphere",
-            pos=fmt([camera_local[0], y, camera_local[2]]),
-            size="0.007",
-            mass="0",
-            contype="0",
-            conaffinity="0",
-            rgba="0.5 0.55 0.6 1",
+            name=f"camera_ir_{side}_housing",
+            type="cylinder",
+            pos=fmt([cx - 0.009, y, cz]),
+            euler="0 1.570796327 0",
+            size="0.011 0.007",
+            rgba="0.11 0.12 0.14 1",
+            **VISUAL_ONLY,
         )
+        ET.SubElement(
+            tilt,
+            "geom",
+            name=f"camera_ir_{side}_emitter",
+            type="cylinder",
+            pos=fmt([cx - 0.001, y, cz]),
+            euler="0 1.570796327 0",
+            size="0.0075 0.001",
+            rgba="0.45 0.43 0.46 1",
+            **VISUAL_ONLY,
+        )
+    gimbal_torque = cfg["joint_torque_limit_nm"]["gimbal"]
     for joint in ("pan", "tilt"):
         ET.SubElement(
             actuators,
             "position",
             name=f"camera_{joint}_servo",
             joint=f"camera_{joint}_joint",
-            kp="5",
-            kv="0.2",
+            kp="1.8",
+            kv="0.015",
             ctrlrange=gimbal_range,
-            forcerange="-0.5 0.5",
+            forcerange=fmt([-gimbal_torque, gimbal_torque]),
         )
     angles = stand_joint_angles(cfg)
     qpos = [0, 0, height, 1, 0, 0, 0, *angles, 0, 0]

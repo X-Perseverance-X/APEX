@@ -55,6 +55,8 @@ class Meta1Env(gym.Env):
         self._leg_velocities = slice(6, 6 + self.nominal.size)
         self.joint_low = self.model.actuator_ctrlrange[self._legs, 0].copy()
         self.joint_high = self.model.actuator_ctrlrange[self._legs, 1].copy()
+        rates = self.config["leg_target_rate_deg_s"]
+        self._max_target_rate = np.deg2rad([rates[j] for j in ("coxa", "femur", "tibia")] * 6)
         self.action_space = spaces.Box(-1.0, 1.0, shape=(18,), dtype=np.float32)
         bounds = np.array(
             [5.0] * 3
@@ -171,11 +173,9 @@ class Meta1Env(gym.Env):
             raise ValueError("action must have 18 finite normalized joint offsets")
         action = np.clip(action, -1.0, 1.0)
         desired = np.clip(self.nominal + 0.25 * action, self.joint_low, self.joint_high)
-        # Bound the command rate, especially for the slower DS3240 femurs.
-        max_rate = np.array([math.radians(180), math.radians(100), math.radians(180)] * 6)
+        delta = self._max_target_rate * self.model.opt.timestep
         leg_controls = self.data.ctrl[self._legs]
         for _ in range(self.control_steps):
-            delta = max_rate * self.model.opt.timestep
             leg_controls[:] = np.clip(desired, leg_controls - delta, leg_controls + delta)
             mujoco.mj_step(self.model, self.data)
         rotation = _rotation_from_quaternion(self.data.qpos[3:7])

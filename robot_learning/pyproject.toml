@@ -20,7 +20,7 @@ apex-rl = "apex_rl.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-apex_rl = ["assets/*.json"]
+apex_rl = ["assets/*.json", "assets/mark2_leg/*.stl", "assets/mark2_leg/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,9 +1,14 @@
 # META-1 MuJoCo modeli ve fiziksel robot
 
-Model, üç robot fotoğrafındaki gri kafes gövdeyi, siyah çift plakalı bacakları,
-beyaz ayak uçlarını, üst LiDAR'ı ve öndeki hareketli kamera başını yaklaşık
-olarak gösterir. Bacak uzunlukları ve coxa montaj noktaları firmware v57.33 ile
-eşleşir. Kabuk, plaka ve sensör kasası ölçüleri fotoğraflardan yorumlandı.
+Gri kafes gövde ve üst LiDAR önceki modelden geliyor. Bacakların braketleri,
+delikleri ve kavisli tibia plakaları gönderilen `MARK_2_LEG.SLDASM` ve STL
+parçalarından alındı. Assembly'deki görünür parça dönüşümleriyle yerleştirilen
+geometri sağ ve sol bacaklar için aynalandı. Meshler gerçek ölçekte, yalnızca
+görselleştirme için kullanılıyor. Ayak temasları ve eklem merkezleri firmware
+v57.33 ile eşleşen fizik modeli üzerinden hesaplanıyor. CAD'den çıkarılan
+eklem aralıkları ile fizik modeli arasındaki fark üç bağlantıda da 1 mm altında.
+Diskteki montaj dosyalarını değiştirmeden dönüşümü yeniden üretmek için
+`tools/import_mark2_leg.py` betiğine kaynak CAD klasörünü verin.
 
 ## Gövde merkezinden sensör ve eklem konumları
 
@@ -18,8 +23,8 @@ Kamera ve pan/tilt konumları nötr poz için verilmiştir.
 | LiDAR | +135, 0, +108 | Kullanıcının ölçtüğü tarama merkezi. Gövdeye bağlı referans çerçevesi ve görünür kasa. 2B tarama paketi üretimi sonraki aşama. |
 | Pan ekseni | +130, 0, 0 | Kayıtlı eksen noktası. MuJoCo'da +Z etrafında, artı açı sola döner. |
 | Tilt ekseni | +178, 0, +40 | Kayıtlı eksen noktası. Pan ile taşınır, artı açı kamerayı aşağı çevirir. |
-| Kamera optik merkezi | +213, 0, +50 | Kullanıcı ölçüsü. Tilt ile taşınır. Nötrde ileri bakar. Yatay görüş açısı 16:9 görüntüde yaklaşık 78°. |
-| ToF | +230, 0, +28 | Kinematik laboratuvarındaki tahmini konum. ROS yapılandırmasında başka bir tahmin var. Model +X yönünde ideal mesafe ölçer. |
+| Kamera optik merkezi | +213, 0, +50 | Kullanıcı ölçüsü. Tilt ile taşınır. Nötrde ileri bakar. Yatay görüş açısı 16:9 görüntüde yaklaşık 78°. PCB, lens ve iki IR aydınlatıcı Waveshare Camera (F) benzeri. Kamera varyantı doğrulanmadı. |
+| ToF | +219, 0, +77 | Nötr lens merkezinin 27 mm üstünde ve 6 mm önünde varsayıldı. Gövdeye sabit ve +X yönünde ideal mesafe ölçer. |
 
 Pan ve tilt için 90° elektriksel merkez simülasyonda 0° olarak gösterilir.
 45°–135° komut aralığı ±45° eklem aralığına karşılık gelir. Gerçek sistemdeki
@@ -31,9 +36,10 @@ görüntüleyicisinde iki kamera eklemi ayrı hedeflerle sürülebilir.
 
 | Parça | Eldeki bilgi | Model durumu |
 | --- | --- | --- |
-| 6 femur servosu | Kullanıcı kaydı DS3240. ETR373 ürün belgesi 4.8–6.8 V, yüksüz 0.20–0.17 s/60°, stall torku 36–45 kgf·cm ve 60 g bildiriyor. | Belge referans. Temsili konum denetleyici ve femur komut hızı gerçek yük altında ölçülmüş değerler içermiyor. |
-| 12 coxa/tibia servosu | Kullanıcı kaydı BLS3225. Fotoğrafta bazı kasalarda 35 kg ibaresi görülüyor ve tam model kodu okunmuyor. Üreticinin DS3225 belgesi ayrı bir ürün için. | Takılı varyant ve yük altında tepki henüz doğrulanmadı. |
-| Gövde ve bacaklar | Fiziksel tartım ve ağırlık merkezi kaydı yok. | 8 kg gövde ve 12.802 kg toplam, simülasyon varsayımı. Kamera pan/tilt için iki küçük atalet gövdesi dahil. |
+| 6 femur servosu | DS3240 referansı. Kasa 40 × 20 × 40,5 mm. Belge 5 V'ta 3,53 N·m kilitli mil torku ve 300°/s yüksüz hız veriyor. | Temsili kasa, 2,15 N·m tork sınırı ve RL ortamında 100°/s hedef değişim sınırı. |
+| 12 coxa/tibia servosu | BLS3225 referansı. Kasa 40 × 20 × 38,5 mm. Belge 4,8 V'ta 1,47 N·m kilitli mil torku ve 750°/s yüksüz hız veriyor. Takılı varyant fotoğraftan doğrulanmadı. | Temsili kasa, 1,20 N·m tork sınırı ve RL ortamında 145°/s hedef değişim sınırı. |
+| 2 kamera servosu | TowerPro SG90 Analog referansı. Kasa 23 × 12,2 × 29 mm. Kilitli mil torku 4,8 V'ta yaklaşık 0,177 N·m. | Pan ve tilt gövdelerinde temsili kasa, 0,095 N·m tork sınırı. |
+| Gövde ve bacaklar | Kullanıcı tahmini toplam 5 kg. Parça tartımları ve ağırlık merkezi henüz ölçülmedi. | %20 yük payıyla 6,00 kg toplam. Bacak başı 0,40 kg, gövde 3,564 kg, hareketli kamera parçaları 0,036 kg. |
 
 Tam dolu standart 2S paket 8.4 V verir. Eldeki femur servoları ETR373
 belgesindeki 6.8 V azami gerilimli DS3240 varyantıysa doğrudan besleme bu sınırı
@@ -42,10 +48,11 @@ aşar. Takılı varyantın gerilim sınırı ve V+ ölçümü, servo kalibrasyon
 için yüklü hız, gecikme, akım, boşluk ve tork sınırı ayrıca ölçülür.
 
 - [ETR373 DS3240 ürün belgesi](https://etechrobot.com/wp-content/uploads/2026/04/DS-3240-40KG-High-Torque-Digital-Servo-Motor-Datasheet.pdf)
-- [DSSERVO DS3225 teknik belgesi](https://www.dsservo.com/d_file/DS3225%20datasheet.pdf)
+- [DSSERVO BLS3225 ölçü çizimi ve ürün özellikleri](https://www.zennixtek.com/products/dsservo-bls3225-servo-motor)
+- [TowerPro SG90 üretici verisi](https://towerpro.com.tw/product/sg90-analog/)
+- [Waveshare RPi Camera (F) ve IR aydınlatıcılar](https://www.waveshare.com/wiki/RPi_Camera_%28F%29)
 - [MuJoCo sensör ve eklem tanımları](https://mujoco.readthedocs.io/en/stable/XMLreference.html)
 
-Bu aşamanın çıktısı çalışan MuJoCo MJCF modelidir. Ölçüye birebir yüzey ve
-çarpışma geometrisi için parça CAD'leri veya ölçekli ortografik ölçüler gerekir.
-Simülasyon ile gerçek yürüyüşü karşılaştırmak için de çalışmaya hazır robotun
-tartımı, ağırlık merkezi, bacak kütleleri ve yüklü servo tepki kaydı gerekir.
+Bu aşamanın çıktısı MuJoCo MJCF modeli ve yanında taşınan `mark2_leg/` mesh
+klasörüdür. Bacak çarpışma geometrisi, sürtünme, kütle dağılımı ve servo tepki
+modeli fiziksel ölçümlerle doğrulandığında gerçek yürüyüşle karşılaştırılabilir.

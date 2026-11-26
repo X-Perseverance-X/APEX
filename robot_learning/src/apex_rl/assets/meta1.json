@@ -16,13 +16,14 @@
   "stand_coxa_rad": {"RF": 0.7853981634, "RM": 0, "RR": -0.7853981634, "LF": -0.7853981634, "LM": 0, "LR": 0.7853981634},
   "links_m": {"coxa": 0.06966, "femur": 0.10324, "tibia": 0.16841},
   "stand_joint_rad": {"femur": 0.723981492, "tibia": -2.276991532},
-  "body": {"size_m": [0.430, 0.260, 0.080], "mass_kg": 8.0, "status": "provisional"},
-  "link_mass_kg": {"coxa": 0.15, "femur": 0.25, "tibia": 0.35, "foot": 0.05, "status": "provisional"},
+  "body": {"size_m": [0.430, 0.260, 0.080], "mass_kg": 3.564, "status": "provisional"},
+  "mass_profile": {"reported_robot_kg": 5.0, "design_total_kg": 6.0, "status": "user_estimate_plus_20_percent"},
+  "link_mass_kg": {"coxa": 0.14, "femur": 0.12, "tibia": 0.12, "foot": 0.02, "status": "provisional_including_motor_mass"},
   "foot_radius_m": 0.018,
   "sensors": {
     "imu": {"xyz_m": [0.115, 0.015, 0.048], "status": "x_y_measured_z_pending"},
     "lidar": {"xyz_m": [0.135, 0.0, 0.108], "status": "user_measured", "scan_model": "reference_site_only"},
-    "tof": {"xyz_m": [0.230, 0.0, 0.028], "status": "provisional_from_kinematics_lab", "max_range_m": 4.0},
+    "tof": {"xyz_m": [0.219, 0.0, 0.077], "status": "provisional_body_fixed_above_camera_at_neutral", "max_range_m": 4.0},
     "camera": {"xyz_m": [0.213, 0.0, 0.050], "status": "user_measured", "horizontal_fov_deg": 78.0, "fov_status": "approximate_pending_calibration"},
     "gimbal": {
       "pan_axis_xyz_m": [0.130, 0.0, 0.0],
@@ -31,10 +32,18 @@
       "limit_deg": [-45.0, 45.0],
       "neutral_electrical_deg": 90.0,
       "pan_positive": "left",
-      "tilt_positive": "down"
+      "tilt_positive": "down",
+      "pan_moving_mass_kg": 0.012,
+      "tilt_moving_mass_kg": 0.024
     }
   },
-  "joint_torque_limit_nm": {"coxa": 4.0, "femur": 4.0, "tibia": 4.0, "status": "provisional"},
+  "joint_torque_limit_nm": {"coxa": 1.2, "femur": 2.15, "tibia": 1.2, "gimbal": 0.095, "status": "derated_simulation_limits"},
+  "leg_target_rate_deg_s": {"coxa": 145, "femur": 100, "tibia": 145},
   "actuator": {"kp": 100.0, "kv": 5.0, "status": "provisional"},
+  "servo_case_size_m": {
+    "BLS3225": [0.040, 0.020, 0.0385],
+    "DS3240": [0.040, 0.020, 0.0405],
+    "SG90": [0.023, 0.0122, 0.029]
+  },
   "ground_friction": 1.0
 }

@@ -6,7 +6,7 @@ PWM, SSH, or live command module. It cannot move the physical robot.
 ## Current scope
 
 - MuJoCo model with 18 leg joints and two independently driven camera joints.
-  The model includes a photo-based chassis and leg preview, six foot contacts,
+  The model includes a photo-based chassis, MARK 2 CAD leg visuals, six foot contacts,
   an IMU with gyro and accelerometer outputs, a LiDAR reference frame and a
   forward ToF ray. The camera follows the pan/tilt chain.
 - `+X` forward, `+Y` left, `+Z` up; leg order `RF RM RR LF LM LR`.
@@ -29,12 +29,14 @@ robot_learning/
   pyproject.toml                  installable Python package and tool configuration
   requirements-win-py312.lock    captured Windows/Python 3.12 dependency set
   src/apex_rl/assets/meta1.json  versioned robot geometry/dynamics contract
+  src/apex_rl/assets/mark2_leg/  derived left and right leg meshes and CAD provenance
   src/apex_rl/contract.py         units, frame, leg order, symmetry validation
   src/apex_rl/model.py            MJCF generator (physics proxy)
   src/apex_rl/env.py              Gymnasium tasks and rewards
   src/apex_rl/cli.py              build, smoke, train, evaluate entry points
   tests/                          geometry and physics contract tests
   tools/render_preview.py         offline visualization snapshot
+  tools/import_mark2_leg.py       regenerate link meshes from the supplied assembly and STLs
   config/physical_measurements.template.json
   docs/AS_BUILT_AUDIT.md           photo references, sensor poses and hardware evidence
   docs/WORKPLAN.md                staged system-identification and RL program
@@ -55,6 +57,9 @@ repository root in PowerShell:
 .runtime\sim-rl-env\Scripts\python.exe robot_learning\tools\render_preview.py
 .runtime\sim-rl-env\Scripts\python.exe -m apex_rl.cli view
 ```
+
+`build` writes `generated/meta1.xml` and copies the mesh directory next to it.
+Keep both together when opening the generated MJCF on another machine.
 
 For a new machine, create a Python 3.12 virtual environment and install the
 package from `robot_learning` with `python -m pip install -e ".[dev,train]"`.
