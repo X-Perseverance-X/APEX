@@ -10,7 +10,7 @@ import numpy as np
 from gymnasium import spaces
 
 from .contract import LEG_ORDER
-from .env import Meta1Env
+from .env import Meta1Env, _rotation_from_quaternion
 from .model import build_xml
 
 
@@ -20,11 +20,23 @@ class Course:
     risers: int
     edge_x: float = 0.62
     tread_m: float = 0.42
+    descending: bool = False
+
+    @property
+    def start_height(self) -> float:
+        return self.rise_m * self.risers if self.descending else 0.0
 
     def height(self, x: float, y: float = 0.0) -> float:
+        if self.descending:
+            if abs(y) > 0.60 or x < -1.25:
+                return 0.0
+            crossed = max(0, 1 + math.floor((x - self.edge_x) / self.tread_m))
+            return max(0, self.risers - crossed) * self.rise_m
         if abs(y) > 0.60 or x < self.edge_x or x >= self.last_edge + 1.25 or not self.risers:
             return 0.0
-        return min(self.risers, 1 + int((x - self.edge_x) / self.tread_m)) * self.rise_m
+        return (
+            min(self.risers, 1 + math.floor((x - self.edge_x) / self.tread_m + 1e-9)) * self.rise_m
+        )
 
     @property
     def last_edge(self) -> float:
@@ -38,6 +50,12 @@ class Course:
         root = ET.fromstring(build_xml(config))
         world = root.find("worldbody")
         base = world.find("body[@name='base']")
+        if self.descending:
+            key = root.find("keyframe/key[@name='stand']")
+            for element, attribute in ((key, "qpos"), (base, "pos")):
+                values = element.attrib[attribute].split()
+                values[2] = str(float(values[2]) + self.start_height)
+                element.set(attribute, " ".join(values))
         # Keep the existing box's mass/inertia. Use separate contact envelopes
         # for the CAD deck and visible low-mounted hardware near the risers.
         base.find("geom[@name='body_shell']").attrib.update(contype="0", conaffinity="0")
@@ -58,9 +76,14 @@ class Course:
                 rgba="0 0 0 0",
             )
         for i in range(self.risers):
-            start = self.edge_x + i * self.tread_m
-            depth = self.tread_m if i < self.risers - 1 else 1.25
-            height = (i + 1) * self.rise_m
+            if self.descending:
+                start = -1.25 if i == 0 else self.edge_x + (i - 1) * self.tread_m
+                depth = self.edge_x - start if i == 0 else self.tread_m
+                height = (self.risers - i) * self.rise_m
+            else:
+                start = self.edge_x + i * self.tread_m
+                depth = self.tread_m if i < self.risers - 1 else 1.25
+                height = (i + 1) * self.rise_m
             ET.SubElement(
                 world,
                 "geom",
@@ -88,11 +111,21 @@ class Course:
 COURSES = {
     "flat": Course(0, 0),
     "step-02": Course(0.02, 1),
+    "down-02": Course(0.02, 1, descending=True),
+    "step-03": Course(0.03, 1),
+    "down-03": Course(0.03, 1, descending=True),
+    "step-04": Course(0.04, 1),
+    "down-04": Course(0.04, 1, descending=True),
     "step-05": Course(0.05, 1),
+    "down-05": Course(0.05, 1, descending=True),
     "stairs-05": Course(0.05, 3),
+    "stairs-down-05": Course(0.05, 3, descending=True),
     "stairs-10": Course(0.10, 3),
+    "stairs-down-10": Course(0.10, 3, descending=True),
     "stairs-15": Course(0.15, 3),
+    "stairs-down-15": Course(0.15, 3, descending=True),
     "stairs-20": Course(0.20, 3),
+    "stairs-down-20": Course(0.20, 3, descending=True),
 }
 
 TRIPOD = np.array([0, 1, 0, 1, 0, 1], dtype=float) * 0.5
@@ -101,13 +134,31 @@ TRIPOD = np.array([0, 1, 0, 1, 0, 1], dtype=float) * 0.5
 class LocomotionEnv(Meta1Env):
     """PPO adjusts stride, clearance and forward bias on top of inverse kinematics."""
 
-    def __init__(self, course: str = "flat", *, randomize: bool = True, episode_steps: int = 1100):
+    def __init__(
+        self,
+        course: str = "flat",
+        *,
+        randomize: bool = True,
+        episode_steps: int | None = None,
+        record_pose: bool = False,
+    ):
         self.course_name = course
         self.course = COURSES[course]
-        self.period = 1.24 if course == "flat" else 1.80
-        super().__init__(
-            task="velocity", episode_steps=episode_steps, domain_randomization=randomize
+        self.adapt = self.course.descending or self.course.rise_m > 0.02
+        self.climbing = self.adapt and not self.course.descending
+        self.period = (
+            2.65
+            if self.climbing
+            else (2.20 if self.adapt else (1.24 if course == "flat" else 1.80))
         )
+        self.record_pose = record_pose
+        self.episode = -1
+        super().__init__(
+            task="velocity",
+            episode_steps=episode_steps or (1700 if self.adapt else 1100),
+            domain_randomization=randomize,
+        )
+        self.stand_height -= self.course.start_height
         self.action_space = spaces.Box(-1.0, 1.0, shape=(3,), dtype=np.float32)
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(85,), dtype=np.float32)
         self._base_observation_space = spaces.Box(-np.inf, np.inf, shape=(72,), dtype=np.float32)
@@ -161,6 +212,7 @@ class LocomotionEnv(Meta1Env):
         return math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
 
     def reset(self, *, seed=None, options=None):
+        self.episode += 1
         self.phase = 0.0
         self.supply_scale = 1.0
         self.pack_voltage_proxy_v = 8.0
@@ -173,9 +225,12 @@ class LocomotionEnv(Meta1Env):
         self.model.actuator_forcerange[self._legs] = self._leg_force_range
         super().reset(seed=seed, options={"command": [0.12, 0.0, 0.0]})
         if self.domain_randomization:
-            self.command[0] = self.np_random.uniform(0.10, 0.15)
+            speed = (0.075, 0.11) if self.adapt else (0.10, 0.15)
+            self.command[0] = self.np_random.uniform(*speed)
             self.pack_voltage_proxy_v = float(self.np_random.uniform(6.8, 8.0))
             self.supply_scale = self.pack_voltage_proxy_v / 8.0
+        elif self.adapt:
+            self.command[0] = 0.09
         self.model.actuator_forcerange[self._legs] = self._leg_force_range * self.supply_scale
         self.model.geom_friction[self._terrain_ids, 0] = self.model.geom_friction[0, 0]
         self.last_contacts = self._contacts().astype(bool)
@@ -184,16 +239,23 @@ class LocomotionEnv(Meta1Env):
 
     def _targets(self, residual: np.ndarray) -> np.ndarray:
         period = self.period
-        duty = 0.64
+        duty = 0.68 if self.climbing else (0.72 if self.adapt else 0.64)
         phase = (self.phase + TRIPOD) % 1.0
         swing = phase >= duty
         u = np.clip((phase - duty) / (1 - duty), 0, 1)
         ramp = min(1.0, self.steps * 0.02 / 0.75)
-        stride = float(self.command[0]) * period * duty * (1.0 + 0.35 * residual[0])
-        travel = np.clip((u - 0.22) / 0.58, 0, 1)
+        stride = (
+            float(self.command[0])
+            * (2.20 if self.climbing else period)
+            * duty
+            * (1.0 + 0.35 * residual[0])
+        )
+        delay, sweep = (0.28, 0.53) if self.climbing else (0.22, 0.58)
+        travel = np.clip((u - delay) / sweep, 0, 1)
         dx = stride * np.where(swing, -0.5 + (3 * travel**2 - 2 * travel**3), 0.5 - phase / duty)
         dx = ramp * dx + 0.013 * residual[2]
-        lift = np.clip(0.045 + self.course.rise_m * 0.65 + 0.035 * residual[1], 0.015, 0.13)
+        lift_scale = 0.30 if self.climbing else 0.65
+        lift = np.clip(0.045 + self.course.rise_m * lift_scale + 0.035 * residual[1], 0.015, 0.13)
         foot = self._neutral_foot.copy()
         foot[:, 0] += dx * np.cos(self.mount)
         foot[:, 1] -= dx * np.sin(self.mount)
@@ -209,12 +271,31 @@ class LocomotionEnv(Meta1Env):
         )
         for i in np.flatnonzero(swing):
             preview = max(0.0, stride * 0.5 - dx[i])
+            if self.climbing:
+                preview += self.config["foot_radius_m"] + 0.009
             landing = self.course.height(world_x[i] + preview * c, world_y[i] + preview * s)
-            terrain[i] = max(terrain[i], landing * min(1.0, u[i] / 0.28))
+            if self.adapt:
+                initial = self.course.height(
+                    world_x[i] - max(0.0, dx[i] + stride / 2) * c,
+                    world_y[i] - max(0.0, dx[i] + stride / 2) * s,
+                )
+                transfer = travel[i] if self.course.descending else min(1.0, u[i] / 0.28)
+                terrain[i] = max(terrain[i], initial + (landing - initial) * transfer)
+            else:
+                terrain[i] = max(terrain[i], landing * min(1.0, u[i] / 0.28))
         # Bounded vertical compensation helps the feet reach a tread as the body rises.
         height_adjustment = terrain - max(0.0, body_z - self.stand_height)
         foot[:, 2] += np.clip(height_adjustment, -0.12, 0.14)
         foot[:, 2] += ramp * lift * np.sin(np.pi * u) ** 2
+        if self.adapt:
+            # Express the planned foot motion relative to gravity when the pelvis pitches.
+            relative = np.column_stack((foot_x, foot_y, self.hip[:, 2] + foot[:, 2]))
+            world = relative @ np.array([[c, s, 0], [-s, c, 0], [0, 0, 1]])
+            body = world @ _rotation_from_quaternion(self.data.qpos[3:7]) - self.hip
+            mc, ms = np.cos(self.mount), np.sin(self.mount)
+            foot = np.column_stack(
+                (body[:, 0] * mc + body[:, 1] * ms, -body[:, 0] * ms + body[:, 1] * mc, body[:, 2])
+            )
 
         length, a, b = self.lengths
         radius = np.hypot(foot[:, 0], foot[:, 1]) - length
@@ -302,6 +383,12 @@ class LocomotionEnv(Meta1Env):
             "supply_scale": self.supply_scale,
             "pack_voltage_proxy_v": self.pack_voltage_proxy_v,
         }
+        if self.record_pose and (
+            self.steps % 5 == 0 or success or fallen or out or self.steps == self.episode_steps
+        ):
+            info["pose"] = self.data.qpos.round(5).tolist()
+            info["episode_id"] = self.episode
+            info["episode_step"] = self.steps
         return (
             self._observation(),
             reward,

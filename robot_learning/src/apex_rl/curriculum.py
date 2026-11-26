@@ -13,6 +13,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from .course_observability import training_recorder, watch_stage, write_report
 from .locomotion import COURSES, LocomotionEnv
 
 STAGES = tuple(COURSES)
@@ -21,6 +22,14 @@ EVALUATION_SEED = 1_000_000
 MIN_SUCCESS = 0.80
 MAX_FALLS = 0.10
 POLICY_FILE = "policy_sim_only.zip"
+REPLAY_MODELS = {
+    "b48bc1e3ddb0f1be1a92dd8c41a2e9f467070306f8796b9c6738f248368c7ed2": {
+        "flat",
+        "step-02",
+        "step-05",
+    },
+    "ea069691f75242c07b5cb6d25121bf3aecbdcaef17284dec6bafdc7e78b67c6c": {"down-02", "step-03"},
+}
 
 
 def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
@@ -33,12 +42,23 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     bench.add_argument("--course", choices=STAGES)
     bench.add_argument("--run", type=Path)
     bench.add_argument("--episodes", type=int, default=10)
+    bench.add_argument("--seed", type=int, default=EVALUATION_SEED)
+    watch = sub.add_parser(
+        "course-watch", help="watch the recorded training workers on separate lanes"
+    )
+    watch.add_argument(
+        "--run", type=Path, required=True, help="stage folder, not the experiment root"
+    )
+    watch.add_argument("--live", action="store_true", help="tail the recordings during training")
+    report = sub.add_parser("course-report", help="generate an offline HTML report")
+    report.add_argument("--run", type=Path, required=True, help="experiment root")
     train = sub.add_parser("course-train", help="train PPO with evaluation gates between courses")
     train.add_argument("--start", choices=STAGES, default=STAGES[0])
     train.add_argument("--through", choices=STAGES, default=STAGES[-1])
     train.add_argument("--timesteps", type=int, default=200_000, help="new transitions per stage")
     train.add_argument("--envs", type=int, default=4)
     train.add_argument("--eval-episodes", type=int, default=10)
+    train.add_argument("--eval-seed", type=int, default=EVALUATION_SEED)
     train.add_argument("--seed", type=int, default=42)
     train.add_argument("--resume", type=Path, help="load a previous stage policy and optimizer")
     train.add_argument("--output", type=Path, default=project / "runs/parkour")
@@ -57,7 +77,9 @@ def _read_policy(run: Path, env: LocomotionEnv, *, exact_course: bool, vector=No
     from stable_baselines3 import PPO
 
     manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
-    if manifest["schema"] != SCHEMA or manifest["model_sha256"] != _fingerprint(env):
+    match = manifest["model_sha256"] == _fingerprint(env)
+    legacy = manifest["course"] in REPLAY_MODELS.get(manifest["model_sha256"], ())
+    if manifest["schema"] != SCHEMA or not (match or legacy):
         raise ValueError("run uses an incompatible locomotion environment")
     if exact_course and manifest["course"] != env.course_name:
         raise ValueError("run course does not match requested course")
@@ -105,7 +127,7 @@ def _inspect(args) -> None:
     try:
         policy = _read_policy(args.run, env, exact_course=True) if args.run else None
         if args.command == "course-bench":
-            report = benchmark(env, policy, args.episodes)
+            report = benchmark(env, policy, args.episodes, seed=args.seed)
             print(json.dumps({"course": env.course_name, **report}, indent=2))
         else:
             _view(env, policy, args)
@@ -142,7 +164,7 @@ def _make_env(course: str, monitor_path: str):
     from stable_baselines3.common.monitor import Monitor
 
     return Monitor(
-        LocomotionEnv(course),
+        LocomotionEnv(course, record_pose=True),
         filename=monitor_path,
         info_keywords=("success", "fallen", "progress_m", "touchdowns", "pack_voltage_proxy_v"),
     )
@@ -172,6 +194,21 @@ def _train(args) -> None:
         )
         vector.seed(args.seed)
         try:
+            manifest = {
+                "schema": SCHEMA,
+                "course": course,
+                "seed": args.seed,
+                "eval_seed": args.eval_seed,
+                "envs": args.envs,
+                "total_transitions": None,
+                "model_sha256": _fingerprint(eval_env),
+                "python": platform.python_version(),
+                "mujoco": mujoco.__version__,
+                "stable_baselines3": sb3.__version__,
+                "policy_export_allowed": False,
+            }
+            manifest_path = stage / "manifest.json"
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             if policy is None and args.resume:
                 policy = _read_policy(args.resume, eval_env, exact_course=False, vector=vector)
             if policy is None:
@@ -190,24 +227,18 @@ def _train(args) -> None:
             else:
                 policy.set_env(vector)
             policy.learn(
-                total_timesteps=args.timesteps, reset_num_timesteps=False, tb_log_name=course
+                total_timesteps=args.timesteps,
+                reset_num_timesteps=False,
+                tb_log_name=course,
+                callback=training_recorder(stage),
             )
             policy.save(stage / POLICY_FILE)
-            manifest = {
-                "schema": SCHEMA,
-                "course": course,
-                "seed": args.seed,
-                "envs": args.envs,
-                "total_transitions": policy.num_timesteps,
-                "model_sha256": _fingerprint(eval_env),
-                "python": platform.python_version(),
-                "mujoco": mujoco.__version__,
-                "stable_baselines3": sb3.__version__,
-                "policy_export_allowed": False,
-            }
-            (stage / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-            evaluation = benchmark(eval_env, policy, args.eval_episodes)
-            baseline = benchmark(eval_env, None, args.eval_episodes)
+            manifest["total_transitions"] = policy.num_timesteps
+            updated = stage / "manifest.tmp"
+            updated.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+            updated.replace(manifest_path)
+            evaluation = benchmark(eval_env, policy, args.eval_episodes, seed=args.eval_seed)
+            baseline = benchmark(eval_env, None, args.eval_episodes, seed=args.eval_seed)
         finally:
             vector.close()
             eval_env.close()
@@ -222,13 +253,18 @@ def _train(args) -> None:
         }
         summary.append({"course": course, "passed": passed, **result})
         (args.output / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        write_report(args.output)
         print(json.dumps(summary[-1]), flush=True)
         if not passed:
             break
 
 
 def run_command(args, parser: argparse.ArgumentParser) -> None:
-    if args.command == "course-train":
+    if args.command == "course-watch":
+        watch_stage(args.run, live=args.live)
+    elif args.command == "course-report":
+        print(write_report(args.run))
+    elif args.command == "course-train":
         if not 1 <= args.envs <= 32:
             parser.error("--envs must be between 1 and 32")
         if args.timesteps < 512 or not 10 <= args.eval_episodes <= 100:
@@ -237,10 +273,14 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
             parser.error("--through must be at or after --start")
         if not 0 <= args.seed < EVALUATION_SEED - 32:
             parser.error("--seed must be below the evaluation seed range")
+        if args.eval_seed < EVALUATION_SEED:
+            parser.error("--eval-seed must be at or above 1000000")
         _train(args)
     else:
         if args.command == "course-bench" and not 1 <= args.episodes <= 100:
             parser.error("--episodes must be between 1 and 100")
+        if args.seed < 0:
+            parser.error("--seed must be nonnegative")
         if args.command == "course-view" and args.static and args.run:
             parser.error("--static cannot replay a learned policy")
         _inspect(args)

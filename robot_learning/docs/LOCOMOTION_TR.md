@@ -22,12 +22,48 @@ tekeriyle yakınlaş. Yeşil çizgi bitiştir.
 ```powershell
 & $py -m apex_rl.cli course-view --course stairs-05 --static
 & $py -m apex_rl.cli course-view --course stairs-20 --static
+& $py -m apex_rl.cli course-view --course stairs-down-20 --static
 ```
+
+## Eğitim robotlarını izle
+
+Bir aşama klasöründeki dört ayrı eğitim pistini tek pencerede izle:
+
+```powershell
+& $py -m apex_rl.cli course-watch --run robot_learning/runs/course-terrain-02/step-03
+```
+
+- `1`–`9` ilgili robotu, `[` ve `]` önceki veya sonraki robotu seçer.
+- `F` kamera takibini açar veya kapatır. `O` genel görünüme döner.
+- `P` oynatmayı duraklatır. `R` kaydı başa alır.
+- Fareyle döndür veya kaydır. Tekerlekle yakınlaş.
+
+Görüntü, PPO'nun gerçek paralel ortamlarından kaydedilen pozları kullanır.
+Oynatma yaklaşık 10 Hz hızında son 120 simülasyon saniyesini gösterir.
+Tam kayıt `tracks.jsonl` dosyasındadır. Çalışan bir aşamayı izlemek için
+aynı komuta `--live` ekle. Canlı izleyici en son örneğe yetişir.
+
+Her koşunun kökünde `report.html` ve `summary.json` bulunur. Raporda
+iterasyon başına başarı, düşme, ödül, ilerleme ve geçiş/saniye grafikleri ile
+ayrı değerlendirme bölümleri var. Raporu eğitim sırasında yenilemek için:
+
+```powershell
+& $py -m apex_rl.cli course-report --run robot_learning/runs/course-terrain-02
+```
+
+Canlı grafikler için TensorBoard'u çalıştır. Tarayıcıda
+`http://127.0.0.1:6006` adresini aç:
+
+```powershell
+& $py -m tensorboard.main --logdir robot_learning/runs/course-terrain-02/tensorboard --host 127.0.0.1 --port 6006
+```
+
+## Eğit
 
 Başlangıç eğitimi ve ölçümü:
 
 ```powershell
-& $py -m apex_rl.cli course-train --through stairs-20 --envs 4 --timesteps 200000 --output robot_learning/runs/course-try-01
+& $py -m apex_rl.cli course-train --through stairs-down-20 --envs 4 --timesteps 200000 --output robot_learning/runs/course-try-01
 ```
 
 Her seviye ayrı `evaluation.json` ve model dosyası alır. `summary.json`
@@ -59,18 +95,34 @@ Parkuru baştan eğitmek için ilk eğitim komutunu yeni bir çıktı klasörüy
 | Seviye | Parkur | Başarı |
 | --- | --- | --- |
 | `flat` | 1,2 m düz zemin | Dengeli biçimde bitişi geç |
-| `step-02` | 2 cm tek basamak | Altı ayağın tamamını üst platforma taşı |
-| `step-05` | 5 cm tek basamak | Altı ayağın tamamını üst platforma taşı |
-| `stairs-05` | 3 × 5 cm | Üç rıhtı geç ve üst platforma ulaş |
-| `stairs-10` | 3 × 10 cm | Aynı test |
-| `stairs-15` | 3 × 15 cm | Aynı test |
-| `stairs-20` | 3 × 20 cm | Aynı test |
+| `step-02`, `down-02` | 2 cm tek basamak | Altı ayağın tamamıyla çık veya in |
+| `step-03`, `down-03` | 3 cm tek basamak | Altı ayağın tamamıyla çık veya in |
+| `step-04`, `down-04` | 4 cm tek basamak | Altı ayağın tamamıyla çık veya in |
+| `step-05`, `down-05` | 5 cm tek basamak | Altı ayağın tamamıyla çık veya in |
+| `stairs-05`, `stairs-down-05` | 3 × 5 cm | Üç basamağı tamamla |
+| `stairs-10`, `stairs-down-10` | 3 × 10 cm | Üç basamağı tamamla |
+| `stairs-15`, `stairs-down-15` | 3 × 15 cm | Üç basamağı tamamla |
+| `stairs-20`, `stairs-down-20` | 3 × 20 cm | Üç basamağı tamamla |
 
 Bir seviyeden sonraki seviyeye geçiş için ayrı tohumlarla en az %80 başarı
 ve en fazla %10 düşme kabul edilir. Bu ilk proje eşikleri. Fiziksel aktarım
 öncesinde daha büyük örneklem ve eğitim sırasında kullanılmamış ayrı bir
 nihai değerlendirme kümesi gerekir. Kısa eğitimde 20 cm'ye ulaşma garantisi
 yok. Adım yüksekliği, eklem torku, gövde teması ve destek alanı sınır olabilir.
+
+### İlk çıkış ve iniş kayıtları
+
+İlk dört süreçli koşu 2 cm çıkış politikasından başladı. 2 cm iniş 10/10
+tamamlandı. İlk 3 cm çıkış denemesi 5/10'da kaldı. Basamağa yaklaşırken daha
+erken ön bakış ve daha uzun kaldırma süresiyle yapılan ikinci koşuda 3 cm
+çıkış 8/10 ve 3 cm iniş 10/10 tamamlandı. Farklı tohumlarla tekrarda çıkış
+7/10, iniş 10/10 oldu. İkinci koşu 4 cm çıkışta 2/10 başarı ve dört düşme
+ile durdu. Bu nedenle 3 cm çıkışın güvenilirlik payı yetersiz.
+
+5, 10 ve 20 cm merdivenler ayrıca referans yürüyüşle denendi. Üçer
+bölümlük taramada bu çok basamaklı parkurlar tamamlanmadı. Bu tarama
+müfredat geçişinden bağımsızdır. Kayıtlar çalışma istasyonunda
+`course-terrain-01` ve `course-terrain-02` klasörlerinde tutulur.
 
 Raporlar ilerlemeyi, süreyi, ortalama ileri hızı, ayak temas sayısını,
 son ayak konumlarını, ayak kaymasını, maksimum kaldırma mesafesini,
