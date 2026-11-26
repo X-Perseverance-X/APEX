@@ -63,8 +63,8 @@ repository root in PowerShell:
 
 `build` writes `generated/meta1.xml` alongside the `mark2_leg` and `mark2_body`
 mesh directories. Keep all three together when opening the generated MJCF
-on another machine. `render_preview.py` writes whole robot, underside and
-camera detail views into `generated/`.
+on another machine. `render_preview.py` writes whole robot, front, rear and
+underside views into `generated/`.
 
 For a new machine, create a Python 3.12 virtual environment and install the
 package from `robot_learning` with `python -m pip install -e ".[dev,train]"`.

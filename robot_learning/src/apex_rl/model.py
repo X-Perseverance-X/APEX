@@ -13,7 +13,9 @@ from pathlib import Path
 from .body_visual import (
     ASSET_DIR,
     VISUAL_ONLY,
-    add_underbody_details,
+    add_body_hardware,
+    box,
+    cylinder,
     fmt,
     load_body_layout,
     place_body_cad,
@@ -123,6 +125,15 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = ASSET_DIR) -
     )
     ET.SubElement(
         world,
+        "camera",
+        name="rear_detail",
+        mode="targetbody",
+        target="base",
+        pos="-0.48 -0.04 0.185",
+        fovy="33",
+    )
+    ET.SubElement(
+        world,
         "geom",
         name="floor",
         type="plane",
@@ -168,15 +179,6 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = ASSET_DIR) -
     )
     ET.SubElement(
         torso,
-        "site",
-        name="tof_site",
-        pos=fmt(sensor_cfg["tof"]["xyz_m"]),
-        xyaxes="0 1 0 0 0 1",
-        size="0.006",
-        rgba="0 0 0 0",
-    )
-    ET.SubElement(
-        torso,
         "geom",
         name="lidar_visual",
         type="cylinder",
@@ -187,42 +189,9 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = ASSET_DIR) -
         conaffinity="0",
         rgba="0.025 0.025 0.03 1",
     )
-    ET.SubElement(
-        torso,
-        "geom",
-        name="tof_visual",
-        type="box",
-        pos=fmt(sensor_cfg["tof"]["xyz_m"]),
-        size="0.004 0.011 0.006",
-        mass="0",
-        contype="0",
-        conaffinity="0",
-        rgba="0.02 0.02 0.025 1",
-    )
-    tof_x, tof_y, tof_z = sensor_cfg["tof"]["xyz_m"]
-    ET.SubElement(
-        torso,
-        "geom",
-        name="tof_mount",
-        type="capsule",
-        fromto=fmt([0.179, tof_y + 0.018, 0.077, tof_x - 0.005, tof_y + 0.010, tof_z]),
-        size="0.003",
-        rgba="0.15 0.17 0.18 1",
-        **VISUAL_ONLY,
-    )
-    ET.SubElement(
-        torso,
-        "geom",
-        name="tof_aperture",
-        type="box",
-        pos=fmt([tof_x + 0.004, tof_y, tof_z]),
-        size="0.0005 0.003 0.002",
-        rgba="0.28 0.34 0.40 1",
-        **VISUAL_ONLY,
-    )
     anchors = {"lidar": sensor_cfg["lidar"]["xyz_m"], "pan": sensor_cfg["gimbal"]["pan_axis_xyz_m"]}
     place_body_cad(torso, "base", parts, anchors)
-    add_underbody_details(torso)
+    add_body_hardware(torso)
     actuators = ET.SubElement(root, "actuator")
     sensors = ET.SubElement(root, "sensor")
     ET.SubElement(sensors, "gyro", name="imu_gyro", site="imu_site")
@@ -419,6 +388,35 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = ASSET_DIR) -
         damping="0.006",
     )
     place_body_cad(tilt, "tilt", parts, anchors)
+    tof = [b - a for a, b in zip(tilt_xyz, sensor_cfg["tof"]["xyz_m"], strict=True)]
+    tx, ty, tz = tof
+    ET.SubElement(
+        tilt,
+        "site",
+        name="tof_site",
+        pos=fmt(tof),
+        xyaxes="0 1 0 0 0 1",
+        size="0.003",
+        rgba="0 0 0 0",
+    )
+    box(tilt, "tof_pcb", (tx - 0.0024, ty, tz), (0.0009, 0.010, 0.006), "0.045 0.14 0.08 1")
+    box(tilt, "tof_aperture", (tx - 0.0008, ty, tz), (0.0007, 0.003, 0.002), "0.10 0.12 0.14 1")
+    for index in range(-3, 4):
+        box(
+            tilt,
+            f"tof_header_{index + 3}",
+            (tx - 0.002, ty + index * 0.0023, tz + 0.007),
+            (0.0015, 0.00095, 0.0011),
+            "0.77 0.70 0.22 1",
+        )
+    for side, offset in (("left", 0.008), ("right", -0.008)):
+        cylinder(
+            tilt,
+            f"tof_{side}_screw",
+            (tx - 0.001, ty + offset, tz),
+            (0.0018, 0.0006),
+            "0.54 0.56 0.59 1",
+        )
     camera_local = [b - a for a, b in zip(tilt_xyz, camera_xyz)]
     cx, cy, cz = camera_local
     ET.SubElement(
@@ -428,7 +426,7 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = ASSET_DIR) -
         type="box",
         pos=fmt([cx - 0.008, cy, cz]),
         size="0.001 0.0125 0.012",
-        rgba="0.06 0.21 0.15 1",
+        rgba="0.04 0.08 0.07 1",
         **VISUAL_ONLY,
     )
     fov_h = math.radians(float(sensor_cfg["camera"]["horizontal_fov_deg"]))
@@ -474,8 +472,15 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = ASSET_DIR) -
             pos=fmt([cx - 0.001, y, cz]),
             euler="0 1.570796327 0",
             size="0.0075 0.001",
-            rgba="0.45 0.43 0.46 1",
+            rgba="0.27 0.29 0.31 1",
             **VISUAL_ONLY,
+        )
+        cylinder(
+            tilt,
+            f"camera_ir_{side}_glass",
+            (cx - 0.0001, y, cz),
+            (0.0055, 0.0006),
+            "0.38 0.41 0.43 1",
         )
     gimbal_torque = cfg["joint_torque_limit_nm"]["gimbal"]
     for joint in ("pan", "tilt"):

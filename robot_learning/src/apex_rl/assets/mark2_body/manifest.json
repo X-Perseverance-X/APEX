@@ -161,6 +161,30 @@
         10.0
       ]
     },
+    "Speaker_Cover.stl": {
+      "source_sha256": "8c36415fe6e804944b10c7ad74a0c260cb3b84f59a37e4588907debb5c642c17",
+      "dimensions_mm": [
+        90.0,
+        50.0,
+        3.0
+      ]
+    },
+    "Speaker_Spacer.stl": {
+      "source_sha256": "cc24a0ff8a95af337c7cdc12936448fd59027793f670c3c04e76505a08eaec62",
+      "dimensions_mm": [
+        75.0,
+        51.0,
+        3.0
+      ]
+    },
+    "Speaker_Spacer_4.stl": {
+      "source_sha256": "af853531e623cdd3e5af71e1a1ac7e59d47a40c0fb02ba22a615c583fd46c3e8",
+      "dimensions_mm": [
+        5.0,
+        5.0,
+        32.0
+      ]
+    },
     "Top_Connector.stl": {
       "source_sha256": "8e9fd94fe43596789819a1dc9835ca59474852659556b595490d9b363917573c",
       "dimensions_mm": [

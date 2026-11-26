@@ -129,21 +129,15 @@ def test_sensor_frames_and_camera_rotation():
     mujoco.mj_forward(model, data)
     camera_forward = -data.cam("front_camera").xmat.reshape(3, 3)[:, 2]
     assert camera_forward == pytest.approx([math.sqrt(6) / 4, math.sqrt(6) / 4, -0.5])
+    assert data.site("tof_site").xmat.reshape(3, 3)[:, 2] == pytest.approx(camera_forward)
 
 
 def test_tof_measures_forward_obstacle():
-    cfg = load_contract()["sensors"]["tof"]
     scene = ET.fromstring(build_xml())
-    probe = mujoco.MjModel.from_xml_string(build_xml())
-    x, y, z = cfg["xyz_m"]
-    ET.SubElement(
-        scene.find("worldbody"),
-        "geom",
-        name="tof_test_wall",
-        type="box",
-        pos=f"{x + 1.02} {y} {z + probe.key_qpos[0, 2]}",
-        size="0.02 0.2 0.2",
-    )
+    world = scene.find("worldbody")
+    world.find("geom[@name='floor']").set("rgba", "0 0 0 0")
+    target = ET.SubElement(world, "body", name="tof_test_target", mocap="true", pos="2 0 0")
+    ET.SubElement(target, "geom", type="sphere", size="0.02")
     model = mujoco.MjModel.from_xml_string(ET.tostring(scene, encoding="unicode"))
     data = mujoco.MjData(model)
     mujoco.mj_resetDataKeyframe(model, data, 0)
@@ -151,6 +145,9 @@ def test_tof_measures_forward_obstacle():
         for tilt in np.deg2rad([-45, 0, 45]):
             data.joint("camera_pan_joint").qpos[0] = pan
             data.joint("camera_tilt_joint").qpos[0] = tilt
+            mujoco.mj_forward(model, data)
+            site = data.site("tof_site")
+            data.mocap_pos[0] = site.xpos + 1.02 * site.xmat.reshape(3, 3)[:, 2]
             mujoco.mj_forward(model, data)
             assert data.sensor("forward_tof").data[0] == pytest.approx(1.0)
 

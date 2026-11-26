@@ -20,6 +20,7 @@ def main() -> None:
         for camera, filename in (
             ("overview", "meta1-stand.png"),
             ("camera_detail", "meta1-camera.png"),
+            ("rear_detail", "meta1-rear.png"),
             ("underside", "meta1-underside.png"),
         ):
             if camera == "underside":

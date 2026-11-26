@@ -23,7 +23,7 @@
   "sensors": {
     "imu": {"xyz_m": [0.115, 0.015, 0.048], "status": "x_y_measured_z_pending"},
     "lidar": {"xyz_m": [0.135, 0.0, 0.108], "status": "user_measured", "scan_model": "reference_site_only"},
-    "tof": {"xyz_m": [0.219, 0.0, 0.077], "status": "provisional_body_fixed_above_camera_at_neutral", "max_range_m": 4.0},
+    "tof": {"xyz_m": [0.2145, 0.0, 0.064], "status": "estimated_neutral_pose_on_tilt_carrier", "max_range_m": 4.0},
     "camera": {"xyz_m": [0.213, 0.0, 0.050], "status": "user_measured", "horizontal_fov_deg": 78.0, "fov_status": "approximate_pending_calibration"},
     "gimbal": {
       "pan_axis_xyz_m": [0.130, 0.0, 0.0],

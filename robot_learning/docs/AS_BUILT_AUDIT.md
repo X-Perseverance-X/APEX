@@ -12,22 +12,26 @@ Diskteki montaj dosyalarını değiştirmeden dönüşümü yeniden üretmek iç
 
 ## Gövde ve kamera montajı
 
-Gövde, 300 × 110 × 8 mm alt plaka dahil 21 ayrı STL'den toplandı. Kapağın
+Gövde, 300 × 110 × 8 mm alt plaka dahil 24 ayrı STL'den toplandı. Kapağın
 kesiti, yan panel yuvaları ve pil kafesinin delikleri kaynak çizimlerle aynı
 ölçekte. Yerleşim için alt fotoğraftaki sıra kullanıldı. Arkada üç yuvalı
 ana pil kapağı, ortada iki yuvalı pil tablası ve üçgen yan destekleri, önde
-fan bağlantıları var. Fan gövdesi, fan kartı ve piller temsili geometriler.
-LiDAR kapağının açıklığı kayıtlı LiDAR merkezine hizalandı.
+90 × 50 mm hoparlör ızgarası ve arkasında amfi var. Fan ön siyah ara parçanın
+arkasında, gövde içinde. Fan, hoparlör sürücüleri, kart ve piller temsili
+geometriler. Arka uç kapağı dik konumda, üst açıklığında güç düğmesi var.
+LiDAR kapağının dairesel kesiti kayıtlı merkeze hizalandı. Ön LED çubuğu
+LiDAR'ın hemen altında ve gövdeye sabit.
 
 Kamera üç montaj parçası kullanıyor. `Pan_and_tilt_holder` sabit yuvadır.
 `Camera_Holder_2` pan miliyle dönen ara koldur. `Camera_Holder` tilt
 miline takılan lens ve IR kartı taşıyıcısıdır. Dizilim, STL'deki mil ve yuva
-geometrisinden çıkarıldı. Kamera ile ToF'un önceki ölçüm çerçeveleri korundu.
+geometrisinden çıkarıldı. Kamera optik merkezi korundu ve yeni ön fotoğrafa
+göre ToF kartı tilt taşıyıcısına bağlandı.
 
 Gövde STL'leri ayrı parça ihraçları. Yerleşim ölçüleri, fotoğraflar ve
 mevcut sensör eksenleriyle hizalanarak [body_layout.json](../src/apex_rl/assets/body_layout.json)
-dosyasında ayarlanabilir hale getirildi. Gövdede takılı konumu seçilemeyen
-hoparlör plakaları ve ikinci pil bağlantısı varyantı bu montajın dışında.
+dosyasında ayarlanabilir hale getirildi. Alternatif pil bağlantısı
+`Battery_Con` bu montaja takılmadı.
 `tools/import_mark2_body.py` ile kullanılan STL'ler kaynak klasörden yeniden
 üretilebilir.
 
@@ -45,16 +49,16 @@ Kamera ve pan/tilt konumları nötr poz için verilmiştir.
 | Pan ekseni | +130, 0, 0 | Kayıtlı eksen noktası. MuJoCo'da +Z etrafında, artı açı sola döner. |
 | Tilt ekseni | +178, 0, +40 | Kayıtlı eksen noktası. Pan ile taşınır, artı açı kamerayı aşağı çevirir. |
 | Kamera optik merkezi | +213, 0, +50 | Kullanıcı ölçüsü. Tilt ile taşınır. Nötrde ileri bakar. Yatay görüş açısı 16:9 görüntüde yaklaşık 78°. PCB, lens ve iki IR aydınlatıcı Waveshare Camera (F) benzeri. Kamera varyantı doğrulanmadı. |
-| ToF | +219, 0, +77 | Nötr lens merkezinin 27 mm üstünde ve 6 mm önünde varsayıldı. Gövdeye sabit ve +X yönünde ideal mesafe ölçer. |
+| ToF | +214,5, 0, +64 | Nötr lensin yaklaşık 14 mm üstünde. Konum kamera taşıyıcısındaki delik sırasına göre çıkarıldı. Pan ve tilt ile taşınır. |
 
 Pan ve tilt için 90° elektriksel merkez simülasyonda 0° olarak gösterilir.
 45°–135° komut aralığı ±45° eklem aralığına karşılık gelir. Gerçek sistemdeki
 kamera nötr yönü ve lens kalibrasyonu ölçülmeyi bekliyor. Yürüyüş ortamı, kamera
 eklemlerini nötrde tutarak 18 eylem ve 72 gözlemli arayüzünü kullanır. MuJoCo
 görüntüleyicisinde iki kamera eklemi ayrı hedeflerle sürülebilir.
-Mevcut gövdeye sabit ToF varsayımıyla, pan ortadayken yaklaşık 25–35° yukarı
-bakışta ToF kasası görüntü merkezine girebilir. Bu, modeldeki montaj
-konumunun sonucudur.
+Bazı yukarı bakış ve pan bileşimlerinde lamba ya da üst kapak, simülasyonda
+kamera ve ToF görüşünü kısmen kapatır. Açısal sınırlar gerçek montajda
+ölçülmüş optik açıklığı temsil etmiyor.
 
 ## Servo ve kütle
 
