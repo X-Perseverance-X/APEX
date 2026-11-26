@@ -4,12 +4,15 @@
   "notes": "Fill with measured values, method, instrument, uncertainty and date. Null means unknown; never replace with a guessed value.",
   "total_mass_kg": null,
   "body_mass_kg": null,
+  "body_collision_xyz_size_m": null,
   "center_of_mass_m": {"xyz": null, "uncertainty": null},
   "link_mass_kg": {"coxa": null, "femur_ds3240": null, "tibia": null},
+  "camera_head_mass_kg": null,
   "foot_radius_m": null,
   "foot_surface": null,
   "servo": {
     "DS3240_femur": {
+      "installed_variant": null,
       "supply_v": null,
       "angle_vs_pwm_us": null,
       "step_response_loaded_csv": null,
@@ -19,6 +22,7 @@
       "current_a_moving": null
     },
     "BLS3225_coxa_tibia": {
+      "installed_variant": null,
       "supply_v": null,
       "angle_vs_pwm_us": null,
       "step_response_loaded_csv": null,
@@ -29,9 +33,13 @@
     }
   },
   "sensors": {
+    "imu_xyz_m": null,
     "imu_alignment_rpy_rad": null,
     "foot_switch_delay_s": null,
     "camera_intrinsics_file": null,
-    "lidar_to_body_transform_file": null
+    "camera_gimbal_neutral_rpy_rad": null,
+    "lidar_to_body_transform_file": null,
+    "tof_xyz_m": null,
+    "tof_alignment_rpy_rad": null
   }
 }

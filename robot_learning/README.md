@@ -5,14 +5,18 @@ PWM, SSH, or live command module. It cannot move the physical robot.
 
 ## Current scope
 
-- 18-DOF MuJoCo physics proxy: six coxa, femur and tibia chains, floating body,
-  ground contacts, IMU site, camera and LiDAR reference sites.
+- MuJoCo model with 18 leg joints and two independently driven camera joints.
+  The model includes a photo-based chassis and leg preview, six foot contacts,
+  an IMU with gyro and accelerometer outputs, a LiDAR reference frame and a
+  forward ToF ray. The camera follows the pan/tilt chain.
 - `+X` forward, `+Y` left, `+Z` up; leg order `RF RM RR LF LM LR`.
 - Measured link lengths and hip positions come from firmware v57.33. A test
   compares those values to the current firmware source.
 - Body mass, inertias, foot friction, servo torque and response are **provisional**.
   The model is suitable for software experiments, not yet for physical policy
   transfer. The simple body box is a collision proxy, not a CAD mesh.
+- [Physical model notes](docs/AS_BUILT_AUDIT.md) list the sensor offsets, the
+  remaining calibration data and the available servo documentation.
 - Gymnasium stand and velocity-command tasks with a 50 Hz joint-target policy
   interface, joint-rate limits, contact observations, reproducible seeds, and
   narrow optional dynamics randomization. PPO is an optional training extra.
@@ -32,6 +36,7 @@ robot_learning/
   tests/                          geometry and physics contract tests
   tools/render_preview.py         offline visualization snapshot
   config/physical_measurements.template.json
+  docs/AS_BUILT_AUDIT.md           photo references, sensor poses and hardware evidence
   docs/WORKPLAN.md                staged system-identification and RL program
   generated/                      derived MJCF/PNG, ignored by Git
   runs/                           local checkpoints and logs, ignored by Git
@@ -48,7 +53,7 @@ repository root in PowerShell:
 .runtime\sim-rl-env\Scripts\python.exe -m apex_rl.cli build
 .runtime\sim-rl-env\Scripts\python.exe -m apex_rl.cli smoke --steps 100
 .runtime\sim-rl-env\Scripts\python.exe robot_learning\tools\render_preview.py
-.runtime\sim-rl-env\Scripts\python.exe -m mujoco.viewer --mjcf=robot_learning\generated\meta1.xml
+.runtime\sim-rl-env\Scripts\python.exe -m apex_rl.cli view
 ```
 
 For a new machine, create a Python 3.12 virtual environment and install the
@@ -68,8 +73,9 @@ The 2,048-step setup check completed, but its deterministic stand score was
 essentially the same as the zero-action baseline (2498.31 vs 2498.49 over
 three episodes). That checks the training pipeline; it is **not a learned gait**.
 Do not transfer `policy_sim_only.zip` to the Pi or ESP.
-The small pilot checkpoint, manifest and evaluation are retained under
-`experiments/pilot-smoke/` so this first software check is backed up in Git.
+The checkpoint under `experiments/pilot-smoke/` belongs to the earlier fixed
+camera model. Its manifest hash identifies that model. Train a fresh run to
+evaluate the current gimbal model.
 
 ## Stack decision
 

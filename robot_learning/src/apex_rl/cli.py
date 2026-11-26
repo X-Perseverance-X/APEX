@@ -23,6 +23,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     build = sub.add_parser("build", help="write physics MJCF; does not start robot hardware")
     build.add_argument("--output", type=Path, default=PROJECT / "generated/meta1.xml")
+    sub.add_parser("view", help="open the MuJoCo viewer in the stand pose")
     smoke = sub.add_parser("smoke", help="compile and step a fixed-stand physics episode")
     smoke.add_argument("--steps", type=int, default=100)
     train = sub.add_parser("train", help="train an experimental simulation-only PPO policy")
@@ -52,6 +53,16 @@ def main() -> None:
                 }
             )
         )
+        return
+
+    if args.command == "view":
+        from mujoco import viewer
+
+        model = mujoco.MjModel.from_xml_string(build_xml())
+        data = mujoco.MjData(model)
+        mujoco.mj_resetDataKeyframe(model, data, model.key("stand").id)
+        mujoco.mj_forward(model, data)
+        viewer.launch(model, data)
         return
 
     if args.command == "smoke":

@@ -50,8 +50,11 @@ class Meta1Env(gym.Env):
         self.model = mujoco.MjModel.from_xml_string(build_xml(self.config))
         self.data = mujoco.MjData(self.model)
         self.nominal = np.array(stand_joint_angles(self.config), dtype=np.float64)
-        self.joint_low = self.model.actuator_ctrlrange[:, 0].copy()
-        self.joint_high = self.model.actuator_ctrlrange[:, 1].copy()
+        self._legs = slice(0, self.nominal.size)
+        self._leg_positions = slice(7, 7 + self.nominal.size)
+        self._leg_velocities = slice(6, 6 + self.nominal.size)
+        self.joint_low = self.model.actuator_ctrlrange[self._legs, 0].copy()
+        self.joint_high = self.model.actuator_ctrlrange[self._legs, 1].copy()
         self.action_space = spaces.Box(-1.0, 1.0, shape=(18,), dtype=np.float32)
         bounds = np.array(
             [5.0] * 3
@@ -95,8 +98,8 @@ class Meta1Env(gym.Env):
         self.model.body_mass[base_id] *= body_scale
         self.model.body_inertia[base_id] *= body_scale
         gain_scale = self.np_random.uniform(0.9, 1.1, size=18)
-        self.model.actuator_gainprm[:, 0] *= gain_scale
-        self.model.actuator_biasprm[:, 1] *= gain_scale
+        self.model.actuator_gainprm[self._legs, 0] *= gain_scale
+        self.model.actuator_biasprm[self._legs, 1] *= gain_scale
         mujoco.mj_setConst(self.model, self.data)
 
     def _contacts(self) -> np.ndarray:
@@ -118,8 +121,8 @@ class Meta1Env(gym.Env):
                 base_linear,
                 base_angular,
                 gravity,
-                self.data.qpos[7:] - self.nominal,
-                self.data.qvel[6:],
+                self.data.qpos[self._leg_positions] - self.nominal,
+                self.data.qvel[self._leg_velocities],
                 self.previous_action,
                 self.command,
                 self._contacts(),
@@ -170,9 +173,10 @@ class Meta1Env(gym.Env):
         desired = np.clip(self.nominal + 0.25 * action, self.joint_low, self.joint_high)
         # Bound the command rate, especially for the slower DS3240 femurs.
         max_rate = np.array([math.radians(180), math.radians(100), math.radians(180)] * 6)
+        leg_controls = self.data.ctrl[self._legs]
         for _ in range(self.control_steps):
             delta = max_rate * self.model.opt.timestep
-            self.data.ctrl[:] = np.clip(desired, self.data.ctrl - delta, self.data.ctrl + delta)
+            leg_controls[:] = np.clip(desired, leg_controls - delta, leg_controls + delta)
             mujoco.mj_step(self.model, self.data)
         rotation = _rotation_from_quaternion(self.data.qpos[3:7])
         gravity = rotation.T @ np.array([0.0, 0.0, -1.0])
@@ -180,7 +184,7 @@ class Meta1Env(gym.Env):
         upright = math.exp(-4.0 * float(gravity[:2] @ gravity[:2]))
         height_score = math.exp(-80.0 * (height - self.stand_height) ** 2)
         action_rate = float(np.mean((action - self.previous_action) ** 2))
-        effort = float(np.mean(np.square(self.data.actuator_force)))
+        effort = float(np.mean(np.square(self.data.actuator_force[self._legs])))
         if self.task == "stand":
             reward = 1.5 * upright + height_score - 0.05 * action_rate - 0.002 * effort
         else:

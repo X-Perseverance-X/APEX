@@ -1,5 +1,6 @@
 import math
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import mujoco
@@ -41,15 +42,61 @@ def test_contract_rejects_wrong_units_or_mirror():
 
 def test_mjcf_compiles_and_stands_on_six_contacts():
     model = mujoco.MjModel.from_xml_string(build_xml())
-    assert model.nu == 18 and model.nq == 25 and model.nv == 24
+    assert (model.nu, model.nq, model.nv) == (20, 27, 26)
     data = mujoco.MjData(model)
     mujoco.mj_resetDataKeyframe(model, data, 0)
-    assert data.ctrl == pytest.approx(stand_joint_angles())
+    assert data.ctrl == pytest.approx([*stand_joint_angles(), 0, 0])
     for _ in range(1000):
         mujoco.mj_step(model, data)
     assert np.isfinite(data.qpos).all()
     assert data.qpos[2] == pytest.approx(0.118, abs=0.01)
     assert data.ncon >= 6
+
+
+def test_sensor_frames_and_camera_rotation():
+    cfg = load_contract()["sensors"]
+    model = mujoco.MjModel.from_xml_string(build_xml())
+    data = mujoco.MjData(model)
+    mujoco.mj_resetDataKeyframe(model, data, 0)
+    mujoco.mj_forward(model, data)
+    origin = data.body("base").xpos.copy()
+    for name in ("imu", "lidar", "tof"):
+        assert data.site(f"{name}_site").xpos - origin == pytest.approx(cfg[name]["xyz_m"])
+    assert data.site("tof_site").xmat.reshape(3, 3)[:, 2] == pytest.approx([1, 0, 0])
+    assert data.cam("front_camera").xpos - origin == pytest.approx(cfg["camera"]["xyz_m"])
+    assert -data.cam("front_camera").xmat.reshape(3, 3)[:, 2] == pytest.approx([1, 0, 0])
+    for axis in ("pan", "tilt"):
+        assert data.body(f"camera_{axis}_body").xpos - origin == pytest.approx(
+            cfg["gimbal"][f"{axis}_axis_xyz_m"]
+        )
+        assert model.jnt_range[model.joint(f"camera_{axis}_joint").id] == pytest.approx(
+            np.deg2rad([-45, 45])
+        )
+    data.joint("camera_pan_joint").qpos[0] = math.pi / 4
+    data.joint("camera_tilt_joint").qpos[0] = math.pi / 6
+    mujoco.mj_forward(model, data)
+    camera_forward = -data.cam("front_camera").xmat.reshape(3, 3)[:, 2]
+    assert camera_forward == pytest.approx([math.sqrt(6) / 4, math.sqrt(6) / 4, -0.5])
+
+
+def test_tof_measures_forward_obstacle():
+    cfg = load_contract()["sensors"]["tof"]
+    scene = ET.fromstring(build_xml())
+    probe = mujoco.MjModel.from_xml_string(build_xml())
+    x, y, z = cfg["xyz_m"]
+    ET.SubElement(
+        scene.find("worldbody"),
+        "geom",
+        name="tof_test_wall",
+        type="box",
+        pos=f"{x + 1.02} {y} {z + probe.key_qpos[0, 2]}",
+        size="0.02 0.2 0.2",
+    )
+    model = mujoco.MjModel.from_xml_string(ET.tostring(scene, encoding="unicode"))
+    data = mujoco.MjData(model)
+    mujoco.mj_resetDataKeyframe(model, data, 0)
+    mujoco.mj_forward(model, data)
+    assert data.sensor("forward_tof").data[0] == pytest.approx(1.0)
 
 
 def test_gymnasium_step_and_deterministic_seed():
@@ -62,6 +109,8 @@ def test_gymnasium_step_and_deterministic_seed():
         assert env.model.geom_friction[0, 0] == friction_a
         for _ in range(10):
             obs, reward, terminated, truncated, info = env.step(np.zeros(18, dtype=np.float32))
+        assert obs.shape == (72,)
+        assert np.array_equal(env.data.ctrl[18:], [0, 0])
         assert env.observation_space.contains(obs)
         assert math.isfinite(reward)
         assert not terminated and not truncated
