@@ -49,6 +49,14 @@ class Course:
     def goal(self) -> float:
         return self.last_edge + 0.43 if self.risers else 1.20
 
+    @property
+    def terrain_names(self) -> tuple[str, ...]:
+        return tuple(f"course_step_{i + 1}" for i in range(self.risers))
+
+    @property
+    def goal_y(self) -> float:
+        return 0.0
+
     def scene(self, config: dict) -> str:
         root = ET.fromstring(build_xml(config))
         world = root.find("worldbody")
@@ -111,6 +119,60 @@ class Course:
         return ET.tostring(root, encoding="unicode")
 
 
+@dataclass(frozen=True)
+class RubbleCourse(Course):
+    # Entries are centre X/Y, half lengths X/Y and height, in metres.
+    blocks: tuple[tuple[float, float, float, float, float], ...] = ()
+    waypoints: tuple[tuple[float, float], ...] = ()
+
+    @property
+    def goal(self) -> float:
+        return self.waypoints[-1][0]
+
+    @property
+    def goal_y(self) -> float:
+        return self.waypoints[-1][1]
+
+    @property
+    def terrain_names(self) -> tuple[str, ...]:
+        return tuple(f"rock_{i + 1}" for i in range(len(self.blocks)))
+
+    def height(self, x: float, y: float = 0.0) -> float:
+        return max(
+            (h for bx, by, dx, dy, h in self.blocks if abs(x - bx) <= dx and abs(y - by) <= dy),
+            default=0.0,
+        )
+
+    def route_y(self, x: float) -> float:
+        for (a, left), (b, right) in zip(self.waypoints, self.waypoints[1:]):
+            if x <= b:
+                return left + (right - left) * max(0.0, (x - a) / (b - a))
+        return self.goal_y
+
+    def scene(self, config: dict) -> str:
+        root = ET.fromstring(super().scene(config))
+        world = root.find("worldbody")
+        for i, (name, (x, y, dx, dy, h)) in enumerate(
+            zip(self.terrain_names, self.blocks, strict=True)
+        ):
+            ET.SubElement(
+                world,
+                "geom",
+                name=name,
+                type="box",
+                pos=f"{x} {y} {h / 2}",
+                size=f"{dx} {dy} {h / 2}",
+                friction="1 0.005 0.0001",
+                rgba="0.42 0.36 0.29 1" if i % 2 else "0.33 0.38 0.29 1",
+            )
+        marker = world.find("geom[@name='goal_marker']")
+        marker.set(
+            "pos", f"{self.goal} {self.goal_y} {self.height(self.goal, self.goal_y) + 0.001}"
+        )
+        marker.set("size", "0.025 0.10 0.001")
+        return ET.tostring(root, encoding="unicode")
+
+
 COURSES = {
     "flat": Course(0, 0),
     "step-02": Course(0.02, 1),
@@ -149,6 +211,41 @@ COURSES = {
         0.10, 3, edge_x=1.05, tread_m=0.21, descending=True, link_contacts=True
     ),
     "hybrid-contact-down-15": Course(0.15, 1, edge_x=1.05, descending=True, link_contacts=True),
+    "hybrid-contact-up-05": Course(0.05, 1, edge_x=1.05, link_contacts=True),
+    "hybrid-contact-up-07": Course(0.07, 1, edge_x=1.05, link_contacts=True),
+    "hybrid-contact-up-10": Course(0.10, 1, edge_x=1.05, link_contacts=True),
+    "hybrid-contact-up-15": Course(0.15, 1, edge_x=1.05, link_contacts=True),
+    "hybrid-contact-stairs-up-10": Course(0.10, 3, edge_x=1.05, tread_m=0.21, link_contacts=True),
+    "hybrid-rubble-01": RubbleCourse(
+        0,
+        0,
+        edge_x=0.78,
+        link_contacts=True,
+        blocks=(
+            (0.85, 0.29, 0.12, 0.12, 0.020),
+            (1.03, -0.30, 0.12, 0.13, 0.022),
+            (1.20, 0.26, 0.12, 0.12, 0.026),
+            (1.34, -0.35, 0.12, 0.13, 0.016),
+            (1.52, 0.26, 0.12, 0.12, 0.022),
+            (1.65, -0.22, 0.11, 0.11, 0.016),
+        ),
+        waypoints=((0, 0), (0.56, 0), (0.94, -0.045), (1.35, -0.045), (1.99, 0.065)),
+    ),
+    "hybrid-rubble-02": RubbleCourse(
+        0,
+        0,
+        edge_x=0.78,
+        link_contacts=True,
+        blocks=(
+            (0.82, 0.32, 0.10, 0.12, 0.041),
+            (1.02, -0.16, 0.12, 0.094, 0.12),
+            (1.26, 0.28, 0.12, 0.15, 0.036),
+            (1.48, -0.29, 0.12, 0.14, 0.042),
+            (1.65, 0.18, 0.12, 0.11, 0.023),
+            (1.76, -0.20, 0.10, 0.09, 0.031),
+        ),
+        waypoints=((0, 0), (0.52, 0), (0.90, 0.11), (1.29, 0.12), (1.99, -0.04)),
+    ),
 }
 
 TRIPOD = np.array([0, 1, 0, 1, 0, 1], dtype=float) * 0.5
@@ -169,7 +266,13 @@ class LocomotionEnv(Meta1Env):
         self.course_name = course
         self.course = COURSES[course]
         self.hybrid = course.startswith("hybrid-")
-        self.edge_control = course.startswith("hybrid-lab-")
+        self.rubble = isinstance(self.course, RubbleCourse)
+        self.contact_ascent = (
+            self.course.link_contacts and self.course.risers > 0 and not self.course.descending
+        )
+        self.edge_control = course.startswith("hybrid-lab-") or (
+            self.course.link_contacts and not self.course.descending
+        )
         self.short_climb = course == "hybrid-lab-up-07-slow"
         body_control |= self.hybrid
         self.adapt = self.course.descending or self.course.rise_m > 0.02
@@ -215,9 +318,7 @@ class LocomotionEnv(Meta1Env):
             for name in ("deck", "speaker", "main_pack", "middle_pack")
         ]
         self._leg_force_range = self.model.actuator_forcerange[self._legs].copy()
-        self._terrain_ids = [
-            self.model.geom(f"course_step_{i + 1}").id for i in range(self.course.risers)
-        ]
+        self._terrain_ids = [self.model.geom(name).id for name in self.course.terrain_names]
         self.link_metrics = (
             LinkContactMetrics(self.model, self._terrain_ids) if self.course.link_contacts else None
         )
@@ -227,7 +328,9 @@ class LocomotionEnv(Meta1Env):
 
     def _model_xml(self) -> str:
         xml = self.course.scene(self.config)
-        return add_leg_contacts(xml, self.course.risers) if self.course.link_contacts else xml
+        return (
+            add_leg_contacts(xml, self.course.terrain_names) if self.course.link_contacts else xml
+        )
 
     def _observation(self) -> np.ndarray:
         base = super()._observation()
@@ -244,7 +347,7 @@ class LocomotionEnv(Meta1Env):
             math.cos(phase),
             *heights,
             self.pack_voltage_proxy_v / 8.0,
-            y,
+            y - self.course.route_y(x) if self.rubble else y,
             math.sin(heading),
             math.cos(heading),
             self.course.goal - x,
@@ -310,6 +413,7 @@ class LocomotionEnv(Meta1Env):
         return self._observation(), {"course": self.course_name}
 
     def _targets(self, residual: np.ndarray) -> np.ndarray:
+        adjusted = residual * 0.28 if self.contact_ascent or self.rubble else residual
         if self.hybrid and self.gait != "wave":
             x = float(self.data.qpos[0])
             # Hand off after touchdown, so the wave gait inherits a planted
@@ -322,10 +426,13 @@ class LocomotionEnv(Meta1Env):
                 self.gait = "wave"
             else:
                 return self._tripod_targets(
-                    np.zeros_like(residual) if self.short_climb else residual, flat=True
+                    np.zeros_like(residual)
+                    if self.short_climb or self.contact_ascent or self.rubble
+                    else residual,
+                    flat=True,
                 )
         if self.body_motion:
-            return self._solve_ik(self.body_motion.targets(residual))
+            return self._solve_ik(self.body_motion.targets(adjusted))
         return self._tripod_targets(residual)
 
     def _approach_complete(self, x: float) -> bool:
@@ -458,6 +565,7 @@ class LocomotionEnv(Meta1Env):
         out = bool(abs(y) > 0.42 or x < -0.24)
         in_goal = (
             x >= self.course.goal
+            and (not self.rubble or abs(y - self.course.goal_y) <= 0.12)
             and upright > 0.92
             and contact.sum() >= 3
             and (not self.course.risers or np.min(soles[:, 0]) > self.course.last_edge)

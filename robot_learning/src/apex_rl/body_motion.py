@@ -119,6 +119,40 @@ class BodyMotion:
                 x = edge + edge_margin
         max_x = min(actual[0], float(support[0]) + 0.027) + self.neutral_xy[self.leg, 0] + 0.185
         x = min(x, max_x)
+        if self.env.rubble:
+            y = self.neutral_xy[self.leg, 1] + course.route_y(actual[0] + 0.09)
+            # Search near the nominal foothold for enough flat space for the
+            # entire pad and a swing path around blocks taller than the gait.
+            offsets = (
+                (0, 0),
+                (0, -0.035),
+                (0, 0.035),
+                (-0.035, 0),
+                (0, -0.065),
+                (0, 0.065),
+                (-0.035, -0.05),
+                (-0.035, 0.05),
+                (-0.060, 0),
+                (0.035, 0),
+                (-0.060, -0.065),
+                (-0.060, 0.065),
+            )
+            for dx, dy in offsets:
+                px, py = min(x + dx, max_x), y + dy
+                h = course.height(px, py)
+                pad = self.radius + 0.004
+                if h > 0.06 or any(
+                    course.height(px + sx * pad, py + sy * pad) != h
+                    for sx, sy in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                ):
+                    continue
+                if all(
+                    course.height(foot[0] + t * (px - foot[0]), foot[1] + t * (py - foot[1]))
+                    <= 0.06
+                    for t in (0.15, 0.35, 0.55, 0.75, 0.90)
+                ):
+                    return np.array([px, py, h + self.radius - 0.0015])
+            return foot.copy()
         return np.array([x, y, course.height(x, y) + self.radius - 0.0015])
 
     def targets(self, residual):
@@ -178,19 +212,29 @@ class BodyMotion:
         com_offset = data.subtree_com[self.base_id, :2] - root[:2]
         xy = self.body[:2].copy()
         self.path_x = min(self.path_x + DT * pace, root[0] + (0.018 if env.short_climb else 0.022))
-        front = self.terrain.height(root[0] + 0.17, root[1])
+        tall_ascent = env.contact_ascent and self.terrain.rise_m >= 0.07
+        front = self.terrain.height(root[0] + (0.24 if tall_ascent else 0.17), root[1])
         centre = self.terrain.height(root[0] - 0.03, root[1])
         if self.support_count >= 3:
             support = feet[stance]
             target = [
                 self.path_x + 0.014 * residual[2],
-                0.30 * float(support[:, 1].mean()) + 0.026 * residual[4],
+                (
+                    self.terrain.route_y(root[0] + 0.07)
+                    if env.rubble
+                    else 0.30 * float(support[:, 1].mean())
+                )
+                + 0.026 * residual[4],
             ]
             bounded = support_target(support[:, :2], np.array(target) + com_offset)
             if bounded is not None:
                 xy = bounded - com_offset
             levels = support[:, 2] - self.radius
-            support_height = 0.55 * float(levels.mean()) + 0.45 * float(levels.max())
+            support_height = (
+                0.45 * float(levels.mean()) + 0.55 * float(levels.max())
+                if tall_ascent
+                else 0.55 * float(levels.mean()) + 0.45 * float(levels.max())
+            )
         else:
             support_height = float(self.body[2] - env.stand_height)
         rise_ahead = max(0.0, front - centre)
@@ -200,12 +244,16 @@ class BodyMotion:
         if env.hybrid and self.support_count >= 3 and front > centre:
             # Raise the leading low-mounted hardware before it reaches the riser.
             ahead = self.terrain.height(root[0] + 0.24, root[1])
-            z = max(z, ahead + 0.076)
+            z = max(z, ahead + (0.094 if tall_ascent else 0.076))
         target = np.array([*xy, z])
         rate = np.clip(5 * (target - self.body), [-0.065, -0.065, -0.05], [0.08, 0.065, 0.05])
         self.velocity += np.clip(rate - self.velocity, -0.50 * DT, 0.50 * DT)
         self.body += self.velocity * DT
-        pitch = float(np.clip((front - centre) * 0.7 + 0.16 * residual[5], -0.14, 0.18))
+        pitch = float(
+            np.clip(
+                (front - centre) * (1.3 if tall_ascent else 0.7) + 0.16 * residual[5], -0.14, 0.18
+            )
+        )
         self.pitch += float(np.clip(pitch - self.pitch, -0.34 * DT, 0.34 * DT))
         footholds = self.anchors.copy()
         if self.leg is not None:
@@ -218,6 +266,15 @@ class BodyMotion:
             t = ease((u - travel_start) / travel_span)
             foot = self.lift_off + t * (self.landing - self.lift_off)
             crest = max(self.landing[2], self.lift_off[2]) + self.swing_height
+            if env.rubble:
+                peak = max(
+                    self.terrain.height(
+                        self.lift_off[0] + t * (self.landing[0] - self.lift_off[0]),
+                        self.lift_off[1] + t * (self.landing[1] - self.lift_off[1]),
+                    )
+                    for t in (0.25, 0.50, 0.75)
+                )
+                crest = max(crest, peak + self.radius + 0.027)
             if self.rear_edge_swing:
                 crest += 0.012
             if u < lift_end:

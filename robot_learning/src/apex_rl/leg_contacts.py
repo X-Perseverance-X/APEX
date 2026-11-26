@@ -22,7 +22,7 @@ def leg_geoms(leg: str) -> tuple[str, ...]:
     )
 
 
-def add_leg_contacts(xml: str, risers: int) -> str:
+def add_leg_contacts(xml: str, terrain_names: tuple[str, ...]) -> str:
     root = ET.fromstring(xml)
     contact = ET.SubElement(root, "contact")
     geoms = {leg: leg_geoms(leg) for leg in LEG_ORDER}
@@ -33,7 +33,7 @@ def add_leg_contacts(xml: str, risers: int) -> str:
             ET.SubElement(
                 contact, "pair", geom1=a, geom2=b, condim="1", solref="0.009 1", margin="0.001"
             )
-    terrain = ("floor", *(f"course_step_{i + 1}" for i in range(risers)))
+    terrain = ("floor", *terrain_names)
     for leg in LEG_ORDER:
         for a, b in itertools.product(geoms[leg][:-1], terrain):
             ET.SubElement(

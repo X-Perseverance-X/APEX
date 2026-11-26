@@ -168,3 +168,36 @@ def test_playback_loads_course_with_named_contact_pairs():
     model, initial = fleet_model("hybrid-contact-down-15", 2)
     assert model.nq == 2 * initial.size
     assert model.npair == 0
+
+
+def test_five_centimetre_ascent_finishes_with_all_feet_over_riser():
+    env = LocomotionEnv("hybrid-contact-up-05")
+    try:
+        env.reset(seed=1007750)
+        for _ in range(env.episode_steps):
+            _, _, done, truncated, info = env.step(np.zeros(6))
+            if done or truncated:
+                break
+        assert info["success"] and not info["fallen"]
+        assert np.min(env.data.xpos[env._foot_ids, 0]) > env.course.last_edge
+        assert max(info["interleg_peak_m"], info["rear_step_peak_m"]) <= OVERLAP_LIMIT_M
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize("course_name", ["hybrid-rubble-01", "hybrid-rubble-02"])
+def test_rubble_height_map_matches_collision_geometry_and_offset_goal(course_name):
+    env = LocomotionEnv(course_name)
+    try:
+        obs, _ = env.reset(seed=1)
+        assert env.observation_space.contains(obs)
+        assert len(env._terrain_ids) == len(env.course.blocks)
+        for geom_id in env._terrain_ids:
+            geom = env.model.geom(geom_id)
+            x, y, z = geom.pos
+            assert env.course.height(x, y) == pytest.approx(z + geom.size[2])
+        assert abs(env.course.goal_y) > 0.01
+        assert env.course.route_y(env.course.goal + 0.01) == pytest.approx(env.course.goal_y)
+        assert env.model.geom("goal_marker").pos[1] == pytest.approx(env.course.goal_y)
+    finally:
+        env.close()

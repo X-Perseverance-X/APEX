@@ -281,6 +281,48 @@ girme ölçülmedi.
 
 Fizik temas çiftleri ve CAD zarfları için [MuJoCo çarpışma referansı](https://mujoco.readthedocs.io/en/stable/computation/).
 
+#### Temaslı çıkışlar ve taşlı zemin
+
+Çıkış parkurları `hybrid-contact-up-05`, `hybrid-contact-up-07`,
+`hybrid-contact-up-10` ve `hybrid-contact-up-15` adlarıyla tek
+basamak olarak çalışır. `hybrid-contact-stairs-up-10`, 21 cm basış
+derinliğinde üç adet 10 cm basamaktır. Bacak gövdesi çarpışması
+ve 2 mm örtüşme sınırı iniş parkurlarıyla aynıdır. Çıkışta
+yaklaşma sabit üçlü yürüyüşle başlar. PPO'nun adım ve gövde
+düzeltmeleri hassas yürüyüşte sınırlandırılır. 7 cm ve üstünde
+denetleyici üst yüzeyi daha erken dikkate alıp ön tarafı yükseltir.
+
+```powershell
+& $py -m apex_rl.cli course-view --run robot_learning/runs/course-solid-ascent-02/hybrid-contact-up-05 --randomize --seed 1007810
+& $py -m apex_rl.cli course-watch --run robot_learning/runs/course-solid-ascent-02/hybrid-contact-up-05
+```
+
+`hybrid-rubble-01` düşük bloklarla başlar. `hybrid-rubble-02`
+farklı dizilim ve daha yüksek engel içerir. Robot önceden
+tanımlanmış ara noktalara göre yana kayar. Her adımda tabanın
+tamamına yer olan, kenardan pay bırakan bir yüzey arar. Ayağın
+izlediği hat ve basacağı yer parkurun 2B yükseklik haritasından
+kontrol edilir. Harita ile çarpışma geometrisi aynı taş diziliminden
+üretilir. Yeşil işaret bitiş alanıdır, başarı ölçümü ileri ve
+yanal konumu birlikte kontrol eder. Bu aşama sabit taş ve bilinen
+haritayla ayak yerleştirmeyi ölçer. Sensörden harita çıkarma
+ve serbest rota bulma ayrı aşamalardır.
+
+```powershell
+& $py -m apex_rl.cli course-view --course hybrid-rubble-01 --static
+& $py -m apex_rl.cli course-view --course hybrid-rubble-02 --static
+& $py -m apex_rl.cli course-view --run robot_learning/runs/course-rubble-01/hybrid-rubble-01 --randomize --seed 1007920
+& $py -m apex_rl.cli course-report --run robot_learning/runs/course-rubble-01
+```
+
+5 cm çıkış için ikinci politika iki test grubunda toplam 15/15
+tamamlandı, düşme veya bacak örtüşmesi ölçülmedi. 7 cm çıkış
+4/10 tamamlandı ve üç denemede düşme oldu. 21 cm basış
+derinliğindeki üçlü 10 cm parkuru ve tek 15 cm çıkış bağımsız
+eğitimlere rağmen 0/10 kaldı. İlk taşlı parkur 8/10 tamamlandı.
+İki denemede gövde temasıyla düşüş görüldü, bu nedenle daha zorlu
+taş dizilimine otomatik geçiş yapılmadı.
+
 #### Önceki sabit desenli parkurlar
 
 | Seviye | Parkur | Başarı |

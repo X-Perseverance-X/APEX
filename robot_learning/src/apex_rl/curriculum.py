@@ -66,6 +66,9 @@ REPLAY_MODELS = {
     "c5b74395ef52f20fbc1ae7791436a99fc4ed8b07b7f4fa0c632c43e8aeb2b4b3": {
         "hybrid-lab-up-07-slow",
     },
+    "52ae7e0e3813d47545ccb18e992928da7d9c87f9d5766a4207573a0903fc8d89": {
+        "hybrid-contact-up-05",
+    },
 }
 
 
