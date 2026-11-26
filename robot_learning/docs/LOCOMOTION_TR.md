@@ -123,6 +123,14 @@ gövde yüksekliği değişim aralığı çıkışta 7,2 cm, inişte 5,5 cm oldu
 Öğrenilen düzeltmeler sıfırken kullanılan hareket planlayıcısı da ilk
 değerlendirmeyi iki yönde 10/10 tamamladı.
 
+Üç adet 5 cm basamakta iniş politikası ilk ölçümde 9/10, ayrı tekrarda
+8/10 tamamladı. Tekrardaki iki düşme %10 düşme sınırını aştı.
+Çıkışta iki eğitim 4/10 ve 3/10 ile kaldı. Başlıca hata gövdenin
+ilk basamak kenarına değmesiydi. Sonuçlar bu iki parkuru daha yüksek
+seviyelere geçmek için yeterince güvenilir göstermedi.
+
+Destek çokgeni yaklaşımı için [hexapod kararlılığı çalışması](https://www.mdpi.com/2076-3417/9/24/5284).
+
 ### Parkurlar
 
 | Seviye | Parkur | Başarı |

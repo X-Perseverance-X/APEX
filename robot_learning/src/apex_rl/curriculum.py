@@ -258,6 +258,7 @@ def _train(args) -> None:
                 )
             else:
                 policy.set_env(vector)
+            policy.tensorboard_log = str(args.output / "tensorboard")
             policy.learn(
                 total_timesteps=args.timesteps,
                 reset_num_timesteps=False,
