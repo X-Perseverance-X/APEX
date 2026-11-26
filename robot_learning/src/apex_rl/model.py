@@ -177,13 +177,22 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = ASSET_DIR) -
         size="0.008",
         rgba="0 0 0 0",
     )
+    lidar_x, lidar_y, lidar_z = sensor_cfg["lidar"]["xyz_m"]
+    # A1M8 has a 70 mm round head and a narrower rear motor housing.
+    box(
+        torso,
+        "lidar_motor_base",
+        (lidar_x - 0.032, lidar_y, lidar_z - 0.0165),
+        (0.0298, 0.022, 0.0035),
+        "0.030 0.034 0.038 1",
+    )
     ET.SubElement(
         torso,
         "geom",
         name="lidar_visual",
         type="cylinder",
         pos=fmt(sensor_cfg["lidar"]["xyz_m"]),
-        size="0.044 0.019",
+        size="0.035 0.0165",
         mass="0",
         contype="0",
         conaffinity="0",

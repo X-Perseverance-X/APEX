@@ -47,7 +47,7 @@ class Meta1Env(gym.Env):
         self.episode_steps = episode_steps
         self.domain_randomization = domain_randomization
         self.config = load_contract()
-        self.model = mujoco.MjModel.from_xml_string(build_xml(self.config))
+        self.model = mujoco.MjModel.from_xml_string(self._model_xml())
         self.data = mujoco.MjData(self.model)
         self.nominal = np.array(stand_joint_angles(self.config), dtype=np.float64)
         self._legs = slice(0, self.nominal.size)
@@ -70,6 +70,7 @@ class Meta1Env(gym.Env):
             dtype=np.float32,
         )
         self.observation_space = spaces.Box(-bounds, bounds, dtype=np.float32)
+        self._base_observation_space = self.observation_space
         self.previous_action = np.zeros(18, dtype=np.float32)
         self.command = np.zeros(3, dtype=np.float32)
         self.steps = 0
@@ -84,6 +85,9 @@ class Meta1Env(gym.Env):
             mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SENSOR, f"{leg.lower()}_contact")
             for leg in LEG_ORDER
         ]
+
+    def _model_xml(self) -> str:
+        return build_xml(self.config)
 
     def _randomize_dynamics(self) -> None:
         self.model.geom_friction[0] = self._nominal_floor_friction
@@ -130,7 +134,7 @@ class Meta1Env(gym.Env):
                 self._contacts(),
             )
         ).astype(np.float32)
-        if not self.observation_space.contains(obs):
+        if not np.isfinite(obs).all() or not self._base_observation_space.contains(obs):
             raise RuntimeError("non-finite or incorrect-size simulation observation")
         return obs
 
@@ -167,17 +171,20 @@ class Meta1Env(gym.Env):
             "domain_randomization": self.domain_randomization,
         }
 
+    def _apply_joint_targets(self, desired: np.ndarray) -> None:
+        delta = self._max_target_rate * self.model.opt.timestep
+        leg_controls = self.data.ctrl[self._legs]
+        for _ in range(self.control_steps):
+            leg_controls[:] = np.clip(desired, leg_controls - delta, leg_controls + delta)
+            mujoco.mj_step(self.model, self.data)
+
     def step(self, action: np.ndarray):
         action = np.asarray(action, dtype=np.float32)
         if action.shape != (18,) or not np.isfinite(action).all():
             raise ValueError("action must have 18 finite normalized joint offsets")
         action = np.clip(action, -1.0, 1.0)
         desired = np.clip(self.nominal + 0.25 * action, self.joint_low, self.joint_high)
-        delta = self._max_target_rate * self.model.opt.timestep
-        leg_controls = self.data.ctrl[self._legs]
-        for _ in range(self.control_steps):
-            leg_controls[:] = np.clip(desired, leg_controls - delta, leg_controls + delta)
-            mujoco.mj_step(self.model, self.data)
+        self._apply_joint_targets(desired)
         rotation = _rotation_from_quaternion(self.data.qpos[3:7])
         gravity = rotation.T @ np.array([0.0, 0.0, -1.0])
         height = float(self.data.qpos[2])

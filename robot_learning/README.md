@@ -5,6 +5,8 @@ PWM, SSH, or live command module. It cannot move the physical robot.
 
 ## Current scope
 
+For the walking and stairs workflow, see [META-1 parkour and training](docs/LOCOMOTION_TR.md).
+
 - MuJoCo model with 18 leg joints and two independently driven camera joints.
   The model includes MARK 2 chassis, leg and camera bracket meshes, six foot contacts,
   an IMU with gyro and accelerometer outputs, a LiDAR reference frame and a

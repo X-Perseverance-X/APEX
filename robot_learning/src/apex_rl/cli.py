@@ -13,6 +13,7 @@ import mujoco
 import numpy as np
 
 from .contract import load_contract
+from .curriculum import add_commands, run_command
 from .env import Meta1Env
 from .model import BODY_MESH_DIR, LEG_MESH_DIR, build_xml
 
@@ -38,7 +39,12 @@ def main() -> None:
     )
     evaluate.add_argument("--run", type=Path, required=True)
     evaluate.add_argument("--episodes", type=int, default=5)
+    add_commands(sub, PROJECT)
     args = parser.parse_args()
+
+    if args.command.startswith("course-"):
+        run_command(args, parser)
+        return
 
     if args.command == "build":
         args.output.parent.mkdir(parents=True, exist_ok=True)
