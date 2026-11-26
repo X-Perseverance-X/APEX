@@ -205,7 +205,7 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = ASSET_DIR) -
         "geom",
         name="tof_mount",
         type="capsule",
-        fromto=fmt([0.179, 0, 0.077, tof_x - 0.005, tof_y, tof_z]),
+        fromto=fmt([0.179, tof_y + 0.018, 0.077, tof_x - 0.005, tof_y + 0.010, tof_z]),
         size="0.003",
         rgba="0.15 0.17 0.18 1",
         **VISUAL_ONLY,

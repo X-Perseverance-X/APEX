@@ -52,6 +52,9 @@ Pan ve tilt için 90° elektriksel merkez simülasyonda 0° olarak gösterilir.
 kamera nötr yönü ve lens kalibrasyonu ölçülmeyi bekliyor. Yürüyüş ortamı, kamera
 eklemlerini nötrde tutarak 18 eylem ve 72 gözlemli arayüzünü kullanır. MuJoCo
 görüntüleyicisinde iki kamera eklemi ayrı hedeflerle sürülebilir.
+Mevcut gövdeye sabit ToF varsayımıyla, pan ortadayken yaklaşık 25–35° yukarı
+bakışta ToF kasası görüntü merkezine girebilir. Bu, modeldeki montaj
+konumunun sonucudur.
 
 ## Servo ve kütle
 
