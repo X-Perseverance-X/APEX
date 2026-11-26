@@ -135,6 +135,14 @@ COURSES = {
     "hybrid-narrow-down-08": Course(0.08, 3, edge_x=1.05, tread_m=0.23, descending=True),
     "hybrid-narrow-10": Course(0.10, 3, edge_x=1.05, tread_m=0.21),
     "hybrid-narrow-down-10": Course(0.10, 3, edge_x=1.05, tread_m=0.21, descending=True),
+    "hybrid-lab-up-07": Course(0.07, 1, edge_x=1.05),
+    "hybrid-lab-up-08": Course(0.08, 3, edge_x=1.05, tread_m=0.23),
+    "hybrid-lab-up-07-slow": Course(0.07, 1, edge_x=1.05),
+    "hybrid-lab-down-10": Course(0.10, 3, edge_x=1.05, tread_m=0.21, descending=True),
+    "hybrid-lab-down-12": Course(0.12, 3, edge_x=1.05, tread_m=0.21, descending=True),
+    "hybrid-lab-down-15": Course(0.15, 3, edge_x=1.05, tread_m=0.21, descending=True),
+    "hybrid-lab-down-15-single": Course(0.15, 1, edge_x=1.05, descending=True),
+    "hybrid-lab-down-15-wide": Course(0.15, 3, edge_x=1.05, tread_m=0.32, descending=True),
 }
 
 TRIPOD = np.array([0, 1, 0, 1, 0, 1], dtype=float) * 0.5
@@ -155,6 +163,8 @@ class LocomotionEnv(Meta1Env):
         self.course_name = course
         self.course = COURSES[course]
         self.hybrid = course.startswith("hybrid-")
+        self.edge_control = course.startswith("hybrid-lab-")
+        self.short_climb = course == "hybrid-lab-up-07-slow"
         body_control |= self.hybrid
         self.adapt = self.course.descending or self.course.rise_m > 0.02
         self.climbing = self.adapt and not self.course.descending
@@ -261,6 +271,7 @@ class LocomotionEnv(Meta1Env):
         self.hold = 0
         self.work_j = 0.0
         self.slip_m = 0.0
+        self.rear_riser_contact_steps = 0
         self.max_clearance_m = 0.0
         self.adjustment = np.zeros(self.action_space.shape)
         self.gait = "tripod" if self.hybrid else "reference"
@@ -298,7 +309,9 @@ class LocomotionEnv(Meta1Env):
                 self.body_motion.reset()
                 self.gait = "wave"
             else:
-                return self._tripod_targets(residual, flat=True)
+                return self._tripod_targets(
+                    np.zeros_like(residual) if self.short_climb else residual, flat=True
+                )
         if self.body_motion:
             return self._solve_ik(self.body_motion.targets(residual))
         return self._tripod_targets(residual)
@@ -402,6 +415,8 @@ class LocomotionEnv(Meta1Env):
         upright = 1 - 2 * float(self.data.qpos[4:6] @ self.data.qpos[4:6])
         soles = self.data.xpos[self._foot_ids].copy()
         contact = self.body_motion.contacts() if self.body_motion else self._contacts().astype(bool)
+        rear_riser_contact = self.body_motion is not None and self.body_motion.rear_riser_contact()
+        self.rear_riser_contact_steps += int(rear_riser_contact)
         touchdown = int(np.count_nonzero(contact & ~self.last_contacts))
         self.touchdowns += touchdown
         slip = float(
@@ -442,6 +457,7 @@ class LocomotionEnv(Meta1Env):
             - 0.03 * slip
             - 0.0015 * energy
             - 0.003 * float(np.mean(self.adjustment**2))
+            - 0.07 * (self.edge_control and rear_riser_contact)
             + 5.0 * success
             - 3.0 * (fallen or out)
         )
@@ -483,6 +499,7 @@ class LocomotionEnv(Meta1Env):
                     if self.switch_step is not None
                     else 0.0
                 ),
+                rear_riser_contact_steps=self.rear_riser_contact_steps,
             )
         if self.record_pose and (
             self.steps % 5 == 0 or success or fallen or out or self.steps == self.episode_steps

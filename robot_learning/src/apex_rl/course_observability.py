@@ -70,6 +70,7 @@ def training_recorder(stage: Path):
             now = time.monotonic()
             row = {
                 "iteration": self.iteration,
+                "optimizer_epochs": self.model._n_updates,
                 "transitions": self.num_timesteps,
                 "transitions_s": (self.num_timesteps - self.prev_steps)
                 / max(now - self.started, 1e-3),
@@ -87,6 +88,7 @@ def training_recorder(stage: Path):
                     "max_clearance_m",
                     "body_height_range_m",
                     "max_lateral_com_m",
+                    "rear_riser_contact_steps",
                 ):
                     if field in self.completed[-1]:
                         row[field] = float(np.mean([episode[field] for episode in self.completed]))
@@ -161,7 +163,11 @@ def watch_stage(stage: Path, *, live: bool):
     follow = False
     paused = False
     latest = {}
+    metric_path = stage / METRICS_FILE
+    metric_stamp = None
+    training_status = ""
     next_poll = 0.0
+    next_metric_poll = 0.0
     next_frame = 0.0
     with viewer.launch_passive(model, data, key_callback=key_events.append) as window:
         with window.lock():
@@ -171,6 +177,20 @@ def watch_stage(stage: Path, *, live: bool):
             window.cam.azimuth = 125
         while window.is_running():
             now = time.monotonic()
+            if now >= next_metric_poll and metric_path.exists():
+                stamp = metric_path.stat().st_mtime_ns
+                if stamp != metric_stamp:
+                    metric = deque(read_records(metric_path), maxlen=1)
+                    if metric:
+                        row = metric[0]
+                        training_status = (
+                            f"Iteration {row['iteration']} | transitions {row['transitions']:,}"
+                            f" | {row['transitions_s']:.0f}/s"
+                        )
+                        if "optimizer_epochs" in row:
+                            training_status += f" | PPO epochs {row['optimizer_epochs']}"
+                    metric_stamp = stamp
+                next_metric_poll = now + 1.0
             if (live or not frames) and now >= next_poll and path.exists():
                 with path.open("rb") as stream:
                     stream.seek(file_pos)
@@ -233,7 +253,7 @@ def watch_stage(stage: Path, *, live: bool):
                     None,
                     mujoco.mjtGridPos.mjGRID_TOPLEFT,
                     "Workers",
-                    "\n".join(lines)
+                    "\n".join(([training_status] if training_status else []) + lines)
                     + "\n1-9 / [ ] select | F follow | O overview | P pause"
                     + replay_help,
                 )
@@ -299,6 +319,8 @@ def write_report(run: Path) -> Path:
                     f" · yaklaşma {100 * approach:.1f} cm/s"
                     f" · hassas yürüyüş {100 * precision:.1f} cm/s"
                 )
+                if "rear_riser_contact_steps" in p:
+                    text += f" · arkada kenar temaslı örnek {p['rear_riser_contact_steps']:.1f}"
             body = "".join(
                 "<tr>"
                 f"<td>{row['seed']}</td>"
@@ -332,8 +354,12 @@ def write_report(run: Path) -> Path:
                 ("max_clearance_m", "Ayak açıklığı, m"),
                 ("body_height_range_m", "Gövde Z aralığı, m"),
                 ("max_lateral_com_m", "Azami yanal COM sapması, m"),
+                ("optimizer_epochs", "Tamamlanan PPO epoch"),
+                ("rear_riser_contact_steps", "Arka ayak kenar teması, örnek"),
             )
             if body_control or key not in ("body_height_range_m", "max_lateral_com_m")
+            if key not in ("optimizer_epochs", "rear_riser_contact_steps")
+            or any(key in row for row in rows)
         )
         sample = (
             f" · {rows[-1]['iteration']} iterasyon · {rows[-1]['transitions']:,} toplam geçiş"

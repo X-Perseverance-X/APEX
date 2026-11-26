@@ -192,6 +192,65 @@ denemesi tamamlanmadı. Bu çıkışlar ayrı tanılama koşularıdır.
 
 Görüntüdeki paralel basamak çizgileri için [monoküler basamak algılama çalışması](https://www.sciencedirect.com/science/article/pii/S016786551930087X).
 
+#### Arka ayak, 15 cm ve sensör laboratuvarı
+
+RGB ile 5 cm çıkarken arka ayak kenara yakınsa önce yukarı yükselir,
+ilerleme daha sonra başlar ve ayak yüzeye indikten sonra destek
+ayağı sayılır. Arkada iniş noktası için kenar payı 8 mm artırıldı.
+Aynı on fizik tohumu ile kenar temaslı kontrol örneği ortalaması
+16,3'ten 2,6'ya indi. İki denemede de 10/10 tamamlandı.
+Temas sayacı yalnız arka ayak uçlarının dik basamak yüzüyle temasını
+20 ms aralıkla kontrol eder. Bacak kapaklarının yüzey geometrisi
+ve fiziksel sürtünmesi için ayrıca ölçüm gerekir.
+
+`course-lab-wide` önce 15 cm tek inişi, sonra 32 cm basış derinliği
+olan üç adet 15 cm inişi çalıştırır. `course-lab-descent` 21 cm
+derinliğindeki 10 ve 12 cm inişleri içerir. Simülasyon sözleşmesindeki
+montaj konumları, eklem açıları, hız ve tork sınırları korunur. Tutunma
+ayak–zemin temasından hesaplanır. Alt gövde teması başarısızlıktır.
+
+Altı aşamada 393.216 yeni ortam geçişi toplandı. 15 cm tek iniş iki
+bağımsız değerlendirmede 20/20 tamamlandı. 21 cm derinliğinde üç
+12 cm iniş 4/10, 32 cm derinliğinde üç 15 cm iniş 3/10 tamamlandı.
+7 cm tek çıkış ilk politikada 3/10, daha kısa adımlı ayrı eğitimde
+4/10 tamamlandı. Bu üç parkur terfi eşiğini karşılamadı.
+
+```powershell
+& $py -m apex_rl.cli course-watch --run robot_learning/runs/course-lab-wide/hybrid-lab-down-15-single
+& $py -m apex_rl.cli course-view --run robot_learning/runs/course-lab-wide/hybrid-lab-down-15-single --randomize --seed 1007200 --stabilized-gaze --front-view
+& $py -m tensorboard.main --logdir robot_learning/runs/course-lab-wide/tensorboard --host 127.0.0.1 --port 6006
+```
+
+Eğitim izleyicisi geçiş toplamı, saniye başına geçiş, iterasyon
+ve tamamlanan PPO epoch sayısını gösterir. Aktif aşamayı izlerken
+`course-watch` komutuna `--live` eklenebilir. TensorBoard
+`http://127.0.0.1:6006` adresinde aynı çalışmanın metriklerini gösterir.
+
+```powershell
+& $py -m apex_rl.cli course-sensors --output robot_learning/runs/sensors-local
+```
+
+Baş dengelemesi dünya koordinatında bir bakış noktası tutar. Chassis
+pozundaki yön hatası 40 ms gecikme ve sentetik yön gürültüsüyle
+simüle edilir. İki eksenin komutu nötr çevresinde ±45° ile, komut
+hızı 210°/s ile sınırlanır. Bu hız bir simülasyon ayarıdır.
+Titreşim uygulanan yürüyüşte dikey RMS hata 2,51°'den 0,54°'ye,
+yatay hata 0,92°'den 0,40°'ye düştü. Gimbalın iki ekseni var.
+
+2B LiDAR deneyinde altı ayak yerinde tutulurken gövdenin yüksekliği
+ve pitch'i değiştirilir. Ters kinematik sınırları, ayak konumu, destek
+alanı ve gövde teması kontrol edilen pozlardan menzil kesitleri alınır.
+Riser yüksekliği, yüzeyden dönüşün üst sınırı ve ışının kenarı aştığı
+ilk kesitlerle kestirilir. 5, 7 ve 20 cm örnekleri 5,2, 7,2 ve
+20,1 cm olarak ölçüldü. Bu senaryoda çıkış sınırı 5,5 cm.
+Son iki basamakta karar durdur. Karar, PPO hareketinden ayrı bir
+kinematik tarama deneyinde sınandı. Gimbalın tek başına 57° yukarı
+isteyeceği hedef, gövde burnunun 10° kaldırıldığı erişilebilir pozda
+servo aralığına girdi. Tarama pozlarının kesintisiz dinamik geçişi
+ve sensör birleştirmesi ayrıca doğrulanmalıdır.
+
+Düzlemsel lazer ışınlarının fizik motorunda uygulanışı [MuJoCo ray API](https://mujoco.readthedocs.io/en/stable/APIreference/APIfunctions.html).
+
 #### Önceki sabit desenli parkurlar
 
 | Seviye | Parkur | Başarı |

@@ -4,6 +4,7 @@ import pytest
 
 from apex_rl.course_observability import LANE_SPACING, fleet_model
 from apex_rl.locomotion import COURSES, LocomotionEnv
+from apex_rl.sensor_lab import inspect_course
 from apex_rl.stair_rgb import CameraCalibration, estimate_riser
 
 
@@ -129,3 +130,15 @@ def test_high_narrow_descent_places_rear_leg_first():
             pytest.fail("wave gait did not start")
     finally:
         env.close()
+
+
+@pytest.mark.parametrize(
+    ("course", "rise", "allowed"),
+    [("hybrid-step-05", 0.05, True), ("hybrid-lab-up-07", 0.07, False), ("stairs-20", 0.20, False)],
+)
+def test_tilted_lidar_estimates_lip_and_rejects_unqualified_climb(course, rise, allowed):
+    result = inspect_course(course)
+    assert result["estimated"]["rise_m"] == pytest.approx(rise, abs=0.005)
+    assert (result["decision"] == "EĞİTİM ARALIĞINDA") is allowed
+    assert abs(result["camera_neutral_request_deg"]) > 45
+    assert result["camera_body_assist_deg"] == 10

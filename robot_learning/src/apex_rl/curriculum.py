@@ -46,6 +46,22 @@ REPLAY_MODELS = {
         "hybrid-narrow-05",
         "hybrid-narrow-08",
     },
+    "9d1139c9179d441749299a0f92313a9a6acba40f1933a05739e33a6554384a98": {
+        "hybrid-narrow-down-08",
+        "hybrid-narrow-down-10",
+    },
+    "4d5bb4fc244dda3d7dbee77a5188edb3c89f7e0d94213bdf4229a0a8d37bcb63": {
+        "hybrid-lab-up-07",
+        "hybrid-lab-down-10",
+        "hybrid-lab-down-12",
+    },
+    "ecd307904ecf17c432e4cd87bcc2d3bd545f339dbe5a0e3d507fe5ea6fbbb2b8": {
+        "hybrid-lab-down-15-single",
+        "hybrid-lab-down-15-wide",
+    },
+    "2d3a53cd3acb46b46327d7c10d337f920dc716e58fd52f8dbee4ae953fb757b4": {
+        "hybrid-lab-down-15-wide",
+    },
 }
 
 
@@ -56,6 +72,8 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     view.add_argument("--static", action="store_true", help="inspect the parkour at rest")
     view.add_argument("--seed", type=int, default=42)
     view.add_argument("--randomize", action="store_true", help="replay a benchmark seed")
+    view.add_argument("--stabilized-gaze", action="store_true", help="drive the simulated gimbal")
+    view.add_argument("--front-view", action="store_true", help="look through the robot camera")
     bench = sub.add_parser("course-bench", help="evaluate the tripod reference or policy")
     bench.add_argument("--course", choices=STAGES)
     bench.add_argument("--run", type=Path)
@@ -83,6 +101,8 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     camera = sub.add_parser("course-camera", help="measure synthetic stair risers from RGB")
     camera.add_argument("--course", choices=STAGES, required=True)
     camera.add_argument("--output", type=Path, required=True)
+    sensors = sub.add_parser("course-sensors", help="measure gaze correction and planar LiDAR")
+    sensors.add_argument("--output", type=Path, required=True)
     for command in (view, bench, train):
         command.add_argument(
             "--body-control",
@@ -143,7 +163,7 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
         for key in ("body_height_range_m", "max_lateral_com_m"):
             body_stats[key] = float(np.mean([item[key] for item in outcomes]))
     if env.hybrid:
-        for key in ("approach_speed_m_s", "precision_speed_m_s"):
+        for key in ("approach_speed_m_s", "precision_speed_m_s", "rear_riser_contact_steps"):
             body_stats[key] = float(np.mean([item[key] for item in outcomes]))
     return {
         "episodes": episodes,
@@ -190,18 +210,26 @@ def _inspect(args) -> None:
 def _view(env, policy, args) -> None:
     from mujoco import viewer
 
+    from .sensor_lab import GazeController
+
     obs, _ = env.reset(seed=args.seed)
     if args.static:
         viewer.launch(env.model, env.data)
         return
+    gaze = GazeController(env, args.seed) if args.stabilized_gaze else None
     with viewer.launch_passive(env.model, env.data) as window:
         with window.lock():
             window.cam.distance = 1.65
             window.cam.azimuth = 125
             window.cam.elevation = -28
+            if args.front_view:
+                window.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
+                window.cam.fixedcamid = env.model.camera("front_camera").id
         while window.is_running():
             start = time.monotonic()
             with window.lock():
+                if gaze is not None:
+                    gaze.update()
                 obs, _, done, truncated, info = env.step(_action(env, policy, obs))
                 window.cam.lookat[:] = (env.data.qpos[0] + 0.20, 0, env.data.qpos[2])
             if env.hybrid:
@@ -215,12 +243,17 @@ def _view(env, policy, args) -> None:
                     details += "\nRGB " + (
                         f"{100 * height:.1f} cm" if height is not None else "searching"
                     )
+                if gaze is not None:
+                    yaw_error, pitch_error = gaze.error()
+                    details += f"\nGimbal yaw {yaw_error:+.1f} deg | pitch {pitch_error:+.1f} deg"
                 window.set_texts((None, mujoco.mjtGridPos.mjGRID_TOPLEFT, "Gait", details))
             window.sync()
             if done or truncated:
                 print(json.dumps(info), flush=True)
                 with window.lock():
                     obs, _ = env.reset(seed=args.seed)
+                    if gaze is not None:
+                        gaze = GazeController(env, args.seed)
             time.sleep(max(0.0, 0.02 - (time.monotonic() - start)))
 
 
@@ -296,6 +329,7 @@ def _train(args) -> None:
             else:
                 policy.set_env(vector)
             policy.tensorboard_log = str(args.output / "tensorboard")
+            manifest.update(ppo_epochs=policy.n_epochs, steps_per_worker=policy.n_steps)
             policy.learn(
                 total_timesteps=args.timesteps,
                 reset_num_timesteps=False,
@@ -331,7 +365,11 @@ def _train(args) -> None:
 
 
 def run_command(args, parser: argparse.ArgumentParser) -> None:
-    if args.command == "course-camera":
+    if args.command == "course-sensors":
+        from .sensor_lab import sensor_report
+
+        sensor_report(args.output)
+    elif args.command == "course-camera":
         from .course_camera import capture_course
 
         capture_course(args.course, args.output)
@@ -370,4 +408,6 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
                 )
             if args.command == "course-view" and args.static:
                 parser.error("--camera-gate requires a running viewer")
+            if args.command == "course-view" and args.stabilized_gaze:
+                parser.error("the RGB approach has its own camera angle calibration")
         _inspect(args)

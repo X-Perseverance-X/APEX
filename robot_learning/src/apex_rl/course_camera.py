@@ -54,6 +54,7 @@ class CameraGatedCourse(LocomotionEnv):
         super().__init__(course, **kwargs)
         if course != "hybrid-step-05":
             raise ValueError("RGB walking uses the single upward step experiment")
+        self.edge_control = True
         self.camera = CourseCamera(self)
         self.riser = None
         self.camera_votes = 0
