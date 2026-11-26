@@ -48,7 +48,11 @@ def training_recorder(stage: Path):
                             "fallen",
                             "success",
                             "pack_voltage_proxy_v",
+                            "body_z_m",
+                            "body_target_z_m",
+                            "supporting_feet",
                         )
+                        if key in info
                     }
                 if "episode" in info:
                     self.completed.append(info)
@@ -78,8 +82,11 @@ def training_recorder(stage: Path):
                     "slip_m",
                     "mechanical_work_j",
                     "max_clearance_m",
+                    "body_height_range_m",
+                    "max_lateral_com_m",
                 ):
-                    row[field] = float(np.mean([episode[field] for episode in self.completed]))
+                    if field in self.completed[-1]:
+                        row[field] = float(np.mean([episode[field] for episode in self.completed]))
                 row["episode_reward"] = float(np.mean([i["episode"]["r"] for i in self.completed]))
             for name, value in row.items():
                 self.logger.record(f"parkour/{name}", value)
@@ -206,9 +213,15 @@ def watch_stage(stage: Path, *, live: bool):
             for worker, row in latest.items():
                 state = "PASS" if row["success"] else ("FALL" if row["fallen"] else "RUN")
                 marker = ">" if selected == int(worker) else " "
+                body_status = (
+                    f"  Z {100 * row['body_z_m']:.1f}/{100 * row['body_target_z_m']:.1f} cm"
+                    f"  support {row['supporting_feet']}/6"
+                    if "body_z_m" in row
+                    else ""
+                )
                 lines.append(
                     f"{marker}{int(worker) + 1}  {state}  ep {row['episode_id'] + 1}  "
-                    f"{row['progress_m']:.2f} m  landings {row['touchdowns']}"
+                    f"{row['progress_m']:.2f} m  landings {row['touchdowns']}{body_status}"
                 )
             replay_help = "" if live else " | R replay"
             window.set_texts(
@@ -253,6 +266,8 @@ def _chart(rows: list[dict], key: str, title: str) -> str:
 def write_report(run: Path) -> Path:
     blocks = []
     for stage in (run / name for name in COURSES if (run / name / "manifest.json").exists()):
+        metadata = json.loads((stage / "manifest.json").read_text(encoding="utf-8"))
+        body_control = metadata.get("body_control", False)
         rows = list(read_records(stage / METRICS_FILE))
         result = stage / "evaluation.json"
         title = html.escape(stage.name)
@@ -260,7 +275,7 @@ def write_report(run: Path) -> Path:
         detail = ""
         if result.exists():
             data = json.loads(result.read_text(encoding="utf-8"))
-            p, b = data["policy"], data["tripod"]
+            p, b = data["policy"], data["body_reference" if body_control else "tripod"]
             verdict = "GEÇTİ" if data["passed"] else "EŞİK GEÇİLMEDİ"
             text = (
                 f"<b>{verdict}</b> · PPO {p['successes']}/{p['episodes']} · "
@@ -268,6 +283,11 @@ def write_report(run: Path) -> Path:
                 f"düşme {p['falls']} · gövde teması {p['chassis_hits']} · "
                 f"ortalama ilerleme {p['mean_progress_m']:.2f} m"
             )
+            if body_control:
+                text += (
+                    f" · ort. gövde Z aralığı {100 * p['body_height_range_m']:.1f} cm"
+                    f" · ort. azami yanal COM sapması {100 * p['max_lateral_com_m']:.1f} cm"
+                )
             body = "".join(
                 "<tr>"
                 f"<td>{row['seed']}</td>"
@@ -299,7 +319,10 @@ def write_report(run: Path) -> Path:
                 ("transitions_s", "Geçiş / saniye"),
                 ("progress_m", "İlerleme, m"),
                 ("max_clearance_m", "Ayak açıklığı, m"),
+                ("body_height_range_m", "Gövde Z aralığı, m"),
+                ("max_lateral_com_m", "Azami yanal COM sapması, m"),
             )
+            if body_control or key not in ("body_height_range_m", "max_lateral_com_m")
         )
         sample = (
             f" · {rows[-1]['iteration']} iterasyon · {rows[-1]['transitions']:,} toplam geçiş"

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 from gymnasium import spaces
 
+from .body_motion import BodyMotion
 from .contract import LEG_ORDER
 from .env import Meta1Env, _rotation_from_quaternion
 from .model import build_xml
@@ -141,6 +142,7 @@ class LocomotionEnv(Meta1Env):
         randomize: bool = True,
         episode_steps: int | None = None,
         record_pose: bool = False,
+        body_control: bool = False,
     ):
         self.course_name = course
         self.course = COURSES[course]
@@ -155,12 +157,17 @@ class LocomotionEnv(Meta1Env):
         self.episode = -1
         super().__init__(
             task="velocity",
-            episode_steps=episode_steps or (1700 if self.adapt else 1100),
+            episode_steps=episode_steps
+            or (3000 if body_control else (1700 if self.adapt else 1100)),
             domain_randomization=randomize,
         )
         self.stand_height -= self.course.start_height
-        self.action_space = spaces.Box(-1.0, 1.0, shape=(3,), dtype=np.float32)
-        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(85,), dtype=np.float32)
+        self.action_space = spaces.Box(
+            -1.0, 1.0, shape=(6 if body_control else 3,), dtype=np.float32
+        )
+        self.observation_space = spaces.Box(
+            -np.inf, np.inf, shape=(103 if body_control else 85,), dtype=np.float32
+        )
         self._base_observation_space = spaces.Box(-np.inf, np.inf, shape=(72,), dtype=np.float32)
         self.mount = np.deg2rad([self.config["mount_yaw_deg"][leg] for leg in LEG_ORDER])
         self.hip = np.array([self.config["hip_xyz_m"][leg] for leg in LEG_ORDER])
@@ -181,6 +188,9 @@ class LocomotionEnv(Meta1Env):
         self._terrain_ids = [
             self.model.geom(f"course_step_{i + 1}").id for i in range(self.course.risers)
         ]
+        self.body_motion = BodyMotion(self) if body_control else None
+        if self.body_motion:
+            self.body_motion.reset()
 
     def _model_xml(self) -> str:
         return self.course.scene(self.config)
@@ -205,6 +215,23 @@ class LocomotionEnv(Meta1Env):
             math.cos(heading),
             self.course.goal - x,
         ]
+        if self.body_motion:
+            controller = self.body_motion
+            relative_feet = [
+                sz - self.config["foot_radius_m"] - self.course.height(sx, sy)
+                for sx, sy, sz in self.data.xpos[self._foot_ids]
+            ]
+            leg = [float(controller.leg == i) for i in range(6)]
+            extras.extend(
+                [
+                    *(controller.body - self.data.qpos[:3]),
+                    controller.pitch,
+                    controller.support_count / 6,
+                    min(1.0, controller.elapsed),
+                    *leg,
+                    *relative_feet,
+                ]
+            )
         return np.concatenate((base, extras)).astype(np.float32)
 
     def _heading(self) -> float:
@@ -221,7 +248,7 @@ class LocomotionEnv(Meta1Env):
         self.work_j = 0.0
         self.slip_m = 0.0
         self.max_clearance_m = 0.0
-        self.adjustment = np.zeros(3)
+        self.adjustment = np.zeros(self.action_space.shape)
         self.model.actuator_forcerange[self._legs] = self._leg_force_range
         super().reset(seed=seed, options={"command": [0.12, 0.0, 0.0]})
         if self.domain_randomization:
@@ -235,9 +262,15 @@ class LocomotionEnv(Meta1Env):
         self.model.geom_friction[self._terrain_ids, 0] = self.model.geom_friction[0, 0]
         self.last_contacts = self._contacts().astype(bool)
         self.last_feet = self.data.xpos[self._foot_ids].copy()
+        if self.body_motion:
+            self.body_motion.reset()
+        self.min_body_z = self.max_body_z = float(self.data.qpos[2])
+        self.max_lateral_com = 0.0
         return self._observation(), {"course": self.course_name}
 
     def _targets(self, residual: np.ndarray) -> np.ndarray:
+        if self.body_motion:
+            return self._solve_ik(self.body_motion.targets(residual))
         period = self.period
         duty = 0.68 if self.climbing else (0.72 if self.adapt else 0.64)
         phase = (self.phase + TRIPOD) % 1.0
@@ -297,6 +330,9 @@ class LocomotionEnv(Meta1Env):
                 (body[:, 0] * mc + body[:, 1] * ms, -body[:, 0] * ms + body[:, 1] * mc, body[:, 2])
             )
 
+        return self._solve_ik(foot)
+
+    def _solve_ik(self, foot: np.ndarray) -> np.ndarray:
         length, a, b = self.lengths
         radius = np.hypot(foot[:, 0], foot[:, 1]) - length
         z = foot[:, 2]
@@ -310,8 +346,8 @@ class LocomotionEnv(Meta1Env):
 
     def step(self, action):
         action = np.asarray(action, dtype=np.float32)
-        if action.shape != (3,) or not np.isfinite(action).all():
-            raise ValueError("locomotion action must be three finite residuals")
+        if action.shape != self.action_space.shape or not np.isfinite(action).all():
+            raise ValueError("locomotion action has the wrong shape or a non-finite value")
         action = np.clip(action, -1, 1)
         self.adjustment = 0.75 * self.adjustment + 0.25 * action
         x0 = float(self.data.qpos[0])
@@ -324,7 +360,7 @@ class LocomotionEnv(Meta1Env):
         x, y, z = self.data.qpos[:3]
         upright = 1 - 2 * float(self.data.qpos[4:6] @ self.data.qpos[4:6])
         soles = self.data.xpos[self._foot_ids].copy()
-        contact = self._contacts().astype(bool)
+        contact = self.body_motion.contacts() if self.body_motion else self._contacts().astype(bool)
         touchdown = int(np.count_nonzero(contact & ~self.last_contacts))
         self.touchdowns += touchdown
         slip = float(
@@ -383,6 +419,19 @@ class LocomotionEnv(Meta1Env):
             "supply_scale": self.supply_scale,
             "pack_voltage_proxy_v": self.pack_voltage_proxy_v,
         }
+        if self.body_motion:
+            self.min_body_z = min(self.min_body_z, float(z))
+            self.max_body_z = max(self.max_body_z, float(z))
+            self.max_lateral_com = max(
+                self.max_lateral_com, abs(float(self.data.subtree_com[self.body_motion.base_id, 1]))
+            )
+            info.update(
+                body_z_m=float(z),
+                body_target_z_m=float(self.body_motion.body[2]),
+                body_height_range_m=self.max_body_z - self.min_body_z,
+                max_lateral_com_m=self.max_lateral_com,
+                supporting_feet=self.body_motion.support_count,
+            )
         if self.record_pose and (
             self.steps % 5 == 0 or success or fallen or out or self.steps == self.episode_steps
         ):

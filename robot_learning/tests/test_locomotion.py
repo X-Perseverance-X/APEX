@@ -59,3 +59,23 @@ def test_descent_reference_walk_and_lane_frames():
         assert model.geom("lane2_course_step_1").pos[1] == pytest.approx(2 * LANE_SPACING)
     finally:
         env.close()
+
+
+@pytest.mark.parametrize("course_name", ["step-05", "down-05"])
+def test_body_control_tracks_step_with_independent_footholds(course_name):
+    env = LocomotionEnv(course_name, randomize=False, body_control=True)
+    try:
+        obs, _ = env.reset(seed=5)
+        assert obs.shape == (103,)
+        mixed_footholds = False
+        for _ in range(env.episode_steps):
+            obs, reward, done, truncated, info = env.step(np.zeros(6))
+            assert env.observation_space.contains(obs) and np.isfinite(reward)
+            mixed_footholds |= np.ptp(env.body_motion.anchors[:, 2]) > 0.035
+            if done or truncated:
+                break
+        assert info["success"] and not info["fallen"]
+        assert np.min(env.data.xpos[env._foot_ids, 0]) > env.course.last_edge
+        assert mixed_footholds and info["body_height_range_m"] > 0.035
+    finally:
+        env.close()

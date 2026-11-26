@@ -92,6 +92,39 @@ Parkuru baştan eğitmek için ilk eğitim komutunu yeni bir çıktı klasörüy
 
 ## Seviye sırası ve ölçüm
 
+### Değişken gövde yüksekliği ve bağımsız ayak hedefleri
+
+`--body-control` seçeneği tek ayağı sırayla kaldırır, ileri taşır ve indirir.
+Her ayağın iniş yüksekliği kendi hedef noktasından hesaplanır. Yerdeki ayak
+hedefleri sabit tutulurken diğer bacakların uzayıp kısalması gövdeyi taşır.
+Gövde, temasların yüksekliğine göre yükselir veya alçalır. Gövde hedefi
+ileri-geri ve yana kaydırılırken hesaplanan kütle merkezi hedefi destek
+çokgeninin iç bölgesine çekilir. Konum hedefinin hızı ve ivmesi sınırlandırılır.
+
+PPO adım temposu, ayağın yerden açıklığı, ileri-geri gövde hedefi, gövde
+yüksekliği, yanal kayma ve pitch için altı sınırlı düzeltme öğrenir.
+Ayak temasları MuJoCo'dan, zemin yüksekliği ise parkurun tanımından gelir.
+
+```powershell
+& $py -m apex_rl.cli course-view --run robot_learning/runs/course-body-01/step-05
+& $py -m apex_rl.cli course-watch --run robot_learning/runs/course-body-01/step-05
+& $py -m apex_rl.cli course-train --body-control --start step-05 --through down-05 --envs 4 --timesteps 8192 --output robot_learning/runs/course-body-retry
+```
+
+Kayıt oynatılırken `Z` satırı gövdenin ölçülen ve hedeflenen yüksekliğini,
+`support` ise denge hesabında kullanılan destek ayağı sayısını gösterir.
+Bu modun eğitim kayıtları ve modelleri, üç çıkışlı önceki modellerden
+bağımsızdır. `course-view` modu kayıt bildirgesinden seçer.
+
+İlk dört süreçli eğitim `course-body-01` altında kayıtlıdır. 5 cm tek
+basamak çıkış ve iniş, ayrı değerlendirme ve tekrar kümelerinde yön
+başına 20/20 ve sıfır düşmeyle tamamlandı. İlk değerlendirmede ortalama
+gövde yüksekliği değişim aralığı çıkışta 7,2 cm, inişte 5,5 cm oldu.
+Öğrenilen düzeltmeler sıfırken kullanılan hareket planlayıcısı da ilk
+değerlendirmeyi iki yönde 10/10 tamamladı.
+
+### Parkurlar
+
 | Seviye | Parkur | Başarı |
 | --- | --- | --- |
 | `flat` | 1,2 m düz zemin | Dengeli biçimde bitişi geç |

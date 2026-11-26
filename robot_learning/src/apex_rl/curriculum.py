@@ -29,6 +29,11 @@ REPLAY_MODELS = {
         "step-05",
     },
     "ea069691f75242c07b5cb6d25121bf3aecbdcaef17284dec6bafdc7e78b67c6c": {"down-02", "step-03"},
+    "e6528336f60c4e91413b94485cfc12590a7421cbbae6fc342735c7bedfa6f155": {
+        "step-03",
+        "down-03",
+        "step-04",
+    },
 }
 
 
@@ -62,15 +67,23 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     train.add_argument("--seed", type=int, default=42)
     train.add_argument("--resume", type=Path, help="load a previous stage policy and optimizer")
     train.add_argument("--output", type=Path, default=project / "runs/parkour")
+    for command in (view, bench, train):
+        command.add_argument(
+            "--body-control",
+            action="store_true",
+            help="use terrain-aware wave gait and body control",
+        )
 
 
 def _fingerprint(env: LocomotionEnv) -> str:
     # Include the geometry and implementation that define policy observations and actions.
     source = [
         Path(__file__).with_name(name).read_text(encoding="utf-8")
-        for name in ("locomotion.py", "env.py", "model.py")
+        for name in ("locomotion.py", "env.py", "model.py", "body_motion.py")
     ]
-    return hashlib.sha256(json.dumps([env.config, *source], sort_keys=True).encode()).hexdigest()
+    return hashlib.sha256(
+        json.dumps([env.config, env.body_motion is not None, *source], sort_keys=True).encode()
+    ).hexdigest()
 
 
 def _read_policy(run: Path, env: LocomotionEnv, *, exact_course: bool, vector=None):
@@ -79,16 +92,20 @@ def _read_policy(run: Path, env: LocomotionEnv, *, exact_course: bool, vector=No
     manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
     match = manifest["model_sha256"] == _fingerprint(env)
     legacy = manifest["course"] in REPLAY_MODELS.get(manifest["model_sha256"], ())
-    if manifest["schema"] != SCHEMA or not (match or legacy):
+    if (
+        manifest["schema"] != SCHEMA
+        or manifest.get("body_control", False) != (env.body_motion is not None)
+        or not (match or legacy)
+    ):
         raise ValueError("run uses an incompatible locomotion environment")
     if exact_course and manifest["course"] != env.course_name:
         raise ValueError("run course does not match requested course")
     return PPO.load(run / POLICY_FILE, env=vector, device="cpu")
 
 
-def _action(policy, obs: np.ndarray) -> np.ndarray:
+def _action(env: LocomotionEnv, policy, obs: np.ndarray) -> np.ndarray:
     return (
-        np.zeros(3, dtype=np.float32)
+        np.zeros(env.action_space.shape, dtype=np.float32)
         if policy is None
         else policy.predict(obs, deterministic=True)[0]
     )
@@ -99,10 +116,14 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
     for episode in range(episodes):
         obs, _ = env.reset(seed=seed + episode)
         while True:
-            obs, _, done, truncated, info = env.step(_action(policy, obs))
+            obs, _, done, truncated, info = env.step(_action(env, policy, obs))
             if done or truncated:
                 outcomes.append({"seed": seed + episode, "steps": env.steps, **info})
                 break
+    body_stats = {}
+    if env.body_motion is not None:
+        for key in ("body_height_range_m", "max_lateral_com_m"):
+            body_stats[key] = float(np.mean([item[key] for item in outcomes]))
     return {
         "episodes": episodes,
         "successes": sum(item["success"] for item in outcomes),
@@ -115,15 +136,21 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
         "mean_slip_m": float(np.mean([item["slip_m"] for item in outcomes])),
         "mean_mechanical_work_j": float(np.mean([item["mechanical_work_j"] for item in outcomes])),
         "max_clearance_m": float(max(item["max_clearance_m"] for item in outcomes)),
+        **body_stats,
         "outcomes": outcomes,
     }
 
 
 def _inspect(args) -> None:
     course = args.course
-    if course is None and args.run is not None:
-        course = json.loads((args.run / "manifest.json").read_text(encoding="utf-8"))["course"]
-    env = LocomotionEnv(course or "flat", randomize=args.command == "course-bench")
+    body_control = args.body_control
+    if args.run is not None:
+        manifest = json.loads((args.run / "manifest.json").read_text(encoding="utf-8"))
+        course = course or manifest["course"]
+        body_control = body_control or manifest.get("body_control", False)
+    env = LocomotionEnv(
+        course or "flat", randomize=args.command == "course-bench", body_control=body_control
+    )
     try:
         policy = _read_policy(args.run, env, exact_course=True) if args.run else None
         if args.command == "course-bench":
@@ -150,7 +177,7 @@ def _view(env, policy, args) -> None:
         while window.is_running():
             start = time.monotonic()
             with window.lock():
-                obs, _, done, truncated, info = env.step(_action(policy, obs))
+                obs, _, done, truncated, info = env.step(_action(env, policy, obs))
                 window.cam.lookat[:] = (env.data.qpos[0] + 0.20, 0, env.data.qpos[2])
             window.sync()
             if done or truncated:
@@ -160,11 +187,11 @@ def _view(env, policy, args) -> None:
             time.sleep(max(0.0, 0.02 - (time.monotonic() - start)))
 
 
-def _make_env(course: str, monitor_path: str):
+def _make_env(course: str, monitor_path: str, body_control: bool):
     from stable_baselines3.common.monitor import Monitor
 
     return Monitor(
-        LocomotionEnv(course, record_pose=True),
+        LocomotionEnv(course, record_pose=True, body_control=body_control),
         filename=monitor_path,
         info_keywords=("success", "fallen", "progress_m", "touchdowns", "pack_voltage_proxy_v"),
     )
@@ -183,9 +210,10 @@ def _train(args) -> None:
     for course in STAGES[STAGES.index(args.start) : STAGES.index(args.through) + 1]:
         stage = args.output / course
         stage.mkdir()
-        eval_env = LocomotionEnv(course)
+        eval_env = LocomotionEnv(course, body_control=args.body_control)
         factories = [
-            partial(_make_env, course, str(stage / f"env-{i}.csv")) for i in range(args.envs)
+            partial(_make_env, course, str(stage / f"env-{i}.csv"), args.body_control)
+            for i in range(args.envs)
         ]
         vector = (
             DummyVecEnv(factories)
@@ -200,6 +228,7 @@ def _train(args) -> None:
                 "seed": args.seed,
                 "eval_seed": args.eval_seed,
                 "envs": args.envs,
+                "body_control": args.body_control,
                 "total_transitions": None,
                 "model_sha256": _fingerprint(eval_env),
                 "python": platform.python_version(),
@@ -212,6 +241,9 @@ def _train(args) -> None:
             if policy is None and args.resume:
                 policy = _read_policy(args.resume, eval_env, exact_course=False, vector=vector)
             if policy is None:
+                policy_kwargs = {"net_arch": {"pi": [64, 64], "vf": [64, 64]}}
+                if args.body_control:
+                    policy_kwargs["log_std_init"] = -1.7
                 policy = PPO(
                     "MlpPolicy",
                     vector,
@@ -220,7 +252,7 @@ def _train(args) -> None:
                     n_steps=512,
                     batch_size=128,
                     learning_rate=3e-4,
-                    policy_kwargs={"net_arch": {"pi": [64, 64], "vf": [64, 64]}},
+                    policy_kwargs=policy_kwargs,
                     verbose=1,
                     tensorboard_log=str(args.output / "tensorboard"),
                 )
@@ -246,7 +278,8 @@ def _train(args) -> None:
             evaluation["successes"] / args.eval_episodes >= MIN_SUCCESS
             and evaluation["falls"] / args.eval_episodes <= MAX_FALLS
         )
-        report = {"course": course, "passed": passed, "policy": evaluation, "tripod": baseline}
+        baseline_key = "body_reference" if args.body_control else "tripod"
+        report = {"course": course, "passed": passed, "policy": evaluation, baseline_key: baseline}
         (stage / "evaluation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         result = {
             key: evaluation[key] for key in ("episodes", "successes", "falls", "mean_progress_m")
