@@ -8,9 +8,10 @@ import mujoco
 import numpy as np
 import pytest
 
+from apex_rl.body_visual import load_body_layout
 from apex_rl.contract import LEG_ORDER, load_contract, validate_contract
 from apex_rl.env import Meta1Env
-from apex_rl.model import LEG_MESH_DIR, build_xml, stand_joint_angles
+from apex_rl.model import BODY_MESH_DIR, LEG_MESH_DIR, build_xml, stand_joint_angles
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -58,7 +59,9 @@ def test_mark2_mesh_alignment_and_conservative_limits():
     cfg = load_contract()
     cad = json.loads((LEG_MESH_DIR / "manifest.json").read_text(encoding="utf-8"))
     model = mujoco.MjModel.from_xml_string(build_xml())
-    assert model.nmesh == 8
+    for side in ("left", "right"):
+        for link in ("mount", "coxa", "femur", "tibia"):
+            assert model.mesh(f"{link}_{side}").id >= 0
     assert mujoco.mj_getTotalmass(model) == pytest.approx(cfg["mass_profile"]["design_total_kg"])
     for leg in LEG_ORDER:
         for joint, length in cfg["links_m"].items():
@@ -72,6 +75,34 @@ def test_mark2_mesh_alignment_and_conservative_limits():
     for axis in ("pan", "tilt"):
         servo_size = model.geom(f"camera_{axis}_SG90_case").size
         assert 2 * servo_size == pytest.approx(cfg["servo_case_size_m"]["SG90"])
+
+
+def test_body_mesh_mounts_follow_correct_camera_joints():
+    model = mujoco.MjModel.from_xml_string(build_xml())
+    parts = load_body_layout()
+    actual = json.loads((BODY_MESH_DIR / "manifest.json").read_text(encoding="utf-8"))
+    assert actual["sources"]["Bottom_Plate.stl"]["dimensions_mm"] == [300.0, 110.0, 8.0]
+    assert model.nmesh == 8 + len(actual["sources"])
+    parents = {"base": "base", "pan": "camera_pan_body", "tilt": "camera_tilt_body"}
+    for part in parts:
+        geom = model.geom(part["name"])
+        assert int(geom.bodyid[0]) == model.body(parents[part["parent"]]).id
+        assert int(geom.contype[0]) == 0 and int(geom.conaffinity[0]) == 0
+    data = mujoco.MjData(model)
+    mujoco.mj_resetDataKeyframe(model, data, 0)
+    mujoco.mj_forward(model, data)
+    stationary = data.geom("pan_fixed_cradle").xpos.copy()
+    arm = data.geom("pan_to_tilt_arm").xpos.copy()
+    carrier = data.geom("tilt_camera_carrier").xpos.copy()
+    data.joint("camera_tilt_joint").qpos[0] = -math.pi / 6
+    mujoco.mj_forward(model, data)
+    assert data.geom("pan_fixed_cradle").xpos == pytest.approx(stationary)
+    assert data.geom("pan_to_tilt_arm").xpos == pytest.approx(arm)
+    assert np.linalg.norm(data.geom("tilt_camera_carrier").xpos - carrier) > 0.01
+    data.joint("camera_pan_joint").qpos[0] = math.pi / 6
+    mujoco.mj_forward(model, data)
+    assert data.geom("pan_fixed_cradle").xpos == pytest.approx(stationary)
+    assert np.linalg.norm(data.geom("pan_to_tilt_arm").xpos - arm) > 0.01
 
 
 def test_sensor_frames_and_camera_rotation():

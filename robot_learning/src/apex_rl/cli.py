@@ -14,7 +14,7 @@ import numpy as np
 
 from .contract import load_contract
 from .env import Meta1Env
-from .model import LEG_MESH_DIR, build_xml
+from .model import BODY_MESH_DIR, LEG_MESH_DIR, build_xml
 
 PROJECT = Path(__file__).resolve().parents[2]
 
@@ -42,10 +42,11 @@ def main() -> None:
 
     if args.command == "build":
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        mesh_dir = args.output.parent / LEG_MESH_DIR.name
-        if mesh_dir.resolve() != LEG_MESH_DIR:
-            shutil.copytree(LEG_MESH_DIR, mesh_dir, dirs_exist_ok=True)
-        args.output.write_text(build_xml(mesh_dir=mesh_dir.name), encoding="utf-8")
+        for source in (LEG_MESH_DIR, BODY_MESH_DIR):
+            target = args.output.parent / source.name
+            if target.resolve() != source:
+                shutil.copytree(source, target, dirs_exist_ok=True)
+        args.output.write_text(build_xml(mesh_dir="."), encoding="utf-8")
         model = mujoco.MjModel.from_xml_path(str(args.output))
         print(
             json.dumps(

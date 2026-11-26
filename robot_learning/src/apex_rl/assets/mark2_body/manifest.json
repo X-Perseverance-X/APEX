@@ -1,0 +1,173 @@
+{
+  "units": "metres",
+  "sources": {
+    "Back_Cover_All.stl": {
+      "source_sha256": "8eb8d53cee0f254840847497cad33b4429065db07489c7eca7f4cd999952dc43",
+      "dimensions_mm": [
+        60.0,
+        85.0,
+        20.0
+      ]
+    },
+    "Back_Side_Covers.stl": {
+      "source_sha256": "f71f62e37d06e346facc7812f07790fcb89aecfd7b8b638c8b8d5da04929c411",
+      "dimensions_mm": [
+        135.0,
+        85.0,
+        10.0
+      ]
+    },
+    "Back_cover.stl": {
+      "source_sha256": "2d2f50e66aeb805c17a760181637c8de1241b16460b42d5e968041d274a88220",
+      "dimensions_mm": [
+        150.0,
+        80.0,
+        3.0
+      ]
+    },
+    "Battery_Holder.stl": {
+      "source_sha256": "504ddee1bccc30b4ef92ce622f6fd4d82bb9da97e9248df328bc5658723b1837",
+      "dimensions_mm": [
+        63.0,
+        34.0,
+        5.0
+      ]
+    },
+    "Battery_Holder_Bottom.stl": {
+      "source_sha256": "535115aa8bed885e288174d71e2cd00a1ed95ca17b72eb38c3d8bfc17a541517",
+      "dimensions_mm": [
+        53.0,
+        56.5,
+        5.0
+      ]
+    },
+    "Battery_Holder_Side.stl": {
+      "source_sha256": "08b78c717f75f055aa1a4a2246ec5bb993cbca9a1b85fb245196f0b1c2cce36d",
+      "dimensions_mm": [
+        56.5,
+        17.0,
+        5.0
+      ]
+    },
+    "Battery_connector.stl": {
+      "source_sha256": "e2a5fcb5dedb47eb5a1f4c889444726b4a5bb7684cbb6764f5c170c2a13d7b86",
+      "dimensions_mm": [
+        66.5,
+        15.0,
+        13.0
+      ]
+    },
+    "Bottom_Plate.stl": {
+      "source_sha256": "1a5d5d0919e9b910d8fec5822d798876acbf2446cbc07aa5b27ae135b9b06472",
+      "dimensions_mm": [
+        300.0,
+        110.0,
+        8.0
+      ]
+    },
+    "Camera_Holder.stl": {
+      "source_sha256": "62e667b4b4ed4da7998f6946f14e52839f391b375ec656bef6f225baf4d6cdd5",
+      "dimensions_mm": [
+        32.0,
+        36.0,
+        38.0
+      ]
+    },
+    "Camera_Holder_2.stl": {
+      "source_sha256": "3939b3a4539580d3cda4313011cacd935b13ec34ec38e093e9e2fec3c3548914",
+      "dimensions_mm": [
+        67.0,
+        16.0,
+        15.0
+      ]
+    },
+    "Fan_Holder.stl": {
+      "source_sha256": "0e53e1016c8a42df47a591d64922ee169c20e263b4a789f80eb1b2dbc764ca9a",
+      "dimensions_mm": [
+        20.0,
+        10.0,
+        10.0
+      ]
+    },
+    "Left_Side_Cover_1.stl": {
+      "source_sha256": "235d0775d09e3b771ac68c461c82d27e974bd6d6ba1f5f715470c3c067c260c4",
+      "dimensions_mm": [
+        120.0,
+        10.0,
+        85.0
+      ]
+    },
+    "Lidar_Cover.stl": {
+      "source_sha256": "99247403a4acab047b5686a794102c6efc3cde7eb977169bb85e63b04d377735",
+      "dimensions_mm": [
+        150.0,
+        80.0,
+        3.0
+      ]
+    },
+    "Light_Cover.stl": {
+      "source_sha256": "45499685c2cb80752352f1e22709bcc556c0bdc4a107ff291d5de3de463af7fc",
+      "dimensions_mm": [
+        80.0,
+        21.0,
+        6.0
+      ]
+    },
+    "Light_Holder.stl": {
+      "source_sha256": "3e902e2ebbfba14d0e222fb49b50e235f8488eb60f4c0775ef570c24d3a34f9d",
+      "dimensions_mm": [
+        20.0,
+        20.0,
+        20.0
+      ]
+    },
+    "Main_Battery_Connector.stl": {
+      "source_sha256": "11785c77f842ca0f0f1a0a20085e75d6e4fd8e646e7dbdf4e9698692eddf2a4d",
+      "dimensions_mm": [
+        52.0,
+        18.0,
+        3.0
+      ]
+    },
+    "Main_Battery_Cover.stl": {
+      "source_sha256": "0327aec431cc51e5ea36ea515b39ad27366ca3cbb67e074494b4a54bcb411ad4",
+      "dimensions_mm": [
+        70.0,
+        60.0,
+        25.0
+      ]
+    },
+    "Pan_and_tilt_holder.stl": {
+      "source_sha256": "303de828e07d1f9306f6b6958e081df7043b7498f7d80f6956ecbab8da2ad6ed",
+      "dimensions_mm": [
+        40.0,
+        10.0,
+        22.0
+      ]
+    },
+    "Rigt_Side_Cover_1.stl": {
+      "source_sha256": "0bd62dfddd11be06bdb5b725dded557584ebf17c95064e0919fae2e71a94c521",
+      "dimensions_mm": [
+        120.0,
+        12.0,
+        85.0
+      ]
+    },
+    "Side_2.stl": {
+      "source_sha256": "81f8e515dad7bf492c236227aa914aec5a94d38dd06ab72c7ceb86f2f1892a8f",
+      "dimensions_mm": [
+        30.0,
+        85.0,
+        10.0
+      ]
+    },
+    "Top_Connector.stl": {
+      "source_sha256": "8e9fd94fe43596789819a1dc9835ca59474852659556b595490d9b363917573c",
+      "dimensions_mm": [
+        40.0,
+        40.0,
+        6.0
+      ]
+    }
+  }
+}

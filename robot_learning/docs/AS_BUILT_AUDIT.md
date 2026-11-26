@@ -1,6 +1,6 @@
 # META-1 MuJoCo modeli ve fiziksel robot
 
-Gri kafes gövde ve üst LiDAR önceki modelden geliyor. Bacakların braketleri,
+Üst LiDAR'ın referans konumu ve kasa modeli önceki sürümden geliyor. Bacakların braketleri,
 delikleri ve kavisli tibia plakaları gönderilen `MARK_2_LEG.SLDASM` ve STL
 parçalarından alındı. Assembly'deki görünür parça dönüşümleriyle yerleştirilen
 geometri sağ ve sol bacaklar için aynalandı. Meshler gerçek ölçekte, yalnızca
@@ -9,6 +9,27 @@ v57.33 ile eşleşen fizik modeli üzerinden hesaplanıyor. CAD'den çıkarılan
 eklem aralıkları ile fizik modeli arasındaki fark üç bağlantıda da 1 mm altında.
 Diskteki montaj dosyalarını değiştirmeden dönüşümü yeniden üretmek için
 `tools/import_mark2_leg.py` betiğine kaynak CAD klasörünü verin.
+
+## Gövde ve kamera montajı
+
+Gövde, 300 × 110 × 8 mm alt plaka dahil 21 ayrı STL'den toplandı. Kapağın
+kesiti, yan panel yuvaları ve pil kafesinin delikleri kaynak çizimlerle aynı
+ölçekte. Yerleşim için alt fotoğraftaki sıra kullanıldı. Arkada üç yuvalı
+ana pil kapağı, ortada iki yuvalı pil tablası ve üçgen yan destekleri, önde
+fan bağlantıları var. Fan gövdesi, fan kartı ve piller temsili geometriler.
+LiDAR kapağının açıklığı kayıtlı LiDAR merkezine hizalandı.
+
+Kamera üç montaj parçası kullanıyor. `Pan_and_tilt_holder` sabit yuvadır.
+`Camera_Holder_2` pan miliyle dönen ara koldur. `Camera_Holder` tilt
+miline takılan lens ve IR kartı taşıyıcısıdır. Dizilim, STL'deki mil ve yuva
+geometrisinden çıkarıldı. Kamera ile ToF'un önceki ölçüm çerçeveleri korundu.
+
+Gövde STL'leri ayrı parça ihraçları. Yerleşim ölçüleri, fotoğraflar ve
+mevcut sensör eksenleriyle hizalanarak [body_layout.json](../src/apex_rl/assets/body_layout.json)
+dosyasında ayarlanabilir hale getirildi. Gövdede takılı konumu seçilemeyen
+hoparlör plakaları ve ikinci pil bağlantısı varyantı bu montajın dışında.
+`tools/import_mark2_body.py` ile kullanılan STL'ler kaynak klasörden yeniden
+üretilebilir.
 
 ## Gövde merkezinden sensör ve eklem konumları
 
@@ -53,6 +74,6 @@ için yüklü hız, gecikme, akım, boşluk ve tork sınırı ayrıca ölçülü
 - [Waveshare RPi Camera (F) ve IR aydınlatıcılar](https://www.waveshare.com/wiki/RPi_Camera_%28F%29)
 - [MuJoCo sensör ve eklem tanımları](https://mujoco.readthedocs.io/en/stable/XMLreference.html)
 
-Bu aşamanın çıktısı MuJoCo MJCF modeli ve yanında taşınan `mark2_leg/` mesh
-klasörüdür. Bacak çarpışma geometrisi, sürtünme, kütle dağılımı ve servo tepki
+Bu aşamanın çıktısı MuJoCo MJCF modeli ve yanında taşınan `mark2_leg/` ile
+`mark2_body/` mesh klasörleridir. Bacak çarpışma geometrisi, sürtünme, kütle dağılımı ve servo tepki
 modeli fiziksel ölçümlerle doğrulandığında gerçek yürüyüşle karşılaştırılabilir.

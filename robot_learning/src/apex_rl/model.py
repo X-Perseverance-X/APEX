@@ -10,14 +10,18 @@ import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from .body_visual import (
+    ASSET_DIR,
+    VISUAL_ONLY,
+    add_underbody_details,
+    fmt,
+    load_body_layout,
+    place_body_cad,
+)
 from .contract import LEG_ORDER, load_contract
 
-LEG_MESH_DIR = Path(__file__).resolve().parent / "assets/mark2_leg"
-VISUAL_ONLY = {"mass": "0", "contype": "0", "conaffinity": "0", "group": "2"}
-
-
-def fmt(values):
-    return " ".join(f"{float(value):.9g}" for value in values)
+LEG_MESH_DIR = ASSET_DIR / "mark2_leg"
+BODY_MESH_DIR = ASSET_DIR / "mark2_body"
 
 
 def add_servo_case(parent, name, dimensions, position, *, euler="0 0 0", color="0.08 0.09 0.10 1"):
@@ -48,18 +52,32 @@ def stand_joint_angles(config: dict | None = None) -> list[float]:
     ]
 
 
-def build_xml(config: dict | None = None, *, mesh_dir: str | Path = LEG_MESH_DIR) -> str:
+def build_xml(config: dict | None = None, *, mesh_dir: str | Path = ASSET_DIR) -> str:
     cfg = config or load_contract()
+    parts = load_body_layout()
 
     root = ET.Element("mujoco", model="apex_meta1_rl_proxy")
     ET.SubElement(
         root, "compiler", angle="radian", autolimits="true", meshdir=Path(mesh_dir).as_posix()
     )
     assets = ET.SubElement(root, "asset")
+    ET.SubElement(
+        assets,
+        "texture",
+        name="inspection_sky",
+        type="skybox",
+        builtin="gradient",
+        rgb1="0.33 0.38 0.42",
+        rgb2="0.20 0.24 0.27",
+        width="128",
+        height="128",
+    )
     for side in ("left", "right"):
         for link in ("mount", "coxa", "femur", "tibia"):
             name = f"{link}_{side}"
-            ET.SubElement(assets, "mesh", name=name, file=f"{name}.stl")
+            ET.SubElement(assets, "mesh", name=name, file=f"mark2_leg/{name}.stl")
+    for name in sorted({part["mesh"] for part in parts}):
+        ET.SubElement(assets, "mesh", name=f"body_{name}", file=f"mark2_body/{name}.stl")
     ET.SubElement(root, "option", timestep="0.002", integrator="implicitfast", gravity="0 0 -9.81")
     visual = ET.SubElement(root, "visual")
     ET.SubElement(visual, "global", offwidth="1280", offheight="720")
@@ -84,6 +102,24 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = LEG_MESH_DIR
         target="base",
         pos="0.62 -0.42 0.88",
         fovy="39",
+    )
+    ET.SubElement(
+        world,
+        "camera",
+        name="underside",
+        mode="targetbody",
+        target="base",
+        pos="0.17 -0.52 -0.50",
+        fovy="34",
+    )
+    ET.SubElement(
+        world,
+        "camera",
+        name="camera_detail",
+        mode="targetbody",
+        target="camera_tilt_body",
+        pos="0.44 -0.09 0.27",
+        fovy="34",
     )
     ET.SubElement(
         world,
@@ -184,43 +220,9 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = LEG_MESH_DIR
         rgba="0.28 0.34 0.40 1",
         **VISUAL_ONLY,
     )
-    # Approximate the narrow grey cage and recessed side slots in the photos.
-    decorative = {"mass": "0", "contype": "0", "conaffinity": "0"}
-    for plate, z in (("top", 0.079), ("bottom", 0.006)):
-        ET.SubElement(
-            torso,
-            "geom",
-            name=f"chassis_{plate}",
-            type="box",
-            pos=fmt([0, 0, z]),
-            size="0.181 0.067 0.003",
-            rgba="0.42 0.47 0.51 1",
-            **decorative,
-        )
-    ET.SubElement(
-        torso,
-        "geom",
-        name="chassis_inner",
-        type="box",
-        pos="0 0 0.041",
-        size="0.171 0.056 0.032",
-        rgba="0.10 0.12 0.13 1",
-        **decorative,
-    )
-    for side, y in (("left", 0.064), ("right", -0.064)):
-        for i, x in enumerate(
-            (-0.177, -0.139, -0.101, -0.063, -0.025, 0.025, 0.063, 0.101, 0.139, 0.177)
-        ):
-            ET.SubElement(
-                torso,
-                "geom",
-                name=f"chassis_{side}_rib_{i}",
-                type="box",
-                pos=fmt([x, y, 0.042]),
-                size="0.007 0.003 0.035",
-                rgba="0.36 0.40 0.44 1",
-                **decorative,
-            )
+    anchors = {"lidar": sensor_cfg["lidar"]["xyz_m"], "pan": sensor_cfg["gimbal"]["pan_axis_xyz_m"]}
+    place_body_cad(torso, "base", parts, anchors)
+    add_underbody_details(torso)
     actuators = ET.SubElement(root, "actuator")
     sensors = ET.SubElement(root, "sensor")
     ET.SubElement(sensors, "gyro", name="imu_gyro", site="imu_site")
@@ -366,7 +368,7 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = LEG_MESH_DIR
         torso,
         "camera_pan_SG90_case",
         servo_sizes["SG90"],
-        [pan_xyz[0] - 0.004, pan_xyz[1], pan_xyz[2] - 0.013],
+        [pan_xyz[0] - 0.004, pan_xyz[1], pan_xyz[2] + 0.0165],
         color="0.06 0.22 0.48 1",
     )
     pan = ET.SubElement(torso, "body", name="camera_pan_body", pos=fmt(pan_xyz))
@@ -388,22 +390,13 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = LEG_MESH_DIR
         armature="0.000035",
         damping="0.006",
     )
-    ET.SubElement(
-        pan,
-        "geom",
-        name="camera_pan_bracket",
-        type="box",
-        pos="0.025 0 0.022",
-        size="0.027 0.008 0.003",
-        rgba="0.10 0.12 0.14 1",
-        **VISUAL_ONLY,
-    )
+    place_body_cad(pan, "pan", parts, anchors)
     tilt_local = [b - a for a, b in zip(pan_xyz, tilt_xyz)]
     add_servo_case(
         pan,
         "camera_tilt_SG90_case",
         servo_sizes["SG90"],
-        [tilt_local[0] - 0.004, tilt_local[1] - 0.013, tilt_local[2]],
+        [tilt_local[0] - 0.004, tilt_local[1] + 0.013, tilt_local[2]],
         euler="1.570796327 0 0",
         color="0.06 0.22 0.48 1",
     )
@@ -425,16 +418,7 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = LEG_MESH_DIR
         armature="0.000035",
         damping="0.006",
     )
-    ET.SubElement(
-        tilt,
-        "geom",
-        name="camera_tilt_bracket",
-        type="box",
-        pos="0.008 0 0",
-        size="0.018 0.025 0.003",
-        rgba="0.10 0.12 0.14 1",
-        **VISUAL_ONLY,
-    )
+    place_body_cad(tilt, "tilt", parts, anchors)
     camera_local = [b - a for a, b in zip(tilt_xyz, camera_xyz)]
     cx, cy, cz = camera_local
     ET.SubElement(
@@ -442,7 +426,7 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = LEG_MESH_DIR
         "geom",
         name="camera_pcb",
         type="box",
-        pos=fmt([cx - 0.015, cy, cz]),
+        pos=fmt([cx - 0.008, cy, cz]),
         size="0.001 0.0125 0.012",
         rgba="0.06 0.21 0.15 1",
         **VISUAL_ONLY,
@@ -462,9 +446,9 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = LEG_MESH_DIR
         "geom",
         name="camera_lens_visual",
         type="cylinder",
-        pos=fmt([camera_local[0] - 0.008, *camera_local[1:]]),
+        pos=fmt([camera_local[0] - 0.0048, *camera_local[1:]]),
         euler=f"0 {math.pi / 2:.9g} 0",
-        size="0.009 0.006",
+        size="0.009 0.0042",
         mass="0",
         contype="0",
         conaffinity="0",
