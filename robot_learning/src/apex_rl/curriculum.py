@@ -14,6 +14,7 @@ import mujoco
 import numpy as np
 
 from .course_observability import training_recorder, watch_stage, write_report
+from .leg_contacts import OVERLAP_LIMIT_M
 from .locomotion import COURSES, LocomotionEnv
 
 STAGES = tuple(COURSES)
@@ -61,6 +62,9 @@ REPLAY_MODELS = {
     },
     "2d3a53cd3acb46b46327d7c10d337f920dc716e58fd52f8dbee4ae953fb757b4": {
         "hybrid-lab-down-15-wide",
+    },
+    "c5b74395ef52f20fbc1ae7791436a99fc4ed8b07b7f4fa0c632c43e8aeb2b4b3": {
+        "hybrid-lab-up-07-slow",
     },
 }
 
@@ -117,7 +121,7 @@ def _fingerprint(env: LocomotionEnv) -> str:
     # Include the geometry and implementation that define policy observations and actions.
     source = [
         Path(__file__).with_name(name).read_text(encoding="utf-8")
-        for name in ("locomotion.py", "env.py", "model.py", "body_motion.py")
+        for name in ("locomotion.py", "env.py", "model.py", "body_motion.py", "leg_contacts.py")
     ]
     return hashlib.sha256(
         json.dumps([env.config, env.body_motion is not None, *source], sort_keys=True).encode()
@@ -165,6 +169,12 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
     if env.hybrid:
         for key in ("approach_speed_m_s", "precision_speed_m_s", "rear_riser_contact_steps"):
             body_stats[key] = float(np.mean([item[key] for item in outcomes]))
+    if env.course.link_contacts:
+        for key in ("interleg_peak_m", "rear_step_peak_m"):
+            body_stats[key] = max(item[key] for item in outcomes)
+        body_stats["link_overlap_passed"] = (
+            max(body_stats["interleg_peak_m"], body_stats["rear_step_peak_m"]) <= OVERLAP_LIMIT_M
+        )
     return {
         "episodes": episodes,
         "successes": sum(item["success"] for item in outcomes),
@@ -246,6 +256,11 @@ def _view(env, policy, args) -> None:
                 if gaze is not None:
                     yaw_error, pitch_error = gaze.error()
                     details += f"\nGimbal yaw {yaw_error:+.1f} deg | pitch {pitch_error:+.1f} deg"
+                if "interleg_peak_m" in info:
+                    details += (
+                        f"\nLink overlap peak {info['interleg_peak_m'] * 1000:.1f} mm"
+                        f" | rear / stair {info['rear_step_peak_m'] * 1000:.1f} mm"
+                    )
                 window.set_texts((None, mujoco.mjtGridPos.mjGRID_TOPLEFT, "Gait", details))
             window.sync()
             if done or truncated:
@@ -349,6 +364,7 @@ def _train(args) -> None:
         passed = (
             evaluation["successes"] / args.eval_episodes >= MIN_SUCCESS
             and evaluation["falls"] / args.eval_episodes <= MAX_FALLS
+            and evaluation.get("link_overlap_passed", True)
         )
         baseline_key = "body_reference" if eval_env.body_motion is not None else "tripod"
         report = {"course": course, "passed": passed, "policy": evaluation, baseline_key: baseline}

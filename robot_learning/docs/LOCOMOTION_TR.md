@@ -251,6 +251,36 @@ ve sensör birleştirmesi ayrıca doğrulanmalıdır.
 
 Düzlemsel lazer ışınlarının fizik motorunda uygulanışı [MuJoCo ray API](https://mujoco.readthedocs.io/en/stable/APIreference/APIfunctions.html).
 
+#### Bacak gövdeleriyle iniş testi
+
+`hybrid-contact-down-10` ve `hybrid-contact-down-15` sırasıyla
+21 cm basış derinliğindeki üç adet 10 cm inişi ve tek 15 cm inişi
+CAD bacak gövdelerine temas çiftleri ekleyerek çalıştırır. MuJoCo
+coxa, femur ve tibia parçalarının dışbükey çarpışma zarflarını
+kullanır. Aynı taraftaki farklı bacakların parçaları birbirini,
+bağlantı parçaları da zemini ve basamakları fiziksel olarak iter.
+Destek ayağı için tabanın zemine veya basamağa basması gerekir.
+
+```powershell
+& $py -m apex_rl.cli course-view --course hybrid-contact-down-10 --randomize --seed 1007470
+& $py -m apex_rl.cli course-view --course hybrid-contact-down-15 --randomize --seed 1007470
+& $py -m apex_rl.cli course-bench --course hybrid-contact-down-15 --episodes 5 --seed 1007540
+```
+
+`course-view` bacaklar arası en yüksek örtüşmeyi ve arka bağlantı
+parçasının basamağa en büyük girmesini milimetre olarak gösterir.
+Ölçüm her 2 ms fizik adımında yapılır. Temas modelindeki esneklik
+küçük örtüşmelere izin verir. Doğrulama sınırı 2 mm'dir. Eski
+politikaları kendi orijinal parkur adlarıyla oynatmak, ilgili
+deneyin fizik modelini yeniden üretir.
+
+İki ayrı tohum grubunda her parkur 10/10 tamamlandı ve düşme olmadı.
+En büyük bacaklar arası örtüşme 10 cm parkurunda 0,96 mm, 15 cm
+parkurunda 0,75 mm oldu. Arka bacak bağlantı parçalarında basamağa
+girme ölçülmedi.
+
+Fizik temas çiftleri ve CAD zarfları için [MuJoCo çarpışma referansı](https://mujoco.readthedocs.io/en/stable/computation/).
+
 #### Önceki sabit desenli parkurlar
 
 | Seviye | Parkur | Başarı |

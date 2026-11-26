@@ -64,6 +64,7 @@ class BodyMotion:
             env.model.geom(f"{label}_foot_geom").id
             for label in ("rf", "rm", "rr", "lf", "lm", "lr")
         ]
+        self.support_geom_ids = (env.model.geom("floor").id, *env._terrain_ids)
         self.base_id = env.model.body("base").id
 
     def reset(self):
@@ -84,6 +85,8 @@ class BodyMotion:
     def contacts(self):
         contact = self.env.data.contact
         pairs = contact.geom[np.abs(contact.frame.reshape(-1, 3, 3)[:, 0, 2]) > 0.72]
+        if self.env.course.link_contacts:
+            pairs = pairs[np.isin(pairs, self.support_geom_ids).any(axis=1)]
         return np.isin(self.foot_geom_ids, pairs)
 
     def rear_riser_contact(self):

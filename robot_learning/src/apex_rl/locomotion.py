@@ -12,6 +12,7 @@ from gymnasium import spaces
 from .body_motion import BodyMotion
 from .contract import LEG_ORDER
 from .env import Meta1Env, _rotation_from_quaternion
+from .leg_contacts import LinkContactMetrics, add_leg_contacts
 from .model import build_xml
 
 
@@ -22,6 +23,7 @@ class Course:
     edge_x: float = 0.62
     tread_m: float = 0.42
     descending: bool = False
+    link_contacts: bool = False
 
     @property
     def start_height(self) -> float:
@@ -143,6 +145,10 @@ COURSES = {
     "hybrid-lab-down-15": Course(0.15, 3, edge_x=1.05, tread_m=0.21, descending=True),
     "hybrid-lab-down-15-single": Course(0.15, 1, edge_x=1.05, descending=True),
     "hybrid-lab-down-15-wide": Course(0.15, 3, edge_x=1.05, tread_m=0.32, descending=True),
+    "hybrid-contact-down-10": Course(
+        0.10, 3, edge_x=1.05, tread_m=0.21, descending=True, link_contacts=True
+    ),
+    "hybrid-contact-down-15": Course(0.15, 1, edge_x=1.05, descending=True, link_contacts=True),
 }
 
 TRIPOD = np.array([0, 1, 0, 1, 0, 1], dtype=float) * 0.5
@@ -212,12 +218,16 @@ class LocomotionEnv(Meta1Env):
         self._terrain_ids = [
             self.model.geom(f"course_step_{i + 1}").id for i in range(self.course.risers)
         ]
+        self.link_metrics = (
+            LinkContactMetrics(self.model, self._terrain_ids) if self.course.link_contacts else None
+        )
         self.body_motion = BodyMotion(self) if body_control else None
         if self.body_motion:
             self.body_motion.reset()
 
     def _model_xml(self) -> str:
-        return self.course.scene(self.config)
+        xml = self.course.scene(self.config)
+        return add_leg_contacts(xml, self.course.risers) if self.course.link_contacts else xml
 
     def _observation(self) -> np.ndarray:
         base = super()._observation()
@@ -272,6 +282,8 @@ class LocomotionEnv(Meta1Env):
         self.work_j = 0.0
         self.slip_m = 0.0
         self.rear_riser_contact_steps = 0
+        if self.link_metrics is not None:
+            self.link_metrics.reset()
         self.max_clearance_m = 0.0
         self.adjustment = np.zeros(self.action_space.shape)
         self.gait = "tripod" if self.hybrid else "reference"
@@ -406,7 +418,10 @@ class LocomotionEnv(Meta1Env):
         self.adjustment = 0.75 * self.adjustment + 0.25 * action
         x0 = float(self.data.qpos[0])
         targets = self._targets(self.adjustment)
-        self._apply_joint_targets(targets)
+        self._apply_joint_targets(
+            targets,
+            observe_contacts=self.link_metrics.observe if self.link_metrics is not None else None,
+        )
         self.steps += 1
         self.phase = (self.phase + 0.02 / self.period) % 1.0
         self.previous_action[:] = (targets - self.nominal) / 0.25
@@ -461,6 +476,10 @@ class LocomotionEnv(Meta1Env):
             + 5.0 * success
             - 3.0 * (fallen or out)
         )
+        if self.link_metrics is not None:
+            info_contact = self.link_metrics.info()
+        else:
+            info_contact = {}
         info = {
             "success": bool(success),
             "fallen": fallen,
@@ -475,6 +494,7 @@ class LocomotionEnv(Meta1Env):
             "max_clearance_m": self.max_clearance_m,
             "supply_scale": self.supply_scale,
             "pack_voltage_proxy_v": self.pack_voltage_proxy_v,
+            **info_contact,
         }
         if self.body_motion:
             self.min_body_z = min(self.min_body_z, float(z))

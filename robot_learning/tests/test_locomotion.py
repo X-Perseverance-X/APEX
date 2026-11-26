@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from apex_rl.course_observability import LANE_SPACING, fleet_model
+from apex_rl.leg_contacts import OVERLAP_LIMIT_M
 from apex_rl.locomotion import COURSES, LocomotionEnv
 from apex_rl.sensor_lab import inspect_course
 from apex_rl.stair_rgb import CameraCalibration, estimate_riser
@@ -142,3 +143,28 @@ def test_tilted_lidar_estimates_lip_and_rejects_unqualified_climb(course, rise, 
     assert (result["decision"] == "EĞİTİM ARALIĞINDA") is allowed
     assert abs(result["camera_neutral_request_deg"]) > 45
     assert result["camera_body_assist_deg"] == 10
+
+
+@pytest.mark.parametrize("course", ["hybrid-contact-down-10", "hybrid-contact-down-15"])
+def test_descent_with_solid_cad_links_clears_stair(course):
+    env = LocomotionEnv(course)
+    try:
+        env.reset(seed=1007470)
+        assert env.model.npair > 0
+        for _ in range(env.episode_steps):
+            _, _, done, truncated, info = env.step(np.zeros(6))
+            if done or truncated:
+                break
+        assert info["success"] and not info["fallen"]
+        assert 0 < info["interleg_peak_m"] <= OVERLAP_LIMIT_M
+        assert info["rear_step_peak_m"] <= OVERLAP_LIMIT_M
+        assert info["interleg_overlap_samples"] == info["rear_step_overlap_samples"] == 0
+        assert np.min(env.data.xpos[env._foot_ids, 0]) > env.course.last_edge
+    finally:
+        env.close()
+
+
+def test_playback_loads_course_with_named_contact_pairs():
+    model, initial = fleet_model("hybrid-contact-down-15", 2)
+    assert model.nq == 2 * initial.size
+    assert model.npair == 0

@@ -171,12 +171,14 @@ class Meta1Env(gym.Env):
             "domain_randomization": self.domain_randomization,
         }
 
-    def _apply_joint_targets(self, desired: np.ndarray) -> None:
+    def _apply_joint_targets(self, desired: np.ndarray, *, observe_contacts=None) -> None:
         delta = self._max_target_rate * self.model.opt.timestep
         leg_controls = self.data.ctrl[self._legs]
         for _ in range(self.control_steps):
             leg_controls[:] = np.clip(desired, leg_controls - delta, leg_controls + delta)
             mujoco.mj_step(self.model, self.data)
+            if observe_contacts is not None:
+                observe_contacts(self.data.contact)
 
     def step(self, action: np.ndarray):
         action = np.asarray(action, dtype=np.float32)

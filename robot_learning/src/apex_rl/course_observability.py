@@ -120,6 +120,9 @@ def fleet_model(course: str, lanes: int):
         env.close()
     for tag in ("keyframe", "sensor", "actuator"):
         root.remove(root.find(tag))
+    pairs = root.find("contact")
+    if pairs is not None:
+        root.remove(pairs)
     world = root.find("worldbody")
     shared = [node for node in world if node.tag == "light" or node.get("name") == "floor"]
     scenery = [ET.tostring(node) for node in world if node not in shared and node.tag != "camera"]
@@ -321,6 +324,11 @@ def write_report(run: Path) -> Path:
                 )
                 if "rear_riser_contact_steps" in p:
                     text += f" · arkada kenar temaslı örnek {p['rear_riser_contact_steps']:.1f}"
+                if "interleg_peak_m" in p:
+                    text += (
+                        f" · bacak örtüşmesi {1000 * p['interleg_peak_m']:.2f} mm"
+                        f" · arka bacak / basamak {1000 * p['rear_step_peak_m']:.2f} mm"
+                    )
             body = "".join(
                 "<tr>"
                 f"<td>{row['seed']}</td>"
