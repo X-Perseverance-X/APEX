@@ -4,6 +4,7 @@ import pytest
 
 from apex_rl.course_observability import LANE_SPACING, fleet_model
 from apex_rl.locomotion import COURSES, LocomotionEnv
+from apex_rl.stair_rgb import CameraCalibration, estimate_riser
 
 
 def test_reference_walk_passes_flat_course():
@@ -77,5 +78,54 @@ def test_body_control_tracks_step_with_independent_footholds(course_name):
         assert info["success"] and not info["fallen"]
         assert np.min(env.data.xpos[env._foot_ids, 0]) > env.course.last_edge
         assert mixed_footholds and info["body_height_range_m"] > 0.035
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize("course_name", ["hybrid-step-05", "hybrid-down-05"])
+def test_tripod_handoff_occurs_on_planted_feet(course_name):
+    env = LocomotionEnv(course_name, randomize=True)
+    try:
+        env.reset(seed=1006100)
+        saw_handoff = False
+        for _ in range(env.episode_steps):
+            contacts = env.body_motion.contacts().sum()
+            _, _, done, truncated, info = env.step(np.zeros(6))
+            if not saw_handoff and info["gait"] == "wave":
+                assert contacts >= 5
+                saw_handoff = True
+            if done or truncated:
+                break
+        assert saw_handoff and info["success"]
+        assert info["approach_speed_m_s"] > 2 * info["precision_speed_m_s"]
+        env.reset(seed=1006100)
+        assert env.gait == "tripod" and env.switch_step is None
+    finally:
+        env.close()
+
+
+def test_riser_estimate_uses_floor_seam_and_top_edge():
+    calibration = CameraCalibration(0.1554, np.deg2rad(20), np.deg2rad(41.3))
+    rgb = np.full((180, 320, 3), 120, dtype=np.uint8)
+    assert estimate_riser(rgb, calibration) is None
+    rgb[49:91] = 35
+    result = estimate_riser(rgb, calibration)
+    assert result is not None
+    assert result.range_m == pytest.approx(0.41, abs=0.03)
+    assert result.height_m == pytest.approx(0.076, abs=0.012)
+
+
+def test_high_narrow_descent_places_rear_leg_first():
+    env = LocomotionEnv("hybrid-narrow-down-10")
+    try:
+        env.reset(seed=1006500)
+        for _ in range(500):
+            _, _, done, truncated, _ = env.step(np.zeros(6))
+            assert not done and not truncated
+            if env.body_motion.leg is not None:
+                assert env.body_motion.leg == 2
+                break
+        else:
+            pytest.fail("wave gait did not start")
     finally:
         env.close()

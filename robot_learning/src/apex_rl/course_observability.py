@@ -51,6 +51,9 @@ def training_recorder(stage: Path):
                             "body_z_m",
                             "body_target_z_m",
                             "supporting_feet",
+                            "gait",
+                            "approach_speed_m_s",
+                            "precision_speed_m_s",
                         )
                         if key in info
                     }
@@ -222,6 +225,7 @@ def watch_stage(stage: Path, *, live: bool):
                 lines.append(
                     f"{marker}{int(worker) + 1}  {state}  ep {row['episode_id'] + 1}  "
                     f"{row['progress_m']:.2f} m  landings {row['touchdowns']}{body_status}"
+                    + (f"  {row['gait'].upper()}" if "gait" in row else "")
                 )
             replay_help = "" if live else " | R replay"
             window.set_texts(
@@ -287,6 +291,13 @@ def write_report(run: Path) -> Path:
                 text += (
                     f" · ort. gövde Z aralığı {100 * p['body_height_range_m']:.1f} cm"
                     f" · ort. azami yanal COM sapması {100 * p['max_lateral_com_m']:.1f} cm"
+                )
+            if stage.name.startswith("hybrid-"):
+                approach = np.mean([row["approach_speed_m_s"] for row in p["outcomes"]])
+                precision = np.mean([row["precision_speed_m_s"] for row in p["outcomes"]])
+                text += (
+                    f" · yaklaşma {100 * approach:.1f} cm/s"
+                    f" · hassas yürüyüş {100 * precision:.1f} cm/s"
                 )
             body = "".join(
                 "<tr>"

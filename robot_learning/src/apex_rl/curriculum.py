@@ -34,6 +34,18 @@ REPLAY_MODELS = {
         "down-03",
         "step-04",
     },
+    "46a7718e7241d72350e03127c90e4fafba0a82df923c3b7066fa52c32ee9ba95": {
+        "step-05",
+        "down-05",
+        "stairs-05",
+        "stairs-down-05",
+    },
+    "fae96baa03d52d3e7a41e838c65d901a4e209a2278876d93396bb90f86a79dec": {
+        "hybrid-step-05",
+        "hybrid-down-05",
+        "hybrid-narrow-05",
+        "hybrid-narrow-08",
+    },
 }
 
 
@@ -43,6 +55,7 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     view.add_argument("--run", type=Path, help="stage folder containing policy and manifest")
     view.add_argument("--static", action="store_true", help="inspect the parkour at rest")
     view.add_argument("--seed", type=int, default=42)
+    view.add_argument("--randomize", action="store_true", help="replay a benchmark seed")
     bench = sub.add_parser("course-bench", help="evaluate the tripod reference or policy")
     bench.add_argument("--course", choices=STAGES)
     bench.add_argument("--run", type=Path)
@@ -59,7 +72,7 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     report.add_argument("--run", type=Path, required=True, help="experiment root")
     train = sub.add_parser("course-train", help="train PPO with evaluation gates between courses")
     train.add_argument("--start", choices=STAGES, default=STAGES[0])
-    train.add_argument("--through", choices=STAGES, default=STAGES[-1])
+    train.add_argument("--through", choices=STAGES)
     train.add_argument("--timesteps", type=int, default=200_000, help="new transitions per stage")
     train.add_argument("--envs", type=int, default=4)
     train.add_argument("--eval-episodes", type=int, default=10)
@@ -67,12 +80,17 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     train.add_argument("--seed", type=int, default=42)
     train.add_argument("--resume", type=Path, help="load a previous stage policy and optimizer")
     train.add_argument("--output", type=Path, default=project / "runs/parkour")
+    camera = sub.add_parser("course-camera", help="measure synthetic stair risers from RGB")
+    camera.add_argument("--course", choices=STAGES, required=True)
+    camera.add_argument("--output", type=Path, required=True)
     for command in (view, bench, train):
         command.add_argument(
             "--body-control",
             action="store_true",
             help="use terrain-aware wave gait and body control",
         )
+    for command in (view, bench):
+        command.add_argument("--camera-gate", action="store_true", help="start wave gait from RGB")
 
 
 def _fingerprint(env: LocomotionEnv) -> str:
@@ -124,6 +142,9 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
     if env.body_motion is not None:
         for key in ("body_height_range_m", "max_lateral_com_m"):
             body_stats[key] = float(np.mean([item[key] for item in outcomes]))
+    if env.hybrid:
+        for key in ("approach_speed_m_s", "precision_speed_m_s"):
+            body_stats[key] = float(np.mean([item[key] for item in outcomes]))
     return {
         "episodes": episodes,
         "successes": sum(item["success"] for item in outcomes),
@@ -148,9 +169,13 @@ def _inspect(args) -> None:
         manifest = json.loads((args.run / "manifest.json").read_text(encoding="utf-8"))
         course = course or manifest["course"]
         body_control = body_control or manifest.get("body_control", False)
-    env = LocomotionEnv(
-        course or "flat", randomize=args.command == "course-bench", body_control=body_control
-    )
+    env_type = LocomotionEnv
+    if args.camera_gate:
+        from .course_camera import CameraGatedCourse
+
+        env_type = CameraGatedCourse
+    randomized = args.command == "course-bench" or getattr(args, "randomize", False)
+    env = env_type(course or "flat", randomize=randomized, body_control=body_control)
     try:
         policy = _read_policy(args.run, env, exact_course=True) if args.run else None
         if args.command == "course-bench":
@@ -179,6 +204,18 @@ def _view(env, policy, args) -> None:
             with window.lock():
                 obs, _, done, truncated, info = env.step(_action(env, policy, obs))
                 window.cam.lookat[:] = (env.data.qpos[0] + 0.20, 0, env.data.qpos[2])
+            if env.hybrid:
+                details = (
+                    "TRIPOD  |  FAST APPROACH"
+                    if env.gait == "tripod"
+                    else "WAVE  |  PRECISE FOOT PLACEMENT"
+                )
+                if "camera_gate" in info:
+                    height = info.get("camera_riser_m")
+                    details += "\nRGB " + (
+                        f"{100 * height:.1f} cm" if height is not None else "searching"
+                    )
+                window.set_texts((None, mujoco.mjtGridPos.mjGRID_TOPLEFT, "Gait", details))
             window.sync()
             if done or truncated:
                 print(json.dumps(info), flush=True)
@@ -228,7 +265,7 @@ def _train(args) -> None:
                 "seed": args.seed,
                 "eval_seed": args.eval_seed,
                 "envs": args.envs,
-                "body_control": args.body_control,
+                "body_control": eval_env.body_motion is not None,
                 "total_transitions": None,
                 "model_sha256": _fingerprint(eval_env),
                 "python": platform.python_version(),
@@ -242,7 +279,7 @@ def _train(args) -> None:
                 policy = _read_policy(args.resume, eval_env, exact_course=False, vector=vector)
             if policy is None:
                 policy_kwargs = {"net_arch": {"pi": [64, 64], "vf": [64, 64]}}
-                if args.body_control:
+                if eval_env.body_motion is not None:
                     policy_kwargs["log_std_init"] = -1.7
                 policy = PPO(
                     "MlpPolicy",
@@ -279,7 +316,7 @@ def _train(args) -> None:
             evaluation["successes"] / args.eval_episodes >= MIN_SUCCESS
             and evaluation["falls"] / args.eval_episodes <= MAX_FALLS
         )
-        baseline_key = "body_reference" if args.body_control else "tripod"
+        baseline_key = "body_reference" if eval_env.body_motion is not None else "tripod"
         report = {"course": course, "passed": passed, "policy": evaluation, baseline_key: baseline}
         (stage / "evaluation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         result = {
@@ -294,7 +331,11 @@ def _train(args) -> None:
 
 
 def run_command(args, parser: argparse.ArgumentParser) -> None:
-    if args.command == "course-watch":
+    if args.command == "course-camera":
+        from .course_camera import capture_course
+
+        capture_course(args.course, args.output)
+    elif args.command == "course-watch":
         watch_stage(args.run, live=args.live)
     elif args.command == "course-report":
         print(write_report(args.run))
@@ -303,6 +344,11 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
             parser.error("--envs must be between 1 and 32")
         if args.timesteps < 512 or not 10 <= args.eval_episodes <= 100:
             parser.error("use at least 512 training transitions and 10–100 evaluation episodes")
+        hybrid = args.start.startswith("hybrid-")
+        if args.through is None:
+            args.through = STAGES[-1] if hybrid else "stairs-down-20"
+        if hybrid != args.through.startswith("hybrid-"):
+            parser.error("use a single controller family in each curriculum run")
         if STAGES.index(args.start) > STAGES.index(args.through):
             parser.error("--through must be at or after --start")
         if not 0 <= args.seed < EVALUATION_SEED - 32:
@@ -317,4 +363,11 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
             parser.error("--seed must be nonnegative")
         if args.command == "course-view" and args.static and args.run:
             parser.error("--static cannot replay a learned policy")
+        if args.camera_gate:
+            if args.course != "hybrid-step-05" or args.run:
+                parser.error(
+                    "--camera-gate uses --course hybrid-step-05 without a policy checkpoint"
+                )
+            if args.command == "course-view" and args.static:
+                parser.error("--camera-gate requires a running viewer")
         _inspect(args)

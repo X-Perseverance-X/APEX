@@ -7,6 +7,7 @@ import math
 import numpy as np
 
 WAVE = (0, 3, 1, 4, 2, 5)
+DOWN_WAVE = (2, 5, 1, 4, 0, 3)
 DT = 0.02
 
 
@@ -52,6 +53,7 @@ class BodyMotion:
 
     def __init__(self, env):
         self.env = env
+        self.terrain = env.course
         self.radius = env.config["foot_radius_m"]
         neutral = env._neutral_foot
         c, s = np.cos(env.mount), np.sin(env.mount)
@@ -84,9 +86,12 @@ class BodyMotion:
         return np.isin(self.foot_geom_ids, pairs)
 
     def _pick_landing(self, foot, support, pace):
-        course = self.env.course
+        course = self.terrain
         actual = self.env.data.qpos[:3]
-        x = max(foot[0] + 0.035, actual[0] + self.neutral_xy[self.leg, 0] + pace * 2.2)
+        x = max(
+            foot[0] + (0.028 if self.env.hybrid else 0.035),
+            actual[0] + self.neutral_xy[self.leg, 0] + pace * 2.2,
+        )
         y = self.neutral_xy[self.leg, 1] + 0.25 * actual[1]
         # Do not place a spherical foot with its centre on a riser edge.
         edge_margin = self.radius + 0.008
@@ -104,7 +109,9 @@ class BodyMotion:
         self.elapsed += DT
         contacts = self.contacts()
         feet = data.xpos[env._foot_ids].copy()
-        pace = 0.037 + 0.012 * residual[0]
+        steep_descent = env.hybrid and self.terrain.descending and self.terrain.rise_m >= 0.08
+        pace = (0.032 + 0.010 * residual[0]) if steep_descent else (0.037 + 0.012 * residual[0])
+        order = DOWN_WAVE if steep_descent else WAVE
         duration = 0.80
         if (
             self.leg is not None
@@ -116,7 +123,7 @@ class BodyMotion:
             self.next_leg += 1
             self.elapsed = 0.0
         if self.leg is None and self.elapsed >= self.settle:
-            candidate = WAVE[self.next_leg % len(WAVE)]
+            candidate = order[self.next_leg % len(order)]
             stance = contacts.copy()
             stance[candidate] = False
             if stance.sum() >= 3:
@@ -139,8 +146,8 @@ class BodyMotion:
         com_offset = data.subtree_com[self.base_id, :2] - root[:2]
         xy = self.body[:2].copy()
         self.path_x = min(self.path_x + DT * pace, root[0] + 0.022)
-        front = env.course.height(root[0] + 0.17, root[1])
-        centre = env.course.height(root[0] - 0.03, root[1])
+        front = self.terrain.height(root[0] + 0.17, root[1])
+        centre = self.terrain.height(root[0] - 0.03, root[1])
         if self.support_count >= 3:
             support = feet[stance]
             target = [
@@ -156,6 +163,10 @@ class BodyMotion:
             support_height = float(self.body[2] - env.stand_height)
         rise_ahead = max(0.0, front - centre)
         z = env.stand_height + support_height + min(0.025, rise_ahead * 0.52) + 0.028 * residual[3]
+        if env.hybrid and self.support_count >= 3 and front > centre:
+            # Raise the leading low-mounted hardware before it reaches the riser.
+            ahead = self.terrain.height(root[0] + 0.24, root[1])
+            z = max(z, ahead + 0.076)
         target = np.array([*xy, z])
         rate = np.clip(5 * (target - self.body), [-0.065, -0.065, -0.05], [0.08, 0.065, 0.05])
         self.velocity += np.clip(rate - self.velocity, -0.50 * DT, 0.50 * DT)
@@ -172,6 +183,10 @@ class BodyMotion:
                 foot[2] = self.lift_off[2] + ease(u / 0.30) * (crest - self.lift_off[2])
             else:
                 foot[2] = crest + ease((u - 0.70) / 0.30) * (self.landing[2] - crest)
+            if self.terrain is not env.course and not contacts[self.leg]:
+                # Probe gently below an uncertain RGB landing height until
+                # the sole touches or the existing swing timeout expires.
+                foot[2] -= 0.06 * max(0.0, self.elapsed - duration)
             footholds[self.leg] = foot
         c, s = math.cos(self.pitch), math.sin(self.pitch)
         rotation = np.array([[c, 0, -s], [0, 1, 0], [s, 0, c]])

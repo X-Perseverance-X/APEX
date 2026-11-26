@@ -127,6 +127,14 @@ COURSES = {
     "stairs-down-15": Course(0.15, 3, descending=True),
     "stairs-20": Course(0.20, 3),
     "stairs-down-20": Course(0.20, 3, descending=True),
+    "hybrid-step-05": Course(0.05, 1, edge_x=1.05),
+    "hybrid-down-05": Course(0.05, 1, edge_x=1.05, descending=True),
+    "hybrid-narrow-05": Course(0.05, 3, edge_x=1.05, tread_m=0.23),
+    "hybrid-narrow-down-05": Course(0.05, 3, edge_x=1.05, tread_m=0.23, descending=True),
+    "hybrid-narrow-08": Course(0.08, 3, edge_x=1.05, tread_m=0.23),
+    "hybrid-narrow-down-08": Course(0.08, 3, edge_x=1.05, tread_m=0.23, descending=True),
+    "hybrid-narrow-10": Course(0.10, 3, edge_x=1.05, tread_m=0.21),
+    "hybrid-narrow-down-10": Course(0.10, 3, edge_x=1.05, tread_m=0.21, descending=True),
 }
 
 TRIPOD = np.array([0, 1, 0, 1, 0, 1], dtype=float) * 0.5
@@ -146,6 +154,8 @@ class LocomotionEnv(Meta1Env):
     ):
         self.course_name = course
         self.course = COURSES[course]
+        self.hybrid = course.startswith("hybrid-")
+        body_control |= self.hybrid
         self.adapt = self.course.descending or self.course.rise_m > 0.02
         self.climbing = self.adapt and not self.course.descending
         self.period = (
@@ -154,6 +164,10 @@ class LocomotionEnv(Meta1Env):
             else (2.20 if self.adapt else (1.24 if course == "flat" else 1.80))
         )
         self.record_pose = record_pose
+        self.gait = "tripod" if self.hybrid else "reference"
+        self.switch_step = None
+        self.approach_speed = 0.0
+        self.approach_x = 0.0
         self.episode = -1
         super().__init__(
             task="velocity",
@@ -249,6 +263,10 @@ class LocomotionEnv(Meta1Env):
         self.slip_m = 0.0
         self.max_clearance_m = 0.0
         self.adjustment = np.zeros(self.action_space.shape)
+        self.gait = "tripod" if self.hybrid else "reference"
+        self.switch_step = None
+        self.approach_speed = 0.0
+        self.approach_x = 0.0
         self.model.actuator_forcerange[self._legs] = self._leg_force_range
         super().reset(seed=seed, options={"command": [0.12, 0.0, 0.0]})
         if self.domain_randomization:
@@ -269,29 +287,52 @@ class LocomotionEnv(Meta1Env):
         return self._observation(), {"course": self.course_name}
 
     def _targets(self, residual: np.ndarray) -> np.ndarray:
+        if self.hybrid and self.gait != "wave":
+            x = float(self.data.qpos[0])
+            # Hand off after touchdown, so the wave gait inherits a planted
+            # footprint and never has to flatten a tripod mid-swing.
+            if self._approach_complete(x) and self.body_motion.contacts().sum() >= 5:
+                self.switch_step = self.steps
+                self.approach_speed = x / max(0.02, self.steps * 0.02)
+                self.approach_x = x
+                self.body_motion.reset()
+                self.gait = "wave"
+            else:
+                return self._tripod_targets(residual, flat=True)
         if self.body_motion:
             return self._solve_ik(self.body_motion.targets(residual))
-        period = self.period
-        duty = 0.68 if self.climbing else (0.72 if self.adapt else 0.64)
-        phase = (self.phase + TRIPOD) % 1.0
+        return self._tripod_targets(residual)
+
+    def _approach_complete(self, x: float) -> bool:
+        return self.course.edge_x - x <= 0.58
+
+    def _tripod_targets(self, residual: np.ndarray, *, flat: bool = False) -> np.ndarray:
+        period = 1.24 if flat else self.period
+        duty = 0.64 if flat else (0.68 if self.climbing else (0.72 if self.adapt else 0.64))
+        base_phase = self.steps * 0.02 / period if flat else self.phase
+        phase = (base_phase + TRIPOD) % 1.0
         swing = phase >= duty
         u = np.clip((phase - duty) / (1 - duty), 0, 1)
         ramp = min(1.0, self.steps * 0.02 / 0.75)
         stride = (
-            float(self.command[0])
-            * (2.20 if self.climbing else period)
+            (0.13 if flat else float(self.command[0]))
+            * (2.20 if self.climbing and not flat else period)
             * duty
             * (1.0 + 0.35 * residual[0])
         )
-        delay, sweep = (0.28, 0.53) if self.climbing else (0.22, 0.58)
+        delay, sweep = (0.28, 0.53) if self.climbing and not flat else (0.22, 0.58)
         travel = np.clip((u - delay) / sweep, 0, 1)
         dx = stride * np.where(swing, -0.5 + (3 * travel**2 - 2 * travel**3), 0.5 - phase / duty)
         dx = ramp * dx + 0.013 * residual[2]
         lift_scale = 0.30 if self.climbing else 0.65
-        lift = np.clip(0.045 + self.course.rise_m * lift_scale + 0.035 * residual[1], 0.015, 0.13)
+        rise = 0.0 if flat else self.course.rise_m
+        lift = np.clip(0.045 + rise * lift_scale + 0.035 * residual[1], 0.015, 0.13)
         foot = self._neutral_foot.copy()
         foot[:, 0] += dx * np.cos(self.mount)
         foot[:, 1] -= dx * np.sin(self.mount)
+        if flat:
+            foot[:, 2] += ramp * lift * np.sin(np.pi * u) ** 2
+            return self._solve_ik(foot)
         x, y, body_z = self.data.qpos[:3]
         yaw = self._heading()
         c, s = math.cos(yaw), math.sin(yaw)
@@ -431,6 +472,17 @@ class LocomotionEnv(Meta1Env):
                 body_height_range_m=self.max_body_z - self.min_body_z,
                 max_lateral_com_m=self.max_lateral_com,
                 supporting_feet=self.body_motion.support_count,
+            )
+        if self.hybrid:
+            info.update(
+                gait=self.gait,
+                approach_x_m=self.approach_x,
+                approach_speed_m_s=self.approach_speed,
+                precision_speed_m_s=(
+                    float((x - self.approach_x) / max(0.02, (self.steps - self.switch_step) * 0.02))
+                    if self.switch_step is not None
+                    else 0.0
+                ),
             )
         if self.record_pose and (
             self.steps % 5 == 0 or success or fallen or out or self.steps == self.episode_steps

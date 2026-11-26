@@ -133,6 +133,67 @@ Destek çokgeni yaklaşımı için [hexapod kararlılığı çalışması](https
 
 ### Parkurlar
 
+#### Hızlı yaklaşma, hassas basış ve RGB deneyi
+
+`hybrid-*` parkurlarında robot önce üçlü yürüyüşle yaklaşır. Yavaş
+moda geçiş en az beş ayak teması görüldüğünde, yere basan ayakların
+konumunu koruyarak yapılır. Sonra ayaklar tek tek kaldırılır. 8 cm ve
+üzeri dar inişlerde arka ayaklar sıraya önce girer. PPO adım ve gövde
+hedeflerindeki düzeltmeleri öğrenir. Yürüyüş desenini denetleyici seçer.
+
+| Parkur ailesi | Yükseklik | Ayak için basamak derinliği |
+| --- | ---: | ---: |
+| `hybrid-step-05`, `hybrid-down-05` | 5 cm tek basamak | Uzun sahanlık |
+| `hybrid-narrow-05`, `hybrid-narrow-down-05` | 3 × 5 cm | 23 cm |
+| `hybrid-narrow-08`, `hybrid-narrow-down-08` | 3 × 8 cm | 23 cm |
+| `hybrid-narrow-10`, `hybrid-narrow-down-10` | 3 × 10 cm | 21 cm |
+
+```powershell
+& $py -m apex_rl.cli course-view --run robot_learning/runs/course-hybrid-02/hybrid-step-05 --randomize --seed 1006100
+& $py -m apex_rl.cli course-view --run robot_learning/runs/course-hybrid-02/hybrid-down-05 --randomize --seed 1006100
+& $py -m apex_rl.cli course-view --run robot_learning/runs/course-hybrid-down08-rear/hybrid-narrow-down-08 --randomize --seed 1006400
+& $py -m apex_rl.cli course-view --run robot_learning/runs/course-hybrid-down10-rear/hybrid-narrow-down-10 --randomize --seed 1006500
+& $py -m apex_rl.cli course-view --course hybrid-step-05 --camera-gate --randomize --seed 1006120
+```
+
+`course-camera` simüle ön kameradan RGB kareleri, yükseklik tahminlerini
+ve görüntüde ölçülen çizgileri bir HTML raporuna kaydeder. Görünür bir dik
+yüzeyin üst kenarı ve taban birleşimi bulunur. Lens açısı, kamera eğimi
+ve düz zemindeki kalibre edilmiş kamera yüksekliğiyle iki piksel ışını
+metrik ölçüye çevrilir. Bu yöntemde simülatörün derinlik görüntüsü ve
+parkurun yükseklik etiketi kestirim girdisi değildir.
+
+```powershell
+& $py -m apex_rl.cli course-camera --course hybrid-narrow-08 --output robot_learning/runs/rgb-08-local
+& $py -m apex_rl.cli course-bench --course hybrid-step-05 --camera-gate --episodes 10 --seed 1006120
+```
+
+`--camera-gate` tek yukarı basamak deneyidir. RGB tahmini hem desen
+değişimini tetikler hem ayak hedeflerinin yerel basamak profilini kurar.
+Simüle odometri tahmini yerel koordinattan parkur koordinatına taşır.
+Basış denetiminde simüle ayak temasları, sonuç ölçümünde parkur geometrisi
+kullanılır. Kameranın taban çizgisini göremediği durumda yürüyüş geçişi
+yapılmaz. İniş ve çok basamaklı PPO eğitimi parkur yüksekliği bilgisiyle
+yapılır. Tek kameradan güvenilir fiziksel iniş kestirimi ayrıca ölçülmelidir.
+
+Tek 5 cm çıkış ve iniş PPO değerlendirmesinde ayrı ayrı 10/10 tamamlandı.
+RGB ile kör başlatılan tek çıkış da ayrı 10/10 tamamlandı. Bu deneyde
+yaklaşma ortalama 11,8 cm/s, hassas yürüyüş 3,4 cm/s oldu. Durağan
+görüntülerde 8 cm basamak dört karede 8,0–8,4 cm ölçüldü. 10 cm basamakta
+dört karenin üçünde 10,1–10,3 cm ölçüm, birinde ölçümsüz sonuç alındı.
+
+Arka ayak öncelikli 3 × 8 cm ve 3 × 10 cm inişler, ayrı değerlendirme
+ve tekrar kümelerinde seviye başına 20/20 ve sıfır düşme ile tamamlandı.
+Parkur bilgili referans bu inişlerin ilk değerlendirmesinde iki seviyede
+de 10/10 tamamlandı. 23 cm derinliğinde çıkış eğitimi 5 cm'de 4/10,
+8 cm'de 0/10 kaldı. 8 cm çıkışta gövde teması, ilk basamak öncesinde
+zemine kadar alçalmayı da içeriyordu. 10 cm çıkışın üç referans
+denemesi tamamlanmadı. Bu çıkışlar ayrı tanılama koşularıdır.
+
+Görüntüdeki paralel basamak çizgileri için [monoküler basamak algılama çalışması](https://www.sciencedirect.com/science/article/pii/S016786551930087X).
+
+#### Önceki sabit desenli parkurlar
+
 | Seviye | Parkur | Başarı |
 | --- | --- | --- |
 | `flat` | 1,2 m düz zemin | Dengeli biçimde bitişi geç |
