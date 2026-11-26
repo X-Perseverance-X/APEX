@@ -87,6 +87,11 @@ def main() -> None:
     parser.add_argument("source", type=Path)
     args = parser.parse_args()
     assembly = args.source / "MARK_2_LEG.SLDASM"
+    stl_files = {
+        file.stem.casefold(): file
+        for file in args.source.iterdir()
+        if file.is_file() and file.suffix.casefold() == ".stl"
+    }
     data = assembly.read_bytes()
     xml = read_instance_tree(data)
     models = {model.get("id"): model for model in xml.findall(".//{*}swModel")}
@@ -99,7 +104,7 @@ def main() -> None:
         part = ref.attrib["swName"]
         name = f"{part}-{ref.attrib['swReferenceNumber']}"
         mirrored = part.startswith("Aynalama")
-        file = args.source / f"{part.removeprefix('Aynalama')}.STL"
+        file = stl_files[part.removeprefix("Aynalama").casefold()]
         data = file.read_bytes()
         hashes[file.name] = hashlib.sha256(data).hexdigest()
         triangles = read_stl(data)
