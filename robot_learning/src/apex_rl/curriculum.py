@@ -24,6 +24,7 @@ SCHEMA = 1
 EVALUATION_SEED = 1_000_000
 MIN_SUCCESS = 0.80
 MAX_FALLS = 0.10
+MAX_RISER_CONTACT_S = 0.25
 POLICY_FILE = "policy_sim_only.zip"
 REPLAY_MODELS = {
     "b48bc1e3ddb0f1be1a92dd8c41a2e9f467070306f8796b9c6738f248368c7ed2": {
@@ -242,8 +243,13 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
         body_stats["forward_transfer_m"] = max(item["forward_transfer_m"] for item in outcomes)
     if env.course.home_stairs is not None:
         body_stats["leg_stair_peak_m"] = max(item["leg_stair_peak_m"] for item in outcomes)
-        body_stats["mean_riser_contact_s"] = env.model.opt.timestep * float(
-            np.mean([item["riser_contact_substeps"] for item in outcomes])
+        side_times = env.model.opt.timestep * np.array(
+            [item["riser_contact_substeps"] for item in outcomes]
+        )
+        body_stats["mean_riser_contact_s"] = float(side_times.mean())
+        body_stats["max_riser_contact_s"] = float(side_times.max())
+        body_stats["riser_clearance_passed"] = (
+            body_stats["max_riser_contact_s"] <= MAX_RISER_CONTACT_S
         )
         body_stats["sole_top_peak_m"] = max(item["sole_top_peak_m"] for item in outcomes)
         body_stats["link_overlap_passed"] &= body_stats["leg_stair_peak_m"] <= OVERLAP_LIMIT_M
@@ -470,6 +476,7 @@ def _train(args) -> None:
             and evaluation["falls"] / args.eval_episodes <= MAX_FALLS
             and evaluation.get("link_overlap_passed", True)
             and evaluation.get("knee_clearance_passed", True)
+            and evaluation.get("riser_clearance_passed", True)
         )
         baseline_key = "body_reference" if eval_env.body_motion is not None else "tripod"
         report = {"course": course, "passed": passed, "policy": evaluation, baseline_key: baseline}

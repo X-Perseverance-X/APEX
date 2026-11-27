@@ -4,6 +4,7 @@ import pytest
 
 from apex_rl.ascent_pose import KNEE_CLEARANCE_LIMIT, KNEE_COMMAND_MIN, KNEE_STOP, attitude_matrix
 from apex_rl.course_observability import LANE_SPACING, fleet_model
+from apex_rl.curriculum import benchmark
 from apex_rl.leg_contacts import OVERLAP_LIMIT_M
 from apex_rl.locomotion import COURSES, LocomotionEnv
 from apex_rl.sensor_lab import inspect_course
@@ -94,15 +95,11 @@ def test_home_corner_contains_three_distinct_winder_meshes():
 def test_home_20_descent_distinguishes_sole_compression_from_riser_contact():
     env = LocomotionEnv("hybrid-home-down-20-single")
     try:
-        env.reset(seed=1008953)
-        for _ in range(env.episode_steps):
-            _, _, done, truncated, info = env.step(np.zeros(env.action_space.shape))
-            if done or truncated:
-                break
-        assert info["success"] and not info["fallen"]
-        assert info["riser_contact_substeps"] == 0
-        assert info["leg_stair_peak_m"] == 0 < info["sole_top_peak_m"]
-        assert info["min_knee_deg"] > -152
+        result = benchmark(env, None, 1, seed=1008953)
+        assert result["successes"] == 1 and result["falls"] == 0
+        assert result["max_riser_contact_s"] == 0 and result["riser_clearance_passed"]
+        assert result["leg_stair_peak_m"] == 0 < result["sole_top_peak_m"]
+        assert result["knee_clearance_passed"]
     finally:
         env.close()
 

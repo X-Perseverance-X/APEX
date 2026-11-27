@@ -358,6 +358,8 @@ def write_report(run: Path) -> Path:
                     f" · sert uzuv/basamak {1000 * p['leg_stair_peak_m']:.2f} mm"
                     f" · yumuşak taban/üst yüzey {1000 * p['sole_top_peak_m']:.2f} mm"
                 )
+                if "max_riser_contact_s" in p:
+                    text += f" · bölüm başına en uzun toplam dik yüz teması {p['max_riser_contact_s']:.2f} s"
             body = "".join(
                 "<tr>"
                 f"<td>{row['seed']}</td>"
