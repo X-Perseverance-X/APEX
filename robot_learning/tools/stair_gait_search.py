@@ -37,6 +37,11 @@ parser.add_argument(
     "--tibia", type=float, help="what-if knee-to-sole length in metres (model: 0.16841)"
 )
 parser.add_argument("--rear-y", type=float, default=0.205, help="rear sole |y| in metres")
+parser.add_argument(
+    "--descent",
+    action="store_true",
+    help="walking down facing downhill: the same search for the front/rear mirrored robot",
+)
 parser.add_argument("--budget-s", type=float, default=2400)
 parser.add_argument("--output", type=Path, required=True)
 ARGS = parser.parse_args()
@@ -47,6 +52,15 @@ env.reset(seed=1)
 c = env.body_motion
 SCALE = ARGS.torque_scale
 geom, torque, com_body, weight = c.geom, c._torque_limit() * SCALE, c._com_body(), c._weight()
+if ARGS.descent:
+    # Walking down a flight facing downhill is, step for step, the time reverse of
+    # walking up it backwards; mirroring x turns that into walking up forwards with
+    # front and rear swapped. Reach, torque and swing checks are unchanged under
+    # both (legs and joint limits are front/rear symmetric); the chassis outline,
+    # the centre of mass and the per-leg torque limits are mirrored.
+    CHASSIS_BOTTOM = CHASSIS_BOTTOM * np.array([-1.0, 1.0, 1.0])
+    com_body = com_body * np.array([-1.0, 1.0, 1.0])
+    torque = torque.reshape(6, 3)[[2, 1, 0, 5, 4, 3]].reshape(-1)
 if ARGS.tibia:
     geom.lengths = (geom.lengths[0], geom.lengths[1], ARGS.tibia)
 R = c.radius
@@ -273,6 +287,7 @@ print(
     [(ups[p], upsok[p]) for p in range(3)],
 )
 report = {
+    "direction": "down" if ARGS.descent else "up",
     "torque_scale": SCALE,
     "tibia_m": geom.lengths[2],
     "rear_y_m": ARGS.rear_y,

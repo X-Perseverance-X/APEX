@@ -87,7 +87,32 @@ açmadı; arka ayakları 0,265 veya 0,29 m yana açmak da açmadı. Engel geomet
 - Basamaklar 18–20 cm ise bu robot, gövde desteği olmadan düz kolu yarı-statik
   çıkamaz. Güçlü femur servosu veya uzun tibia tek başına çözmez. Gövdenin basamak
   burnuna dayanması (yedinci destek noktası) ayrıca denenmelidir.
-- Dönüş kamaları ve iniş henüz denenmedi.
+- Merdiven inişi aynı sonucu verir (aşağıda). Dönüş kamaları henüz denenmedi.
+
+## İniş
+
+Merdivenden yüzü aşağıya dönük inmek, adım adım, aynı merdivende geri geri çıkmanın
+zamanda tersidir. x ekseni aynalanınca bu, ön ve arka bacakları yer değiştirmiş robotun
+ileri çıkışı olur. Erişim, tork ve salınım denetimleri bu dönüşümlerde değişmez
+(bacaklar ve eklem sınırları önden arkaya simetrik); gövde altı noktaları, ağırlık
+merkezi ve bacak başına tork sınırları aynalanır. Arama bu yüzden aynı araçla
+`--descent` seçeneğiyle yapılır.
+
+| Rıht | Ayakta duran durum | Seviye değiştiren hamle (kabul/deneme, üç çift) | Tekrarlanan iniş sırası |
+| --- | --- | --- | --- |
+| 17 cm | 276/685 | 122/243, 98/240, **1/320** | **var** |
+| 20 cm | 220/685 | 67/233, 60/162, **0/321** | yok |
+
+20 cm'de, aynalanmış aramadaki "arka" çift, yani inişte **ön çift**, bir alt basamağa
+hiçbir durumda inemiyor. Çıkıştaki sonuçla tutarlı: bu robot 27 cm derin, 20 cm rıhtlı
+düz kolu gövde desteği olmadan yarı-statik olarak ne çıkabiliyor ne inebiliyor; 17 cm'de
+ikisi de mümkün.
+
+```powershell
+& $py robot_learning\tools\stair_gait_search.py --descent --rise 0.20 --output robot_learning\runs\gait-down-20.json
+```
+
+Tek bir kenardan iniş ise çalışıyor: `experiments/box-16` 16 cm kutudan inişi gösterir.
 
 ## Yeniden üretme
 

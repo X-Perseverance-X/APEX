@@ -1,0 +1,26 @@
+{
+ "direction": "down",
+ "torque_scale": 1.0,
+ "tibia_m": 0.16841,
+ "rear_y_m": 0.205,
+ "ups": [
+  [
+   233,
+   67
+  ],
+  [
+   162,
+   60
+  ],
+  [
+   321,
+   0
+  ]
+ ],
+ "rise": 0.2,
+ "tread": 0.27,
+ "standing_states": 220,
+ "transitions": 1648,
+ "accepted": 664,
+ "cycle": null
+}

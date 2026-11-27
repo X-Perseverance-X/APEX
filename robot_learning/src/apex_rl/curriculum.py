@@ -15,16 +15,34 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+# Courses registered by the separate experiments below stay out of the training
+# curriculum and its defaults.
+from . import (
+    box_obstacle,
+    home_flight,  # noqa: F401  (registers the home staircase courses)
+)
 from .ascent_pose import KNEE_CLEARANCE_LIMIT
 from .course_observability import training_recorder, watch_stage, write_report
 from .leg_contacts import OVERLAP_LIMIT_M
 from .locomotion import COURSES, LocomotionEnv
 from .staged_ascent import STAGED, WIDE_REAR_COURSE, make_env
 
-STAGES = tuple(name for name in COURSES if name != "home-corner-preview")
-# Registered after STAGES so the training curriculum and its defaults stay as they were;
-# the home staircase courses are studied with tools/stair_gait_search.py.
-from . import home_flight  # noqa: F401
+STAGES = tuple(
+    name
+    for name in COURSES
+    if name != "home-corner-preview"
+    and not name.startswith("home-flight")
+    and name not in box_obstacle.BOX_COURSES
+)
+_staged_make_env = make_env
+
+
+def make_env(course, **kwargs):
+    """The staged-ascent factory, plus the box course with its own controller."""
+    if course in box_obstacle.BOX_COURSES:
+        return box_obstacle.BoxEnv(course, **kwargs)
+    return _staged_make_env(course, **kwargs)
+
 
 SCHEMA = 1
 EVALUATION_SEED = 1_000_000
@@ -144,7 +162,7 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     view.add_argument("--stabilized-gaze", action="store_true", help="drive the simulated gimbal")
     view.add_argument("--front-view", action="store_true", help="look through the robot camera")
     bench = sub.add_parser("course-bench", help="evaluate the tripod reference or policy")
-    bench.add_argument("--course", choices=STAGES)
+    bench.add_argument("--course", choices=(*STAGES, *box_obstacle.BOX_COURSES))
     bench.add_argument("--run", type=Path)
     bench.add_argument("--episodes", type=int, default=10)
     bench.add_argument("--eval-workers", type=int, default=1)

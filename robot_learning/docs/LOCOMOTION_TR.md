@@ -628,11 +628,26 @@ basamak, 27 cm derin düz basamaklar, sola dönen üç kama, üst kol, duvar ve 
 yapılan statik yürüyüş araması, 27 cm basamakta rıht 17 cm ise tekrarlanan bir ayak
 sırası buldu. 18 ve 20 cm'de arka bacak çifti hiçbir durumda bir üst basamağa
 çıkamıyor; tork sınırını 1,5 katına çıkarmak, tibiayı 20 cm'ye uzatmak ya da arka ayakları
-yana açmak bunu değiştirmedi. Ayrıntılar [deney klasöründedir](../experiments/home-flight/README.md).
+yana açmak bunu değiştirmedi. İniş için de aynı sonuç çıktı: 17 cm'de tekrarlanan iniş sırası var, 20 cm'de
+yok. Ayrıntılar [deney klasöründedir](../experiments/home-flight/README.md).
 
 ```powershell
 & $py -m apex_rl.cli course-view --course home-flight-preview --static
 & $py robot_learning\tools\stair_gait_search.py --rise 0.17 --tread 0.27 --output robot_learning\runs\gait-17.json
+```
+
+#### 16 cm kutu: çık, üstünde yürü, in
+
+`hybrid-box-16` 16 cm yüksek, 60 × 60 cm bir kutudur. Denetleyici (`box_obstacle.py`)
+planlı çıkışı değiştirmeden kullanır, üstte tripodla kenara 10 cm kalana kadar yürür ve
+durur, sonra tek tek ayakla iner. İniş denetimleri çıkışınkilerle aynıdır: kenardan ileri
+inmek, x ekseni aynalanınca kenara geri geri çıkmaktır. Ayarda kullanılmayan
+1017300–1017319 grubunda sonuçlar ve dayanıklılık testleri
+[deney klasöründedir](../experiments/box-16/README.md). Merdivenden iniş araması da
+[ev merdiveni deneyinde](../experiments/home-flight/README.md).
+
+```powershell
+& $py -m apex_rl.cli course-view --course hybrid-box-16 --randomize --seed 1017317
 ```
 
 #### Önceki sabit desenli parkurlar
