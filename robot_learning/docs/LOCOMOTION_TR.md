@@ -620,6 +620,21 @@ servo kasalarının STL vida delikleriyle ve eklem eksenleriyle uyumunu denetler
 & $py -m apex_rl.cli course-policy-view --run robot_learning/experiments/staged-ascent/ppo-13/hybrid-staged-up-13 --seed 1017317 --output robot_learning/runs/staged-13-best.html
 ```
 
+#### Tam ev merdiveni
+
+`home-flight-preview` evdeki merdivenin tamamını kurar: 20 cm rıht ve 30 cm derin ilk
+basamak, 27 cm derin düz basamaklar, sola dönen üç kama, üst kol, duvar ve korkuluk.
+Ölçülmemiş değerler (diğer rıhtlar, genişlik, basamak sayıları) parametredir. Düz kolda
+yapılan statik yürüyüş araması, 27 cm basamakta rıht 17 cm ise tekrarlanan bir ayak
+sırası buldu. 18 ve 20 cm'de arka bacak çifti hiçbir durumda bir üst basamağa
+çıkamıyor; tork sınırını 1,5 katına çıkarmak, tibiayı 20 cm'ye uzatmak ya da arka ayakları
+yana açmak bunu değiştirmedi. Ayrıntılar [deney klasöründedir](../experiments/home-flight/README.md).
+
+```powershell
+& $py -m apex_rl.cli course-view --course home-flight-preview --static
+& $py robot_learning\tools\stair_gait_search.py --rise 0.17 --tread 0.27 --output robot_learning\runs\gait-17.json
+```
+
 #### Önceki sabit desenli parkurlar
 
 | Seviye | Parkur | Başarı |

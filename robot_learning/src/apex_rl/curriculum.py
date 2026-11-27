@@ -22,6 +22,10 @@ from .locomotion import COURSES, LocomotionEnv
 from .staged_ascent import STAGED, WIDE_REAR_COURSE, make_env
 
 STAGES = tuple(name for name in COURSES if name != "home-corner-preview")
+# Registered after STAGES so the training curriculum and its defaults stay as they were;
+# the home staircase courses are studied with tools/stair_gait_search.py.
+from . import home_flight  # noqa: F401
+
 SCHEMA = 1
 EVALUATION_SEED = 1_000_000
 MIN_SUCCESS = 0.80

@@ -88,6 +88,13 @@ yakındır: modelde mil, delik çiftlerinden birine 14 mm, diğerine 34 mm uzakl
 Servoyu robota takmadan önce çıkış milinin yuvadaki yakın delik çiftinin tarafında
 olduğunu bir kez elle kontrol et.
 
+Fotoğraflarla karşılaştırma (yerel `robot_learning/runs/montaj-karsilastirma.png`, fotoğraf içerdiği için Git'e girmedi): femur servosu DS3240 (etiket
+40 kg, 4,8–6,8 V) coxa yuvasında dik durur ve modelde de dik, mil alt uçtadır. Diz
+servosunun etiketi **BLS3235SG**'dir; modelde ve sözleşmede adı BLS3225 geçer. İki servonun
+kasası aynı ölçüdedir (40 × 20 × 38,5 mm), bu yüzden yerleşim değişmez. Simülasyondaki
+tibia sınırı (1,2 N·m) BLS3235 sınıfının katalog torkunun altındadır, yani temkinlidir.
+Sınırlar değiştirilmedi; böylece bütün ölçümler karşılaştırılabilir kalır.
+
 ## Tohum grupları
 
 | Grup | Kullanım |
