@@ -57,6 +57,8 @@ def training_recorder(stage: Path):
                             "min_knee_deg",
                             "peak_upper_contacts",
                             "forward_transfer_m",
+                            "body_support_s",
+                            "body_support_weight",
                         )
                         if key in info
                     }
@@ -95,6 +97,10 @@ def training_recorder(stage: Path):
                     "min_knee_deg",
                     "peak_upper_contacts",
                     "forward_transfer_m",
+                    "body_support_s",
+                    "body_support_weight",
+                    "body_impact_weight",
+                    "servo_saturation_fraction",
                 ):
                     if field in self.completed[-1]:
                         row[field] = float(np.mean([episode[field] for episode in self.completed]))
@@ -251,6 +257,8 @@ def watch_stage(stage: Path, *, live: bool):
                     if "body_z_m" in row
                     else ""
                 )
+                if "body_support_s" in row:
+                    body_status += f"  body support {row['body_support_s']:.2f}s"
                 lines.append(
                     f"{marker}{int(worker) + 1}  {state}  ep {row['episode_id'] + 1}  "
                     f"{row['progress_m']:.2f} m  landings {row['touchdowns']}{body_status}"
@@ -360,6 +368,12 @@ def write_report(run: Path) -> Path:
                 )
                 if "max_riser_contact_s" in p:
                     text += f" · bölüm başına en uzun toplam dik yüz teması {p['max_riser_contact_s']:.2f} s"
+            if "mean_body_support_s" in p:
+                text += (
+                    f" · ort. gövde desteği {p['mean_body_support_s']:.2f} s"
+                    f" · sert gövde teması {p['body_impacts']}/{p['episodes']}"
+                    f" · servo tork sınırı örnekleri {p['mean_servo_saturation_fraction']:.1%}"
+                )
             body = "".join(
                 "<tr>"
                 f"<td>{row['seed']}</td>"
@@ -398,6 +412,9 @@ def write_report(run: Path) -> Path:
                 ("min_knee_deg", "En kapalı diz, °"),
                 ("peak_upper_contacts", "Üst yüzeyde en çok ayak"),
                 ("forward_transfer_m", "Öne ağırlık merkezi hedefi, m"),
+                ("body_support_s", "Gövde desteği, s"),
+                ("body_impact_weight", "Gövde darbesi, ağırlığın katı"),
+                ("servo_saturation_fraction", "Servo tork sınırındaki örnek oranı"),
             )
             if body_control or key not in ("body_height_range_m", "max_lateral_com_m")
             if key
@@ -407,6 +424,9 @@ def write_report(run: Path) -> Path:
                 "min_knee_deg",
                 "peak_upper_contacts",
                 "forward_transfer_m",
+                "body_support_s",
+                "body_impact_weight",
+                "servo_saturation_fraction",
             )
             or any(key in row for row in rows)
         )

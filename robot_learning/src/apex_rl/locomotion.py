@@ -7,11 +7,13 @@ import xml.etree.ElementTree as ET
 from bisect import bisect_right
 from dataclasses import dataclass
 
+import mujoco
 import numpy as np
 from gymnasium import spaces
 
 from .ascent_pose import apply_knee_stops
 from .body_motion import BodyMotion
+from .body_support import BodySupport
 from .contract import LEG_ORDER
 from .env import Meta1Env, _rotation_from_quaternion
 from .home_stairs import HomeStairGeometry
@@ -33,6 +35,7 @@ class Course:
     ledge_transfer: bool = False
     fore_probe: bool = False
     home_stairs: HomeStairGeometry | None = None
+    body_support: bool = False
 
     @property
     def start_height(self) -> float:
@@ -379,6 +382,20 @@ COURSES["home-corner-preview"] = Course(
     home_stairs=HomeStairGeometry(corner=True),
 )
 
+for height_cm in (13, 14, 15, 16, 17, 18, 19, 20):
+    COURSES[f"hybrid-brace-up-{height_cm:02}"] = Course(
+        height_cm / 100,
+        1,
+        edge_x=1.05,
+        link_contacts=True,
+        attitude_control=True,
+        steep_approach=True,
+        ledge_transfer=True,
+        fore_probe=True,
+        home_stairs=HomeStairGeometry(),
+        body_support=True,
+    )
+
 TRIPOD = np.array([0, 1, 0, 1, 0, 1], dtype=float) * 0.5
 
 
@@ -393,6 +410,7 @@ class LocomotionEnv(Meta1Env):
         episode_steps: int | None = None,
         record_pose: bool = False,
         body_control: bool = False,
+        train_near_step: bool = False,
     ):
         self.course_name = course
         self.course = COURSES[course]
@@ -415,6 +433,7 @@ class LocomotionEnv(Meta1Env):
             else (2.20 if self.adapt else (1.24 if course == "flat" else 1.80))
         )
         self.record_pose = record_pose
+        self.train_near_step = train_near_step
         self.gait = "tripod" if self.hybrid else "reference"
         self.switch_step = None
         self.approach_speed = 0.0
@@ -430,13 +449,29 @@ class LocomotionEnv(Meta1Env):
         self.action_space = spaces.Box(
             -1.0,
             1.0,
-            shape=(8 if self.attitude_control else 6 if body_control else 3,),
+            shape=(
+                12
+                if self.course.body_support
+                else 8
+                if self.attitude_control
+                else 6
+                if body_control
+                else 3,
+            ),
             dtype=np.float32,
         )
         self.observation_space = spaces.Box(
             -np.inf,
             np.inf,
-            shape=(105 if self.attitude_control else 103 if body_control else 85,),
+            shape=(
+                127
+                if self.course.body_support
+                else 105
+                if self.attitude_control
+                else 103
+                if body_control
+                else 85,
+            ),
             dtype=np.float32,
         )
         self._base_observation_space = spaces.Box(-np.inf, np.inf, shape=(72,), dtype=np.float32)
@@ -456,9 +491,15 @@ class LocomotionEnv(Meta1Env):
             for name in ("deck", "speaker", "main_pack", "middle_pack")
         ]
         self._leg_force_range = self.model.actuator_forcerange[self._legs].copy()
+        self._leg_target_rate = self._max_target_rate.copy()
         self._terrain_ids = [self.model.geom(name).id for name in self.course.terrain_names]
         self.link_metrics = (
             LinkContactMetrics(self.model, self._terrain_ids) if self.course.link_contacts else None
+        )
+        self.brace = (
+            BodySupport(self.model, self._chassis_geoms, self._terrain_ids)
+            if self.course.body_support
+            else None
         )
         self.body_motion = BodyMotion(self) if body_control else None
         if self.body_motion:
@@ -511,7 +552,18 @@ class LocomotionEnv(Meta1Env):
             )
         if self.attitude_control:
             extras.extend((self.body_motion.roll, self.body_motion.yaw))
+        if self.brace is not None:
+            point = self.brace.xy
+            extras.extend((self.brace.support_load, min(1.0, self.brace.side_streak * 0.002)))
+            extras.extend(point - self.data.qpos[:2] if point is not None else (0.0, 0.0))
+            extras.extend(self._relative_servo_load())
         return np.concatenate((base, extras)).astype(np.float32)
+
+    def _relative_servo_load(self) -> np.ndarray:
+        return (
+            np.abs(self.data.actuator_force[self._legs])
+            / self.model.actuator_forcerange[self._legs, 1]
+        )
 
     def _heading(self) -> float:
         w, x, y, z = self.data.qpos[3:7]
@@ -536,6 +588,9 @@ class LocomotionEnv(Meta1Env):
         self.approach_speed = 0.0
         self.approach_x = 0.0
         self.model.actuator_forcerange[self._legs] = self._leg_force_range
+        if self.brace is not None:
+            self.brace.reset(self.model)
+            self.saturation_fraction_sum = 0.0
         super().reset(seed=seed, options={"command": [0.12, 0.0, 0.0]})
         if self.domain_randomization:
             speed = (0.075, 0.11) if self.adapt else (0.10, 0.15)
@@ -545,6 +600,21 @@ class LocomotionEnv(Meta1Env):
         elif self.adapt:
             self.command[0] = 0.09
         self.model.actuator_forcerange[self._legs] = self._leg_force_range * self.supply_scale
+        if self.brace is not None:
+            if self.domain_randomization:
+                self._max_target_rate[:] = self._leg_target_rate * self.np_random.uniform(
+                    0.74, 0.98, 18
+                )
+                self.model.actuator_forcerange[self._legs] *= self.np_random.uniform(
+                    0.84, 1.0, (18, 1)
+                )
+                angle = float(self.np_random.uniform(-0.048, 0.048))
+                self.data.qpos[1] = self.np_random.uniform(-0.032, 0.032)
+                self.data.qpos[3:7] = (math.cos(angle / 2), 0, 0, math.sin(angle / 2))
+                if self.train_near_step and self.np_random.random() < 0.65:
+                    self.data.qpos[0] = self.np_random.uniform(0.24, 0.48)
+                mujoco.mj_forward(self.model, self.data)
+            self.brace.reset(self.model)
         self.model.geom_friction[self._terrain_ids, 0] = self.model.geom_friction[0, 0]
         self.last_contacts = self._contacts().astype(bool)
         self.last_feet = self.data.xpos[self._foot_ids].copy()
@@ -559,7 +629,11 @@ class LocomotionEnv(Meta1Env):
         return self._observation(), {"course": self.course_name}
 
     def _targets(self, residual: np.ndarray) -> np.ndarray:
-        adjusted = residual * 0.28 if self.contact_ascent or self.rubble else residual
+        adjusted = (
+            residual
+            if self.course.body_support
+            else (residual * 0.28 if self.contact_ascent or self.rubble else residual)
+        )
         if self.hybrid and self.gait != "wave":
             x = float(self.data.qpos[0])
             # Hand off after touchdown, so the wave gait inherits a planted
@@ -585,7 +659,7 @@ class LocomotionEnv(Meta1Env):
         tall_home = (
             self.course.home_stairs is not None
             and self.contact_ascent
-            and self.course.rise_m >= 0.15
+            and (self.course.rise_m >= 0.15 or self.course.body_support)
         )
         return self.course.edge_x - x <= (0.72 if tall_home else 0.58)
 
@@ -680,6 +754,8 @@ class LocomotionEnv(Meta1Env):
 
     def _observe_link_contacts(self, contacts):
         self.link_metrics.observe(contacts)
+        if self.brace is not None:
+            self.brace.observe(self.model, self.data, contacts)
         if self.attitude_control:
             self.min_knee_position = min(
                 self.min_knee_position, float(self.data.qpos[self._leg_positions][2::3].min())
@@ -694,6 +770,7 @@ class LocomotionEnv(Meta1Env):
         x0 = float(self.data.qpos[0])
         home = self.course.home_stairs is not None and self.link_metrics is not None
         previous_scrapes = self.link_metrics.riser_contact_substeps if home else 0
+        previous_impact = self.brace.peak_impact_load if self.brace is not None else 0.0
         targets = self._targets(self.adjustment)
         self._apply_joint_targets(
             targets,
@@ -738,7 +815,12 @@ class LocomotionEnv(Meta1Env):
         self.work_j += energy
         heading = self._heading()
         chassis_hit = bool(np.isin(self.data.contact.geom, self._chassis_geoms).any())
-        fallen = bool(chassis_hit or upright < 0.68 or z < 0.05 + self.course.height(x, y))
+        if self.brace is None:
+            fallen = bool(chassis_hit or upright < 0.68 or z < 0.05 + self.course.height(x, y))
+        else:
+            fallen = bool(
+                self.brace.hard_impact or upright < 0.68 or z < 0.021 + self.course.height(x, y)
+            )
         out = bool(abs(y) > 0.42 or x < -0.24)
         in_goal = (
             x >= self.course.goal
@@ -772,6 +854,12 @@ class LocomotionEnv(Meta1Env):
             self.upper_rewarded |= upper
         if home:
             reward -= 0.009 * (self.link_metrics.riser_contact_substeps - previous_scrapes)
+        if self.brace is not None:
+            saturation = float(np.mean(self._relative_servo_load() >= 0.95))
+            self.saturation_fraction_sum += saturation
+            reward -= 0.026 * saturation + 0.25 * (self.brace.peak_impact_load - previous_impact)
+            if self.brace.xy is not None and self.body_motion.support_count >= 3:
+                reward += 4.0 * max(0.0, x - x0)
         if self.link_metrics is not None:
             info_contact = self.link_metrics.info()
         else:
@@ -824,6 +912,14 @@ class LocomotionEnv(Meta1Env):
             info["peak_upper_contacts"] = self.body_motion.peak_upper_contacts
             info["forward_transfer_m"] = self.body_motion.transfer_peak_m
             info["ledge_index"] = self.body_motion.ledge_index
+        if self.brace is not None:
+            info.update(
+                body_support_s=self.brace.support_steps * self.model.opt.timestep,
+                body_impact=self.brace.hard_impact,
+                body_support_weight=self.brace.peak_support_load,
+                body_impact_weight=self.brace.peak_impact_load,
+                servo_saturation_fraction=self.saturation_fraction_sum / self.steps,
+            )
         if self.record_pose and (
             self.steps % 5 == 0 or success or fallen or out or self.steps == self.episode_steps
         ):

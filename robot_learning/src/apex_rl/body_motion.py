@@ -157,7 +157,7 @@ class BodyMotion:
         foot[2] = crest + lower * (end[2] - crest)
         return foot
 
-    def _pick_landing(self, foot, support, pace, middle_probe=False):
+    def _pick_landing(self, foot, support, pace, middle_probe=False, offset=None):
         course = self.terrain
         actual = self.env.data.qpos[:3]
         x = max(
@@ -192,6 +192,12 @@ class BodyMotion:
             else:
                 x = max(x, self.ledge_x + 0.065)
                 y += math.copysign(0.034, y)
+        if offset is not None:
+            x += 0.027 * offset[0]
+            y += 0.035 * offset[1]
+            for edge in course.step_edges:
+                if abs(x - edge) < edge_margin:
+                    x = edge + math.copysign(edge_margin, x - edge)
         x = min(x, max_x)
         if self.env.rubble:
             y = self.neutral_xy[self.leg, 1] + course.route_y(actual[0] + 0.09)
@@ -238,6 +244,8 @@ class BodyMotion:
         ledge = env.course.ledge_transfer
         upper = self.upper_contacts(feet, contacts) if ledge else None
         home = env.course.home_stairs is not None
+        brace = env.brace
+        brace_xy = None if brace is None else brace.xy
         if (
             home
             and ledge
@@ -310,13 +318,29 @@ class BodyMotion:
                 candidate = next((i for i in candidates if not planted[i]), candidate)
                 if candidates == REAR_SUPPORT:
                     candidate = candidates[self.next_leg % len(candidates)]
+            if brace is not None:
+                # Let the policy choose the side within the current pair.
+                other = (candidate + 3) % 6
+                if self.fore_probe or middle_probe or self.rear_transfer:
+                    other_allowed = not planted[other] and not planted[candidate]
+                else:
+                    other_allowed = True
+                if other_allowed:
+                    prefer_other = residual[10] * (1 if candidate < 3 else -1) > 0.22
+                    if prefer_other:
+                        candidate = other
             stance = contacts.copy()
             stance[candidate] = False
-            if stance.sum() >= (4 if middle_probe else 3):
+            minimum_support = 4 if middle_probe and brace_xy is None else 3
+            if stance.sum() >= minimum_support:
                 self.leg = candidate
                 self.lift_off = feet[candidate].copy()
                 self.landing = self._pick_landing(
-                    self.lift_off, feet[stance, :2].mean(axis=0), pace, middle_probe
+                    self.lift_off,
+                    feet[stance, :2].mean(axis=0),
+                    pace,
+                    middle_probe,
+                    residual[8:10] if brace is not None else None,
                 )
                 self.swing_edge = (
                     next(
@@ -368,7 +392,8 @@ class BodyMotion:
             # Keep the centre behind the lip while two forefeet carry the
             # high side and the middle foothold is still being moved.
             setback = 0.056 if not any(planted[i] for i in MIDDLE_SUPPORT) else 0.027
-            self.path_x = min(self.path_x, self.ledge_x - setback)
+            slack = 0.055 if brace_xy is not None else 0.0
+            self.path_x = min(self.path_x, self.ledge_x - setback + slack)
         tall_ascent = env.contact_ascent and self.terrain.rise_m >= 0.07
         steep = env.course.steep_approach
         preview = 0.29 if steep else (0.24 if tall_ascent else 0.17)
@@ -376,6 +401,13 @@ class BodyMotion:
         centre = self.terrain.height(root[0] - 0.03, root[1])
         if self.support_count >= 3:
             support = feet[stance]
+            support_xy = support[:, :2]
+            shift = 0.0
+            if brace is not None:
+                if self.leg is not None:
+                    shift = -math.copysign(0.016, self.neutral_xy[self.leg, 1])
+                if brace_xy is not None:
+                    support_xy = np.vstack((support_xy, brace_xy))
             target = [
                 self.path_x + 0.014 * residual[2],
                 (
@@ -383,13 +415,14 @@ class BodyMotion:
                     if env.rubble
                     else 0.30 * float(support[:, 1].mean())
                 )
-                + 0.026 * residual[4],
+                + 0.026 * residual[4]
+                + shift,
             ]
-            bounded = support_target(support[:, :2], np.array(target) + com_offset)
+            bounded = support_target(support_xy, np.array(target) + com_offset)
             if bounded is not None:
                 xy = bounded - com_offset
             if self.rear_transfer:
-                shifted = support_target(support[:, :2], xy + com_offset + np.array([0.026, 0.0]))
+                shifted = support_target(support_xy, xy + com_offset + np.array([0.026, 0.0]))
                 if shifted is not None:
                     transfer = float(np.clip(shifted[0] - xy[0] - com_offset[0], 0.0, 0.026))
                     self.transfer_peak_m = max(self.transfer_peak_m, transfer)
@@ -418,6 +451,10 @@ class BodyMotion:
             z = self.ledge_top + 0.052 + nose_clearance + 0.009 * residual[3]
         if self.rear_transfer:
             z = max(z, self.ledge_top + env.stand_height - 0.009)
+        if brace is not None and (middle_probe or self.rear_transfer):
+            # Permit a controlled lowering of the nose onto the top tread.
+            # A negative policy output keeps the body in a higher stance.
+            z -= 0.045 * max(0.0, residual[11])
         target = np.array([*xy, z])
         rate = np.clip(5 * (target - self.body), [-0.065, -0.065, -0.05], [0.08, 0.065, 0.05])
         self.velocity += np.clip(rate - self.velocity, -0.50 * DT, 0.50 * DT)
@@ -433,6 +470,8 @@ class BodyMotion:
             pitch = 0.26
         if self.rear_transfer:
             pitch = max(pitch, 0.14) if self.high_home_step else min(pitch, -0.055)
+        if brace is not None:
+            pitch = np.clip(pitch + 0.12 * residual[5], -0.18, 0.53)
         self.pitch += float(np.clip(pitch - self.pitch, -0.34 * DT, 0.34 * DT))
         if env.attitude_control:
             # Estimate left/right support slope from measured feet, then let

@@ -25,6 +25,9 @@ EVALUATION_SEED = 1_000_000
 MIN_SUCCESS = 0.80
 MAX_FALLS = 0.10
 MAX_RISER_CONTACT_S = 0.25
+BRACE_MIN_SUCCESS = 0.90
+BRACE_MAX_FALLS = 0.05
+BRACE_EVAL_EPISODES = 20
 POLICY_FILE = "policy_sim_only.zip"
 REPLAY_MODELS = {
     "b48bc1e3ddb0f1be1a92dd8c41a2e9f467070306f8796b9c6738f248368c7ed2": {
@@ -109,6 +112,9 @@ REPLAY_MODELS = {
     "e316d00e667d3d171d203b402e14d3bd459759703c68ee2ab8dd1621ea1dba26": {
         "hybrid-home-down-20-single",
     },
+    "e14016b3b23185a4613947451c641cf25ad869aeb24d2651444821eb83330d26": {
+        "hybrid-home-up-20-single",
+    },
 }
 
 
@@ -140,6 +146,10 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     train.add_argument("--through", choices=STAGES)
     train.add_argument("--timesteps", type=int, default=200_000, help="new transitions per stage")
     train.add_argument("--envs", type=int, default=4)
+    train.add_argument(
+        "--gamma", type=float, default=0.99, help="PPO reward discount per control step"
+    )
+    train.add_argument("--gae-lambda", type=float, default=0.95, help="PPO advantage trace decay")
     train.add_argument("--eval-episodes", type=int, default=10)
     train.add_argument("--eval-seed", type=int, default=EVALUATION_SEED)
     train.add_argument("--seed", type=int, default=42)
@@ -172,6 +182,7 @@ def _fingerprint(env: LocomotionEnv) -> str:
             "leg_contacts.py",
             "ascent_pose.py",
             "home_stairs.py",
+            "body_support.py",
         )
     ]
     return hashlib.sha256(
@@ -189,6 +200,7 @@ def _read_policy(run: Path, env: LocomotionEnv, *, exact_course: bool, vector=No
         manifest["schema"] != SCHEMA
         or manifest.get("attitude_control", False) != env.attitude_control
         or manifest.get("body_control", False) != (env.body_motion is not None)
+        or manifest.get("body_support", False) != env.course.body_support
         or not (match or legacy)
     ):
         raise ValueError("run uses an incompatible locomotion environment")
@@ -253,6 +265,16 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
         )
         body_stats["sole_top_peak_m"] = max(item["sole_top_peak_m"] for item in outcomes)
         body_stats["link_overlap_passed"] &= body_stats["leg_stair_peak_m"] <= OVERLAP_LIMIT_M
+    if env.course.body_support:
+        body_stats.update(
+            body_impacts=sum(item["body_impact"] for item in outcomes),
+            mean_body_support_s=float(np.mean([item["body_support_s"] for item in outcomes])),
+            max_body_support_weight=max(item["body_support_weight"] for item in outcomes),
+            max_body_impact_weight=max(item["body_impact_weight"] for item in outcomes),
+            mean_servo_saturation_fraction=float(
+                np.mean([item["servo_saturation_fraction"] for item in outcomes])
+            ),
+        )
     return {
         "episodes": episodes,
         "successes": sum(item["success"] for item in outcomes),
@@ -385,9 +407,22 @@ def _make_env(course: str, monitor_path: str, body_control: bool):
     from stable_baselines3.common.monitor import Monitor
 
     return Monitor(
-        LocomotionEnv(course, record_pose=True, body_control=body_control),
+        LocomotionEnv(course, record_pose=True, body_control=body_control, train_near_step=True),
         filename=monitor_path,
         info_keywords=("success", "fallen", "progress_m", "touchdowns", "pack_voltage_proxy_v"),
+    )
+
+
+def _passed_stage(evaluation, *, body_support):
+    count = evaluation["episodes"]
+    return (
+        (not body_support or count >= BRACE_EVAL_EPISODES)
+        and evaluation["successes"] / count >= (BRACE_MIN_SUCCESS if body_support else MIN_SUCCESS)
+        and evaluation["falls"] / count <= (BRACE_MAX_FALLS if body_support else MAX_FALLS)
+        and not evaluation.get("body_impacts", 0)
+        and evaluation.get("link_overlap_passed", True)
+        and evaluation.get("knee_clearance_passed", True)
+        and evaluation.get("riser_clearance_passed", True)
     )
 
 
@@ -436,7 +471,8 @@ def _train(args) -> None:
             if policy is None and args.resume:
                 policy = _read_policy(args.resume, eval_env, exact_course=False, vector=vector)
             if policy is None:
-                policy_kwargs = {"net_arch": {"pi": [64, 64], "vf": [64, 64]}}
+                layers = [128, 128] if eval_env.course.body_support else [64, 64]
+                policy_kwargs = {"net_arch": {"pi": layers, "vf": layers}}
                 if eval_env.body_motion is not None:
                     policy_kwargs["log_std_init"] = -1.7
                 policy = PPO(
@@ -447,6 +483,8 @@ def _train(args) -> None:
                     n_steps=512,
                     batch_size=128,
                     learning_rate=3e-4,
+                    gamma=args.gamma,
+                    gae_lambda=args.gae_lambda,
                     policy_kwargs=policy_kwargs,
                     verbose=1,
                     tensorboard_log=str(args.output / "tensorboard"),
@@ -454,7 +492,14 @@ def _train(args) -> None:
             else:
                 policy.set_env(vector)
             policy.tensorboard_log = str(args.output / "tensorboard")
-            manifest.update(ppo_epochs=policy.n_epochs, steps_per_worker=policy.n_steps)
+            manifest.update(
+                ppo_epochs=policy.n_epochs,
+                ppo_gamma=policy.gamma,
+                ppo_gae_lambda=policy.gae_lambda,
+                steps_per_worker=policy.n_steps,
+                net_arch=policy.policy.net_arch,
+                body_support=eval_env.course.body_support,
+            )
             policy.learn(
                 total_timesteps=args.timesteps,
                 reset_num_timesteps=False,
@@ -471,13 +516,7 @@ def _train(args) -> None:
         finally:
             vector.close()
             eval_env.close()
-        passed = (
-            evaluation["successes"] / args.eval_episodes >= MIN_SUCCESS
-            and evaluation["falls"] / args.eval_episodes <= MAX_FALLS
-            and evaluation.get("link_overlap_passed", True)
-            and evaluation.get("knee_clearance_passed", True)
-            and evaluation.get("riser_clearance_passed", True)
-        )
+        passed = _passed_stage(evaluation, body_support=COURSES[course].body_support)
         baseline_key = "body_reference" if eval_env.body_motion is not None else "tripod"
         report = {"course": course, "passed": passed, "policy": evaluation, baseline_key: baseline}
         (stage / "evaluation.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
@@ -508,13 +547,27 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
     elif args.command == "course-train":
         if not 1 <= args.envs <= 32:
             parser.error("--envs must be between 1 and 32")
+        if not (0 < args.gamma < 1 and 0 <= args.gae_lambda <= 1):
+            parser.error("gamma must be in (0, 1), and GAE lambda must be in [0, 1]")
         if args.timesteps < 512 or not 10 <= args.eval_episodes <= 100:
             parser.error("use at least 512 training transitions and 10–100 evaluation episodes")
         hybrid = args.start.startswith("hybrid-")
         if args.through is None:
-            args.through = STAGES[-1] if hybrid else "stairs-down-20"
+            if hybrid:
+                brace = COURSES[args.start].body_support
+                args.through = next(
+                    name for name in reversed(STAGES) if COURSES[name].body_support == brace
+                )
+            else:
+                args.through = "stairs-down-20"
         if hybrid != args.through.startswith("hybrid-"):
             parser.error("use a single controller family in each curriculum run")
+        if COURSES[args.start].body_support != COURSES[args.through].body_support:
+            parser.error("body-support courses use a separate policy and curriculum")
+        if COURSES[args.start].body_support and args.eval_episodes < BRACE_EVAL_EPISODES:
+            parser.error(
+                f"body-support courses require at least {BRACE_EVAL_EPISODES} evaluation episodes"
+            )
         if STAGES.index(args.start) > STAGES.index(args.through):
             parser.error("--through must be at or after --start")
         if not 0 <= args.seed < EVALUATION_SEED - 32:

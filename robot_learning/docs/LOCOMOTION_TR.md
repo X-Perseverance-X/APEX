@@ -459,6 +459,35 @@ fiziği için MuJoCo MJX ayrı bir çalışma altyapısı sunuyor.
 
 - [MuJoCo MJX](https://mujoco.readthedocs.io/en/stable/mjx.html)
 
+### Gövde destekli tek basamak müfredatı
+
+`hybrid-brace-up-13` ile `hybrid-brace-up-20` arasında yükseklik birer santimetre
+artar. Her seviye tek basamaklıdır. Yükseklik eşiği, 20 ayrı değerlendirme
+tohumunda en az %90 tamamlanma ve en fazla %5 düşme ister. Sert gövde darbesi,
+diz sınırı veya uzuv örtüşmesi ihlali varsa ve herhangi bir denemede dik yüzle
+toplam temas 0,25 saniyeyi aşarsa sıradaki seviyeye geçilmez.
+
+Basamağın üstündeki, yukarı yönlü yük taşıyan gövde teması bir destek noktası
+olarak kullanılır. Alt gövdenin çarpışma geometrisi, CAD modeli ve mafsal
+sınırları kullanılır. Temas basıncı ve donanım dayanımı için fiziksel ölçüm
+bulunmadığından kuvvet eşikleri simülasyon amaçlıdır. Tork ve hedef açı hızı,
+batarya ve servo belirsizliğini temsil etmek için bölümden bölüme kısılır.
+Yan duvara yapılan uzun baskı, üst yüzeye sert iniş ve devrilme denemeyi bitirir.
+
+PPO aktörü ve değer ağı ikişer 128 nöronlu katman kullanır. Politika gövdenin
+yüksekliğini ve eğimini, adımın ne kadar yana veya öne atıldığını, uygun bacak
+çiftinin hangi tarafının kaldırıldığını ve gövdeyle destek alma miktarını
+ayarlayabilir. Fizik ortamına temas yükü ve servo tork sınırının ne kadarının
+kullanıldığı da eklenmiştir. Eğitimde bazı bölümler basamağa daha yakın başlar.
+Değerlendirmelerde robot bütün yaklaşmayı yapar.
+
+```powershell
+& $py -m apex_rl.cli course-train --start hybrid-brace-up-13 --through hybrid-brace-up-20 --timesteps 524288 --envs 8 --eval-episodes 20 --eval-seed 1012200 --seed 6201 --output robot_learning/runs/course-brace-524k
+& $py -m apex_rl.cli course-watch --run robot_learning/runs/course-brace-524k/hybrid-brace-up-13 --live
+```
+
+- [ANYmal Parkour, ETH Zürich](https://arxiv.org/abs/2306.14874)
+
 #### Önceki sabit desenli parkurlar
 
 | Seviye | Parkur | Başarı |
