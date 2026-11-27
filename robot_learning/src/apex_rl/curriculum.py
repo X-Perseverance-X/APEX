@@ -224,6 +224,11 @@ def _fingerprint(env: LocomotionEnv) -> str:
             "8138f04c452a6d7057015ade4ade0dc58e339ee4281f1324d1a77761ed46c652",
         "26500b47f57e8d3efafae7f6355db979ede5b66c02cbcb1ab4c75591a6632ea5":
             "7857fe0c0afb26871ac194186a9ed330c9e40577cba9efcca106764ab4586ddf",
+        # Staged courses after the 20 cm lift-then-tilt branch, which only acts
+        # on hybrid-wide-rear-up-20. ppo-13 replays seeds 1017300-1017303 with
+        # the same step counts and progress as its recorded evaluation.
+        "78ce3f1113394f8e78d29bce8b9f7b5e10c2854c6c04d846521360d154b2b169":
+            "4188a06f2142730146189752d0b2252d6fecd9d070ab1b26bc78012771a932f9",
     }.get(digest, digest)
 
 

@@ -130,3 +130,16 @@ def test_last_rear_sole_is_lifted_after_tilting_the_body_on_the_20_cm_tilt_cours
         assert any(after < before - 0.01 for before, after in lifted)
     finally:
         env.close()
+
+
+def test_recorded_staged_ppo_policies_still_match_the_environment():
+    # A change to the staged controller sources must keep the recorded PPO
+    # policies loadable, or bind the new build only after a replay check.
+    for height in (13,):
+        run = EXPERIMENTS / f"staged-ascent/ppo-{height}/hybrid-staged-up-{height}"
+        manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
+        env = make_env(f"hybrid-staged-up-{height}")
+        try:
+            assert _fingerprint(env) == manifest["model_sha256"]
+        finally:
+            env.close()
