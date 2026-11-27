@@ -19,6 +19,7 @@ from .ascent_pose import KNEE_CLEARANCE_LIMIT
 from .course_observability import training_recorder, watch_stage, write_report
 from .leg_contacts import OVERLAP_LIMIT_M
 from .locomotion import COURSES, LocomotionEnv
+from .staged_ascent import STAGED, make_env  # also registers the hybrid-staged-up-* courses
 
 STAGES = tuple(name for name in COURSES if name != "home-corner-preview")
 SCHEMA = 1
@@ -193,20 +194,21 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
 
 def _fingerprint(env: LocomotionEnv) -> str:
     # Include the geometry and implementation that define policy observations and actions.
-    source = [
-        Path(__file__).with_name(name).read_text(encoding="utf-8")
-        for name in (
-            "locomotion.py",
-            "env.py",
-            "model.py",
-            "body_motion.py",
-            "leg_contacts.py",
-            "ascent_pose.py",
-            "home_stairs.py",
-            "body_support.py",
-            "stair_footholds.py",
-        )
-    ]
+    # Environments with their own controller add their sources; the list for all
+    # other environments, and therefore their recorded hashes, is unchanged.
+    names = (
+        "locomotion.py",
+        "env.py",
+        "model.py",
+        "body_motion.py",
+        "leg_contacts.py",
+        "ascent_pose.py",
+        "home_stairs.py",
+        "body_support.py",
+        "stair_footholds.py",
+        *getattr(env, "fingerprint_sources", ()),
+    )
+    source = [Path(__file__).with_name(name).read_text(encoding="utf-8") for name in names]
     return hashlib.sha256(
         json.dumps([env.config, env.body_motion is not None, *source], sort_keys=True).encode()
     ).hexdigest()
@@ -264,7 +266,7 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
 
 
 def _benchmark_batch(course, body_control, run, count, seed):
-    env = LocomotionEnv(course, body_control=body_control)
+    env = make_env(course, body_control=body_control)
     try:
         model = None
         if run is not None:
@@ -381,7 +383,10 @@ def _inspect(args) -> None:
 
         env_type = CameraGatedCourse
     randomized = args.command == "course-bench" or getattr(args, "randomize", False)
-    env = env_type(course or "flat", randomize=randomized, body_control=body_control)
+    if env_type is LocomotionEnv:
+        env = make_env(course or "flat", randomize=randomized, body_control=body_control)
+    else:
+        env = env_type(course or "flat", randomize=randomized, body_control=body_control)
     try:
         policy = None
         if args.command == "course-bench":
@@ -467,6 +472,9 @@ def _view(env, policy, args) -> None:
                         if c.fore_probe
                         else "wave"
                     )
+                    if "staged_phase" in info:
+                        state = "" if c.mode != "staged" else f" / {c.state}"
+                        phase = f"staged {info['staged_phase']}{state}"
                     details += f"\n{phase} | upper contacts peak {info['peak_upper_contacts']}/6"
                     details += f" | CoM shift {1000 * info['forward_transfer_m']:.0f} mm"
                 if env.course.home_stairs is not None:
@@ -491,7 +499,7 @@ def _view(env, policy, args) -> None:
 def _make_env(course: str, monitor_path: str, body_control: bool, action_scale: float):
     from stable_baselines3.common.monitor import Monitor
 
-    env = LocomotionEnv(course, record_pose=True, body_control=body_control, train_near_step=True)
+    env = make_env(course, record_pose=True, body_control=body_control, train_near_step=True)
     env.action_scale = action_scale
     return Monitor(
         env,
@@ -534,7 +542,7 @@ def _train(args) -> None:
     for course in STAGES[STAGES.index(args.start) : STAGES.index(args.through) + 1]:
         stage = args.output / course
         stage.mkdir()
-        eval_env = LocomotionEnv(course, body_control=args.body_control)
+        eval_env = make_env(course, body_control=args.body_control)
         eval_env.action_scale = action_scale
         factories = [
             partial(_make_env, course, str(stage / f"env-{i}.csv"), args.body_control, action_scale)
@@ -663,7 +671,7 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
             parser.error("sample every 1–200 control steps with a nonnegative seed")
         torch.set_num_threads(1)
         manifest = json.loads((args.run / "manifest.json").read_text(encoding="utf-8"))
-        env = LocomotionEnv(manifest["course"], body_control=manifest.get("body_control", False))
+        env = make_env(manifest["course"], body_control=manifest.get("body_control", False))
         try:
             model = _read_policy(args.run, env, exact_course=True)
             write_trace(
@@ -687,8 +695,13 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
         if args.timesteps < 512 or not 10 <= args.eval_episodes <= 100:
             parser.error("use at least 512 training transitions and 10–100 evaluation episodes")
         hybrid = args.start.startswith("hybrid-")
+        staged_through = args.through in STAGED if args.through else args.start in STAGED
+        if (args.start in STAGED) != staged_through:
+            parser.error("the staged ascent courses form their own curriculum")
         if args.through is None:
-            if COURSES[args.start].spread_footholds:
+            if args.start in STAGED:
+                args.through = "hybrid-staged-up-20"
+            elif COURSES[args.start].spread_footholds:
                 args.through = "hybrid-spread-up-20"
             elif COURSES[args.start].brace_rear_placement:
                 args.through = "hybrid-brace-transfer-up-20"

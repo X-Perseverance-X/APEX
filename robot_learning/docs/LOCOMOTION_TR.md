@@ -585,6 +585,33 @@ tohumda ölçüldü. Ortalama gövde yüksekliği hedefin 4,2–5,9 cm altında 
 Aralığı açan denetleyici araştırma parkurlarında tutulur. Önceki 13 cm
 politikasının kayıtlı koşusu ayrı olarak açılabilir.
 
+### Planlı basamak çıkışı (ayrı deney)
+
+`hybrid-staged-up-13` … `hybrid-staged-up-20` parkurları, `hybrid-brace-transfer-up-*`
+ile aynı basamak, kütle, servo tork ve hız sınırları, diz durdurucusu ve CAD
+çarpışma modelini kullanır. Rıhta 36 cm kala her ayak hareketi önceden planlanır.
+Sıra ön ayaklar, gövde aktarımı, orta ayaklar ve arka ayaklardır. Her adımda
+kalan ayakların erişimi, destek çokgeni, statik eklem torku, tabanın basamağa
+sığması, komşu ayak mesafesi ve salınım yolunun tamamında rıht açıklığı
+denetlenir. Kaldırmadan önce ölçülen temaslarla destek çokgeni yeniden hesaplanır.
+Ayrıntılar, tohum grupları ve bütün ölçümler
+[deney klasöründedir](../experiments/staged-ascent/README.md).
+
+Ayar ve eğitimde kullanılmayan 1017300–1017319 grubunda sonuçlar:
+13 cm 18/20, 14 cm 18/20 tamamlandı. Düşme ve gövde darbesi olmadı. En uzun rıht
+teması 0,17 ve 0,19 s oldu. Aynı tohumlarda referans 1/20 ve 0/20 tamamladı.
+Denetleyici etrafında eğitilen artık PPO 13 cm'de 20/20 tamamladı. 14 cm PPO adayı
+17/20 verdi; bu aşama yalnız denetleyiciyle geçti. 15 cm'de denetleyici 15/20 ve
+0,27 s rıht teması, PPO 16/20 verdi; müfredat 15 cm'de durdu. 18–20 cm'de ön
+ve orta ayaklar basamağa çıktı. Arka aktarım gövde desteği olmadan uygun duruş bulamadı.
+
+```powershell
+& $py -m apex_rl.cli course-view --course hybrid-staged-up-13 --randomize --seed 1017317
+& $py -m apex_rl.cli course-view --course hybrid-staged-up-13 --randomize --seed 1017309
+& $py -m apex_rl.cli course-bench --course hybrid-staged-up-14 --episodes 20 --seed 1017300 --eval-workers 2
+& $py -m apex_rl.cli course-policy-view --run robot_learning/experiments/staged-ascent/ppo-13/hybrid-staged-up-13 --seed 1017317 --output robot_learning/runs/staged-13-best.html
+```
+
 #### Önceki sabit desenli parkurlar
 
 | Seviye | Parkur | Başarı |

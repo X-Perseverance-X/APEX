@@ -1,0 +1,3240 @@
+{
+ "course": "hybrid-staged-up-13",
+ "run": "experiments/staged-ascent/ppo-13/hybrid-staged-up-13",
+ "episodes": [
+  {
+   "seed": 1017317,
+   "success": true,
+   "fallen": false,
+   "peak_upper_contacts": 6,
+   "phases": {
+    "approach": {
+     "duration_s": 5.12,
+     "mean_target_z_m": 0.118,
+     "mean_z_m": 0.1139,
+     "mean_height_deficit_m": 0.0041,
+     "max_height_deficit_m": 0.0047,
+     "mean_target_rise_above_stand_m": -0.0,
+     "mean_foot_load_weight": {
+      "RF": 0.15,
+      "RM": 0.215,
+      "RR": 0.135,
+      "LF": 0.152,
+      "LM": 0.211,
+      "LR": 0.138
+     },
+     "mean_chassis_load_weight": 0.0,
+     "mean_joint_load": {
+      "RF_coxa": 0.276,
+      "RF_femur": 0.397,
+      "RF_tibia": 0.355,
+      "RM_coxa": 0.362,
+      "RM_femur": 0.516,
+      "RM_tibia": 0.166,
+      "RR_coxa": 0.244,
+      "RR_femur": 0.344,
+      "RR_tibia": 0.308,
+      "LF_coxa": 0.271,
+      "LF_femur": 0.365,
+      "LF_tibia": 0.376,
+      "LM_coxa": 0.361,
+      "LM_femur": 0.499,
+      "LM_tibia": 0.191,
+      "LR_coxa": 0.236,
+      "LR_femur": 0.358,
+      "LR_tibia": 0.357
+     },
+     "saturated_while_loaded": {
+      "RF_coxa": 0.001,
+      "RF_femur": 0.0,
+      "RF_tibia": 0.02,
+      "RM_coxa": 0.07,
+      "RM_femur": 0.394,
+      "RM_tibia": 0.006,
+      "RR_coxa": 0.0,
+      "RR_femur": 0.0,
+      "RR_tibia": 0.006,
+      "LF_coxa": 0.0,
+      "LF_femur": 0.0,
+      "LF_tibia": 0.039,
+      "LM_coxa": 0.041,
+      "LM_femur": 0.055,
+      "LM_tibia": 0.007,
+      "LR_coxa": 0.0,
+      "LR_femur": 0.0,
+      "LR_tibia": 0.027
+     },
+     "x_start_m": 0.0,
+     "x_end_m": 0.618,
+     "feet_start_m": {
+      "RF": [
+       0.2221,
+       -0.2147,
+       0.0173
+      ],
+      "RM": [
+       -0.0107,
+       -0.2486,
+       0.0173
+      ],
+      "RR": [
+       -0.2397,
+       -0.1948,
+       0.0173
+      ],
+      "LF": [
+       0.2397,
+       0.1932,
+       0.0173
+      ],
+      "LM": [
+       0.0107,
+       0.247,
+       0.0173
+      ],
+      "LR": [
+       -0.2221,
+       0.213,
+       0.0173
+      ]
+     },
+     "feet_end_m": {
+      "RF": [
+       0.8798,
+       -0.2487,
+       0.0163
+      ],
+      "RM": [
+       0.5635,
+       -0.2785,
+       0.0141
+      ],
+      "RR": [
+       0.4123,
+       -0.231,
+       0.0172
+      ],
+      "LF": [
+       0.8168,
+       0.1652,
+       0.0148
+      ],
+      "LM": [
+       0.669,
+       0.2203,
+       0.0195
+      ],
+      "LR": [
+       0.3542,
+       0.1867,
+       0.0162
+      ]
+     },
+     "riser_contact_s": 0.0
+    },
+    "front": {
+     "duration_s": 12.58,
+     "mean_target_z_m": 0.163,
+     "mean_z_m": 0.1611,
+     "mean_height_deficit_m": 0.0019,
+     "max_height_deficit_m": 0.0048,
+     "mean_target_rise_above_stand_m": 0.045,
+     "mean_foot_load_weight": {
+      "RF": 0.163,
+      "RM": 0.192,
+      "RR": 0.133,
+      "LF": 0.173,
+      "LM": 0.189,
+      "LR": 0.149
+     },
+     "mean_chassis_load_weight": 0.0,
+     "mean_joint_load": {
+      "RF_coxa": 0.197,
+      "RF_femur": 0.418,
+      "RF_tibia": 0.478,
+      "RM_coxa": 0.287,
+      "RM_femur": 0.407,
+      "RM_tibia": 0.289,
+      "RR_coxa": 0.153,
+      "RR_femur": 0.343,
+      "RR_tibia": 0.178,
+      "LF_coxa": 0.217,
+      "LF_femur": 0.329,
+      "LF_tibia": 0.355,
+      "LM_coxa": 0.239,
+      "LM_femur": 0.302,
+      "LM_tibia": 0.32,
+      "LR_coxa": 0.142,
+      "LR_femur": 0.452,
+      "LR_tibia": 0.369
+     },
+     "saturated_while_loaded": {
+      "RF_coxa": 0.01,
+      "RF_femur": 0.008,
+      "RF_tibia": 0.037,
+      "RM_coxa": 0.001,
+      "RM_femur": 0.032,
+      "RM_tibia": 0.002,
+      "RR_coxa": 0.0,
+      "RR_femur": 0.0,
+      "RR_tibia": 0.001,
+      "LF_coxa": 0.002,
+      "LF_femur": 0.0,
+      "LF_tibia": 0.103,
+      "LM_coxa": 0.0,
+      "LM_femur": 0.0,
+      "LM_tibia": 0.001,
+      "LR_coxa": 0.001,
+      "LR_femur": 0.008,
+      "LR_tibia": 0.004
+     },
+     "x_start_m": 0.62,
+     "x_end_m": 0.785,
+     "feet_start_m": {
+      "RF": [
+       0.8801,
+       -0.2485,
+       0.016
+      ],
+      "RM": [
+       0.5637,
+       -0.2785,
+       0.0146
+      ],
+      "RR": [
+       0.414,
+       -0.2293,
+       0.0163
+      ],
+      "LF": [
+       0.8166,
+       0.1653,
+       0.0148
+      ],
+      "LM": [
+       0.6691,
+       0.2191,
+       0.0178
+      ],
+      "LR": [
+       0.3544,
+       0.1861,
+       0.0157
+      ]
+     },
+     "feet_end_m": {
+      "RF": [
+       1.1299,
+       -0.2238,
+       0.1464
+      ],
+      "RM": [
+       0.7766,
+       -0.2546,
+       0.0159
+      ],
+      "RR": [
+       0.5517,
+       -0.2165,
+       0.0172
+      ],
+      "LF": [
+       1.1296,
+       0.2043,
+       0.1489
+      ],
+      "LM": [
+       0.7942,
+       0.2305,
+       0.0152
+      ],
+      "LR": [
+       0.584,
+       0.201,
+       0.0162
+      ]
+     },
+     "riser_contact_s": 0.0
+    },
+    "transfer": {
+     "duration_s": 8.52,
+     "mean_target_z_m": 0.1948,
+     "mean_z_m": 0.1925,
+     "mean_height_deficit_m": 0.0023,
+     "max_height_deficit_m": 0.0036,
+     "mean_target_rise_above_stand_m": 0.0768,
+     "mean_foot_load_weight": {
+      "RF": 0.101,
+      "RM": 0.245,
+      "RR": 0.146,
+      "LF": 0.104,
+      "LM": 0.225,
+      "LR": 0.179
+     },
+     "mean_chassis_load_weight": 0.0,
+     "mean_joint_load": {
+      "RF_coxa": 0.108,
+      "RF_femur": 0.513,
+      "RF_tibia": 0.579,
+      "RM_coxa": 0.308,
+      "RM_femur": 0.511,
+      "RM_tibia": 0.328,
+      "RR_coxa": 0.186,
+      "RR_femur": 0.237,
+      "RR_tibia": 0.374,
+      "LF_coxa": 0.11,
+      "LF_femur": 0.364,
+      "LF_tibia": 0.491,
+      "LM_coxa": 0.228,
+      "LM_femur": 0.428,
+      "LM_tibia": 0.324,
+      "LR_coxa": 0.149,
+      "LR_femur": 0.341,
+      "LR_tibia": 0.397
+     },
+     "saturated_while_loaded": {
+      "RF_coxa": 0.0,
+      "RF_femur": 0.098,
+      "RF_tibia": 0.063,
+      "RM_coxa": 0.021,
+      "RM_femur": 0.0,
+      "RM_tibia": 0.013,
+      "RR_coxa": 0.005,
+      "RR_femur": 0.0,
+      "RR_tibia": 0.001,
+      "LF_coxa": 0.001,
+      "LF_femur": 0.0,
+      "LF_tibia": 0.099,
+      "LM_coxa": 0.0,
+      "LM_femur": 0.0,
+      "LM_tibia": 0.001,
+      "LR_coxa": 0.0,
+      "LR_femur": 0.0,
+      "LR_tibia": 0.101
+     },
+     "x_start_m": 0.785,
+     "x_end_m": 0.999,
+     "feet_start_m": {
+      "RF": [
+       1.1299,
+       -0.2237,
+       0.1464
+      ],
+      "RM": [
+       0.7766,
+       -0.2546,
+       0.0159
+      ],
+      "RR": [
+       0.5517,
+       -0.2165,
+       0.0172
+      ],
+      "LF": [
+       1.1296,
+       0.2034,
+       0.1474
+      ],
+      "LM": [
+       0.7942,
+       0.2305,
+       0.0153
+      ],
+      "LR": [
+       0.584,
+       0.201,
+       0.0162
+      ]
+     },
+     "feet_end_m": {
+      "RF": [
+       1.3034,
+       -0.2086,
+       0.1465
+      ],
+      "RM": [
+       1.1417,
+       -0.2498,
+       0.1467
+      ],
+      "RR": [
+       0.7989,
+       -0.2139,
+       0.0161
+      ],
+      "LF": [
+       1.2469,
+       0.1981,
+       0.1464
+      ],
+      "LM": [
+       0.7895,
+       0.233,
+       0.017
+      ],
+      "LR": [
+       0.7146,
+       0.202,
+       0.0163
+      ]
+     },
+     "riser_contact_s": 0.0
+    },
+    "middle": {
+     "duration_s": 5.02,
+     "mean_target_z_m": 0.1986,
+     "mean_z_m": 0.1959,
+     "mean_height_deficit_m": 0.0027,
+     "max_height_deficit_m": 0.003,
+     "mean_target_rise_above_stand_m": 0.0806,
+     "mean_foot_load_weight": {
+      "RF": 0.169,
+      "RM": 0.06,
+      "RR": 0.28,
+      "LF": 0.179,
+      "LM": 0.095,
+      "LR": 0.218
+     },
+     "mean_chassis_load_weight": 0.0,
+     "mean_joint_load": {
+      "RF_coxa": 0.111,
+      "RF_femur": 0.804,
+      "RF_tibia": 0.753,
+      "RM_coxa": 0.155,
+      "RM_femur": 0.26,
+      "RM_tibia": 0.339,
+      "RR_coxa": 0.16,
+      "RR_femur": 0.364,
+      "RR_tibia": 0.655,
+      "LF_coxa": 0.088,
+      "LF_femur": 0.552,
+      "LF_tibia": 0.649,
+      "LM_coxa": 0.158,
+      "LM_femur": 0.303,
+      "LM_tibia": 0.256,
+      "LR_coxa": 0.113,
+      "LR_femur": 0.592,
+      "LR_tibia": 0.356
+     },
+     "saturated_while_loaded": {
+      "RF_coxa": 0.0,
+      "RF_femur": 0.478,
+      "RF_tibia": 0.038,
+      "RM_coxa": 0.0,
+      "RM_femur": 0.0,
+      "RM_tibia": 0.0,
+      "RR_coxa": 0.0,
+      "RR_femur": 0.0,
+      "RR_tibia": 0.066,
+      "LF_coxa": 0.0,
+      "LF_femur": 0.0,
+      "LF_tibia": 0.001,
+      "LM_coxa": 0.0,
+      "LM_femur": 0.0,
+      "LM_tibia": 0.001,
+      "LR_coxa": 0.0,
+      "LR_femur": 0.211,
+      "LR_tibia": 0.0
+     },
+     "x_start_m": 0.785,
+     "x_end_m": 1.002,
+     "feet_start_m": {
+      "RF": [
+       1.1287,
+       -0.222,
+       0.1468
+      ],
+      "RM": [
+       0.7771,
+       -0.2541,
+       0.016
+      ],
+      "RR": [
+       0.5519,
+       -0.217,
+       0.0167
+      ],
+      "LF": [
+       1.1321,
+       0.2011,
+       0.1466
+      ],
+      "LM": [
+       0.7932,
+       0.2307,
+       0.0162
+      ],
+      "LR": [
+       0.5833,
+       0.2009,
+       0.0164
+      ]
+     },
+     "feet_end_m": {
+      "RF": [
+       1.3033,
+       -0.2085,
+       0.1466
+      ],
+      "RM": [
+       1.1415,
+       -0.2495,
+       0.1467
+      ],
+      "RR": [
+       0.7987,
+       -0.2142,
+       0.016
+      ],
+      "LF": [
+       1.2476,
+       0.1986,
+       0.1458
+      ],
+      "LM": [
+       1.144,
+       0.2476,
+       0.1488
+      ],
+      "LR": [
+       0.7136,
+       0.2027,
+       0.0157
+      ]
+     },
+     "riser_contact_s": 0.0
+    },
+    "rear": {
+     "duration_s": 15.6,
+     "mean_target_z_m": 0.2327,
+     "mean_z_m": 0.2309,
+     "mean_height_deficit_m": 0.0018,
+     "max_height_deficit_m": 0.0054,
+     "mean_target_rise_above_stand_m": 0.1147,
+     "mean_foot_load_weight": {
+      "RF": 0.127,
+      "RM": 0.18,
+      "RR": 0.192,
+      "LF": 0.118,
+      "LM": 0.228,
+      "LR": 0.156
+     },
+     "mean_chassis_load_weight": 0.0,
+     "mean_joint_load": {
+      "RF_coxa": 0.156,
+      "RF_femur": 0.302,
+      "RF_tibia": 0.159,
+      "RM_coxa": 0.409,
+      "RM_femur": 0.435,
+      "RM_tibia": 0.306,
+      "RR_coxa": 0.299,
+      "RR_femur": 0.27,
+      "RR_tibia": 0.473,
+      "LF_coxa": 0.121,
+      "LF_femur": 0.206,
+      "LF_tibia": 0.277,
+      "LM_coxa": 0.275,
+      "LM_femur": 0.465,
+      "LM_tibia": 0.333,
+      "LR_coxa": 0.202,
+      "LR_femur": 0.331,
+      "LR_tibia": 0.331
+     },
+     "saturated_while_loaded": {
+      "RF_coxa": 0.0,
+      "RF_femur": 0.0,
+      "RF_tibia": 0.002,
+      "RM_coxa": 0.165,
+      "RM_femur": 0.0,
+      "RM_tibia": 0.0,
+      "RR_coxa": 0.001,
+      "RR_femur": 0.0,
+      "RR_tibia": 0.065,
+      "LF_coxa": 0.0,
+      "LF_femur": 0.0,
+      "LF_tibia": 0.001,
+      "LM_coxa": 0.0,
+      "LM_femur": 0.0,
+      "LM_tibia": 0.042,
+      "LR_coxa": 0.001,
+      "LR_femur": 0.0,
+      "LR_tibia": 0.003
+     },
+     "x_start_m": 1.002,
+     "x_end_m": 1.216,
+     "feet_start_m": {
+      "RF": [
+       1.3033,
+       -0.2085,
+       0.1466
+      ],
+      "RM": [
+       1.1415,
+       -0.2495,
+       0.1467
+      ],
+      "RR": [
+       0.7987,
+       -0.2142,
+       0.016
+      ],
+      "LF": [
+       1.2476,
+       0.1986,
+       0.1458
+      ],
+      "LM": [
+       1.144,
+       0.2461,
+       0.1475
+      ],
+      "LR": [
+       0.7136,
+       0.2027,
+       0.0157
+      ]
+     },
+     "feet_end_m": {
+      "RF": [
+       1.3875,
+       -0.2151,
+       0.1472
+      ],
+      "RM": [
+       1.2092,
+       -0.2594,
+       0.1463
+      ],
+      "RR": [
+       1.1219,
+       -0.2085,
+       0.1455
+      ],
+      "LF": [
+       1.3638,
+       0.2005,
+       0.1467
+      ],
+      "LM": [
+       1.2097,
+       0.2431,
+       0.1452
+      ],
+      "LR": [
+       1.1219,
+       0.2083,
+       0.1486
+      ]
+     },
+     "riser_contact_s": 0.0
+    },
+    "top": {
+     "duration_s": 3.26,
+     "mean_target_z_m": 0.2453,
+     "mean_z_m": 0.2451,
+     "mean_height_deficit_m": 0.0001,
+     "max_height_deficit_m": 0.0017,
+     "mean_target_rise_above_stand_m": 0.1273,
+     "mean_foot_load_weight": {
+      "RF": 0.167,
+      "RM": 0.193,
+      "RR": 0.154,
+      "LF": 0.134,
+      "LM": 0.234,
+      "LR": 0.118
+     },
+     "mean_chassis_load_weight": 0.0,
+     "mean_joint_load": {
+      "RF_coxa": 0.303,
+      "RF_femur": 0.333,
+      "RF_tibia": 0.487,
+      "RM_coxa": 0.34,
+      "RM_femur": 0.388,
+      "RM_tibia": 0.301,
+      "RR_coxa": 0.278,
+      "RR_femur": 0.24,
+      "RR_tibia": 0.407,
+      "LF_coxa": 0.254,
+      "LF_femur": 0.331,
+      "LF_tibia": 0.428,
+      "LM_coxa": 0.285,
+      "LM_femur": 0.5,
+      "LM_tibia": 0.272,
+      "LR_coxa": 0.226,
+      "LR_femur": 0.341,
+      "LR_tibia": 0.287
+     },
+     "saturated_while_loaded": {
+      "RF_coxa": 0.082,
+      "RF_femur": 0.0,
+      "RF_tibia": 0.324,
+      "RM_coxa": 0.137,
+      "RM_femur": 0.0,
+      "RM_tibia": 0.053,
+      "RR_coxa": 0.02,
+      "RR_femur": 0.0,
+      "RR_tibia": 0.073,
+      "LF_coxa": 0.0,
+      "LF_femur": 0.0,
+      "LF_tibia": 0.203,
+      "LM_coxa": 0.011,
+      "LM_femur": 0.252,
+      "LM_tibia": 0.019,
+      "LR_coxa": 0.01,
+      "LR_femur": 0.0,
+      "LR_tibia": 0.073
+     },
+     "x_start_m": 1.216,
+     "x_end_m": 1.496,
+     "feet_start_m": {
+      "RF": [
+       1.3875,
+       -0.2151,
+       0.1472
+      ],
+      "RM": [
+       1.2091,
+       -0.2594,
+       0.1463
+      ],
+      "RR": [
+       1.1219,
+       -0.2085,
+       0.1455
+      ],
+      "LF": [
+       1.3638,
+       0.2005,
+       0.1467
+      ],
+      "LM": [
+       1.2097,
+       0.2431,
+       0.1452
+      ],
+      "LR": [
+       1.1219,
+       0.2069,
+       0.1474
+      ]
+     },
+     "feet_end_m": {
+      "RF": [
+       1.7137,
+       -0.2069,
+       0.1454
+      ],
+      "RM": [
+       1.5109,
+       -0.2359,
+       0.1696
+      ],
+      "RR": [
+       1.2505,
+       -0.2074,
+       0.1459
+      ],
+      "LF": [
+       1.7589,
+       0.2005,
+       0.1724
+      ],
+      "LM": [
+       1.481,
+       0.2265,
+       0.1436
+      ],
+      "LR": [
+       1.2952,
+       0.2095,
+       0.1695
+      ]
+     },
+     "riser_contact_s": 0.0
+    }
+   },
+   "front_deficit": null,
+   "transfer_deficit": null,
+   "middle_deficit": null,
+   "rear_deficit": null,
+   "plan_log": [
+    {
+     "phase": "front",
+     "leg": 5,
+     "kind": "advance",
+     "torque_ratio": 0.8707657830967672,
+     "worst_joint": "LM_femur",
+     "t": 8.12,
+     "body": [
+      0.78,
+      0.0,
+      0.155
+     ],
+     "pitch_deg": 8.6,
+     "landing": [
+      0.498,
+      0.198,
+      0.016
+     ],
+     "lift_off": [
+      0.358,
+      0.193,
+      0.016
+     ]
+    },
+    {
+     "t": 9.64,
+     "landed": "LR",
+     "at": [
+      0.493,
+      0.201,
+      0.016
+     ],
+     "contact": true,
+     "body_z": 0.155
+    },
+    {
+     "phase": "front",
+     "leg": 2,
+     "kind": "advance",
+     "torque_ratio": 0.7465485773655601,
+     "worst_joint": "RF_tibia",
+     "t": 9.72,
+     "body": [
+      0.782,
+      -0.001,
+      0.156
+     ],
+     "pitch_deg": 8.6,
+     "landing": [
+      0.557,
+      -0.207,
+      0.016
+     ],
+     "lift_off": [
+      0.415,
+      -0.227,
+      0.017
+     ]
+    },
+    {
+     "t": 10.52,
+     "landed": "RR",
+     "at": [
+      0.552,
+      -0.214,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.155
+    },
+    {
+     "phase": "front",
+     "leg": 4,
+     "kind": "advance",
+     "torque_ratio": 0.7194432145140843,
+     "worst_joint": "LR_femur",
+     "t": 10.6,
+     "body": [
+      0.781,
+      -0.002,
+      0.156
+     ],
+     "pitch_deg": 8.8,
+     "landing": [
+      0.788,
+      0.231,
+      0.016
+     ],
+     "lift_off": [
+      0.675,
+      0.224,
+      0.016
+     ]
+    },
+    {
+     "t": 11.36,
+     "landed": "LM",
+     "at": [
+      0.791,
+      0.233,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.155
+    },
+    {
+     "phase": "front",
+     "leg": 5,
+     "kind": "advance",
+     "torque_ratio": 0.723189388153098,
+     "worst_joint": "LM_tibia",
+     "t": 11.44,
+     "body": [
+      0.78,
+      0.0,
+      0.194
+     ],
+     "pitch_deg": 14.7,
+     "landing": [
+      0.585,
+      0.201,
+      0.016
+     ],
+     "lift_off": [
+      0.493,
+      0.201,
+      0.016
+     ]
+    },
+    {
+     "t": 12.88,
+     "landed": "LR",
+     "at": [
+      0.582,
+      0.203,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.193
+    },
+    {
+     "phase": "front",
+     "leg": 0,
+     "kind": "up",
+     "torque_ratio": 0.628953178001102,
+     "worst_joint": "RM_coxa",
+     "t": 12.96,
+     "body": [
+      0.78,
+      0.0,
+      0.194
+     ],
+     "pitch_deg": 15.0,
+     "landing": [
+      1.126,
+      -0.208,
+      0.146
+     ],
+     "lift_off": [
+      0.95,
+      -0.195,
+      0.015
+     ]
+    },
+    {
+     "t": 15.4,
+     "landed": "RF",
+     "at": [
+      1.126,
+      -0.218,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.193
+    },
+    {
+     "phase": "front",
+     "leg": 3,
+     "kind": "up",
+     "torque_ratio": 0.8846633292003733,
+     "worst_joint": "LM_tibia",
+     "t": 15.48,
+     "body": [
+      0.78,
+      0.0,
+      0.194
+     ],
+     "pitch_deg": 15.0,
+     "landing": [
+      1.126,
+      0.205,
+      0.146
+     ],
+     "lift_off": [
+      0.987,
+      0.213,
+      0.016
+     ]
+    },
+    {
+     "t": 17.84,
+     "landed": "LF",
+     "at": [
+      1.13,
+      0.202,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.192
+    },
+    {
+     "phase": "middle",
+     "leg": 1,
+     "kind": "advance",
+     "torque_ratio": 0.9960764606994451,
+     "worst_joint": "RF_femur",
+     "t": 17.92,
+     "body": [
+      0.783,
+      -0.001,
+      0.194
+     ],
+     "pitch_deg": 14.7,
+     "landing": [
+      0.887,
+      -0.235,
+      0.016
+     ],
+     "lift_off": [
+      0.776,
+      -0.251,
+      0.017
+     ]
+    },
+    {
+     "t": 18.66,
+     "landed": "RM",
+     "at": [
+      0.888,
+      -0.246,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.19
+    },
+    {
+     "phase": "middle",
+     "leg": 0,
+     "kind": "advance",
+     "torque_ratio": 0.9317123587593691,
+     "worst_joint": "RM_femur",
+     "t": 18.74,
+     "body": [
+      0.843,
+      0.0,
+      0.2
+     ],
+     "pitch_deg": 10.0,
+     "landing": [
+      1.24,
+      -0.207,
+      0.146
+     ],
+     "lift_off": [
+      1.126,
+      -0.218,
+      0.147
+     ]
+    },
+    {
+     "t": 20.36,
+     "landed": "RF",
+     "at": [
+      1.244,
+      -0.211,
+      0.146
+     ],
+     "contact": true,
+     "body_z": 0.196
+    },
+    {
+     "phase": "middle",
+     "leg": 3,
+     "kind": "advance",
+     "torque_ratio": 0.9131459691169853,
+     "worst_joint": "RM_femur",
+     "t": 20.44,
+     "body": [
+      0.847,
+      -0.0,
+      0.198
+     ],
+     "pitch_deg": 9.6,
+     "landing": [
+      1.244,
+      0.201,
+      0.146
+     ],
+     "lift_off": [
+      1.13,
+      0.202,
+      0.147
+     ]
+    },
+    {
+     "t": 21.24,
+     "landed": "LF",
+     "at": [
+      1.246,
+      0.2,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.192
+    },
+    {
+     "phase": "middle",
+     "leg": 2,
+     "kind": "advance",
+     "torque_ratio": 0.9794362202766651,
+     "worst_joint": "RM_femur",
+     "t": 21.32,
+     "body": [
+      0.848,
+      -0.001,
+      0.195
+     ],
+     "pitch_deg": 9.6,
+     "landing": [
+      0.694,
+      -0.205,
+      0.016
+     ],
+     "lift_off": [
+      0.552,
+      -0.214,
+      0.017
+     ]
+    },
+    {
+     "t": 22.08,
+     "landed": "RR",
+     "at": [
+      0.694,
+      -0.211,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.188
+    },
+    {
+     "phase": "middle",
+     "leg": 5,
+     "kind": "advance",
+     "torque_ratio": 0.8923763739936655,
+     "worst_joint": "LM_femur",
+     "t": 22.16,
+     "body": [
+      0.847,
+      -0.002,
+      0.191
+     ],
+     "pitch_deg": 9.6,
+     "landing": [
+      0.717,
+      0.198,
+      0.016
+     ],
+     "lift_off": [
+      0.582,
+      0.203,
+      0.017
+     ]
+    },
+    {
+     "t": 22.92,
+     "landed": "LR",
+     "at": [
+      0.716,
+      0.202,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.186
+    },
+    {
+     "phase": "middle",
+     "leg": 2,
+     "kind": "advance",
+     "torque_ratio": 1.0054271255321148,
+     "worst_joint": "LR_tibia",
+     "t": 23.0,
+     "body": [
+      0.849,
+      -0.001,
+      0.188
+     ],
+     "pitch_deg": 9.4,
+     "landing": [
+      0.81,
+      -0.199,
+      0.016
+     ],
+     "lift_off": [
+      0.694,
+      -0.211,
+      0.017
+     ]
+    },
+    {
+     "t": 23.7,
+     "landed": "RR",
+     "at": [
+      0.8,
+      -0.213,
+      0.018
+     ],
+     "contact": true,
+     "body_z": 0.18
+    },
+    {
+     "phase": "middle",
+     "leg": 0,
+     "kind": "advance",
+     "torque_ratio": 1.1102088509559733,
+     "worst_joint": "LF_tibia",
+     "t": 23.78,
+     "body": [
+      0.879,
+      0.0,
+      0.2
+     ],
+     "pitch_deg": 5.0,
+     "landing": [
+      1.301,
+      -0.205,
+      0.146
+     ],
+     "lift_off": [
+      1.244,
+      -0.211,
+      0.146
+     ]
+    },
+    {
+     "t": 24.82,
+     "landed": "RF",
+     "at": [
+      1.303,
+      -0.205,
+      0.146
+     ],
+     "contact": true,
+     "body_z": 0.196
+    },
+    {
+     "phase": "middle",
+     "leg": 1,
+     "kind": "up",
+     "torque_ratio": 1.079796392568937,
+     "worst_joint": "RR_tibia",
+     "t": 24.9,
+     "body": [
+      0.94,
+      0.0,
+      0.2
+     ],
+     "pitch_deg": 5.0,
+     "landing": [
+      1.142,
+      -0.242,
+      0.146
+     ],
+     "lift_off": [
+      0.888,
+      -0.246,
+      0.017
+     ]
+    },
+    {
+     "t": 28.3,
+     "landed": "RM",
+     "at": [
+      1.142,
+      -0.247,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.197
+    },
+    {
+     "phase": "middle",
+     "leg": 4,
+     "kind": "up",
+     "torque_ratio": 0.9119478002615461,
+     "worst_joint": "LF_tibia",
+     "t": 28.38,
+     "body": [
+      1.002,
+      -0.015,
+      0.2
+     ],
+     "pitch_deg": 5.0,
+     "landing": [
+      1.144,
+      0.243,
+      0.146
+     ],
+     "lift_off": [
+      0.791,
+      0.233,
+      0.017
+     ]
+    },
+    {
+     "t": 31.36,
+     "landed": "LM",
+     "at": [
+      1.144,
+      0.244,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.196
+    },
+    {
+     "phase": "rear",
+     "leg": 5,
+     "kind": "advance",
+     "torque_ratio": 1.1340804375064943,
+     "worst_joint": "RR_tibia",
+     "t": 31.44,
+     "body": [
+      1.002,
+      -0.014,
+      0.198
+     ],
+     "pitch_deg": 5.0,
+     "landing": [
+      0.858,
+      0.202,
+      0.016
+     ],
+     "lift_off": [
+      0.716,
+      0.202,
+      0.017
+     ]
+    },
+    {
+     "t": 32.16,
+     "landed": "LR",
+     "at": [
+      0.853,
+      0.204,
+      0.016
+     ],
+     "contact": true,
+     "body_z": 0.192
+    },
+    {
+     "phase": "rear",
+     "leg": 3,
+     "kind": "advance",
+     "torque_ratio": 0.7268234430792431,
+     "worst_joint": "RF_femur",
+     "t": 32.24,
+     "body": [
+      1.061,
+      0.0,
+      0.22
+     ],
+     "pitch_deg": 20.0,
+     "landing": [
+      1.356,
+      0.204,
+      0.146
+     ],
+     "lift_off": [
+      1.246,
+      0.2,
+      0.147
+     ]
+    },
+    {
+     "t": 33.8,
+     "landed": "LF",
+     "at": [
+      1.358,
+      0.205,
+      0.148
+     ],
+     "contact": true,
+     "body_z": 0.219
+    },
+    {
+     "phase": "rear",
+     "leg": 2,
+     "kind": "advance",
+     "torque_ratio": 0.8780439410232735,
+     "worst_joint": "LR_femur",
+     "t": 33.88,
+     "body": [
+      1.063,
+      0.001,
+      0.22
+     ],
+     "pitch_deg": 19.9,
+     "landing": [
+      0.93,
+      -0.2,
+      0.016
+     ],
+     "lift_off": [
+      0.8,
+      -0.213,
+      0.018
+     ]
+    },
+    {
+     "t": 34.64,
+     "landed": "RR",
+     "at": [
+      0.926,
+      -0.203,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.215
+    },
+    {
+     "phase": "rear",
+     "leg": 0,
+     "kind": "advance",
+     "torque_ratio": 0.9894307416326708,
+     "worst_joint": "RR_tibia",
+     "t": 34.72,
+     "body": [
+      1.062,
+      0.001,
+      0.217
+     ],
+     "pitch_deg": 20.4,
+     "landing": [
+      1.382,
+      -0.207,
+      0.146
+     ],
+     "lift_off": [
+      1.303,
+      -0.205,
+      0.146
+     ]
+    },
+    {
+     "t": 35.4,
+     "landed": "RF",
+     "at": [
+      1.383,
+      -0.211,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.215
+    },
+    {
+     "phase": "rear",
+     "leg": 5,
+     "kind": "advance",
+     "torque_ratio": 0.7210760647132562,
+     "worst_joint": "RR_tibia",
+     "t": 35.48,
+     "body": [
+      1.122,
+      0.0,
+      0.22
+     ],
+     "pitch_deg": 14.2,
+     "landing": [
+      0.933,
+      0.198,
+      0.016
+     ],
+     "lift_off": [
+      0.853,
+      0.204,
+      0.016
+     ]
+    },
+    {
+     "t": 36.98,
+     "landed": "LR",
+     "at": [
+      0.932,
+      0.201,
+      0.018
+     ],
+     "contact": true,
+     "body_z": 0.217
+    },
+    {
+     "phase": "rear",
+     "leg": 1,
+     "kind": "advance",
+     "torque_ratio": 0.6503359585162156,
+     "worst_joint": "RR_femur",
+     "t": 37.06,
+     "body": [
+      1.13,
+      0.015,
+      0.235
+     ],
+     "pitch_deg": 10.0,
+     "landing": [
+      1.198,
+      -0.249,
+      0.146
+     ],
+     "lift_off": [
+      1.142,
+      -0.247,
+      0.147
+     ]
+    },
+    {
+     "t": 37.84,
+     "landed": "RM",
+     "at": [
+      1.2,
+      -0.254,
+      0.146
+     ],
+     "contact": true,
+     "body_z": 0.233
+    },
+    {
+     "phase": "rear",
+     "leg": 4,
+     "kind": "advance",
+     "torque_ratio": 0.6855662377885164,
+     "worst_joint": "LR_femur",
+     "t": 37.92,
+     "body": [
+      1.13,
+      -0.03,
+      0.22
+     ],
+     "pitch_deg": 10.0,
+     "landing": [
+      1.201,
+      0.245,
+      0.146
+     ],
+     "lift_off": [
+      1.144,
+      0.244,
+      0.147
+     ]
+    },
+    {
+     "t": 39.64,
+     "landed": "LM",
+     "at": [
+      1.204,
+      0.245,
+      0.146
+     ],
+     "contact": true,
+     "body_z": 0.217
+    },
+    {
+     "phase": "rear",
+     "leg": 2,
+     "kind": "up",
+     "torque_ratio": 0.6839374136429179,
+     "worst_joint": "RF_femur",
+     "t": 39.72,
+     "body": [
+      1.19,
+      0.03,
+      0.245
+     ],
+     "pitch_deg": 10.0,
+     "landing": [
+      1.114,
+      -0.206,
+      0.146
+     ],
+     "lift_off": [
+      0.926,
+      -0.203,
+      0.017
+     ]
+    },
+    {
+     "t": 43.42,
+     "landed": "RR",
+     "at": [
+      1.119,
+      -0.206,
+      0.146
+     ],
+     "contact": true,
+     "body_z": 0.242
+    },
+    {
+     "phase": "rear",
+     "leg": 5,
+     "kind": "up",
+     "torque_ratio": 1.0781040225468557,
+     "worst_joint": "RR_tibia",
+     "t": 43.5,
+     "body": [
+      1.21,
+      -0.015,
+      0.26
+     ],
+     "pitch_deg": 5.0,
+     "landing": [
+      1.116,
+      0.206,
+      0.146
+     ],
+     "lift_off": [
+      0.932,
+      0.201,
+      0.018
+     ]
+    },
+    {
+     "t": 46.94,
+     "landed": "LR",
+     "at": [
+      1.122,
+      0.205,
+      0.146
+     ],
+     "contact": true,
+     "body_z": 0.259
+    }
+   ],
+   "blocked_reasons": null
+  },
+  {
+   "seed": 1017309,
+   "success": true,
+   "fallen": false,
+   "peak_upper_contacts": 6,
+   "phases": {
+    "approach": {
+     "duration_s": 5.08,
+     "mean_target_z_m": 0.118,
+     "mean_z_m": 0.1133,
+     "mean_height_deficit_m": 0.0047,
+     "max_height_deficit_m": 0.0078,
+     "mean_target_rise_above_stand_m": -0.0,
+     "mean_foot_load_weight": {
+      "RF": 0.159,
+      "RM": 0.203,
+      "RR": 0.138,
+      "LF": 0.151,
+      "LM": 0.2,
+      "LR": 0.15
+     },
+     "mean_chassis_load_weight": 0.0,
+     "mean_joint_load": {
+      "RF_coxa": 0.315,
+      "RF_femur": 0.396,
+      "RF_tibia": 0.389,
+      "RM_coxa": 0.398,
+      "RM_femur": 0.551,
+      "RM_tibia": 0.286,
+      "RR_coxa": 0.297,
+      "RR_femur": 0.384,
+      "RR_tibia": 0.389,
+      "LF_coxa": 0.333,
+      "LF_femur": 0.421,
+      "LF_tibia": 0.385,
+      "LM_coxa": 0.391,
+      "LM_femur": 0.519,
+      "LM_tibia": 0.221,
+      "LR_coxa": 0.307,
+      "LR_femur": 0.429,
+      "LR_tibia": 0.383
+     },
+     "saturated_while_loaded": {
+      "RF_coxa": 0.002,
+      "RF_femur": 0.001,
+      "RF_tibia": 0.047,
+      "RM_coxa": 0.101,
+      "RM_femur": 0.696,
+      "RM_tibia": 0.052,
+      "RR_coxa": 0.002,
+      "RR_femur": 0.0,
+      "RR_tibia": 0.059,
+      "LF_coxa": 0.006,
+      "LF_femur": 0.0,
+      "LF_tibia": 0.04,
+      "LM_coxa": 0.072,
+      "LM_femur": 0.629,
+      "LM_tibia": 0.007,
+      "LR_coxa": 0.008,
+      "LR_femur": 0.014,
+      "LR_tibia": 0.053
+     },
+     "x_start_m": 0.0,
+     "x_end_m": 0.612,
+     "feet_start_m": {
+      "RF": [
+       0.2236,
+       -0.2056,
+       0.0173
+      ],
+      "RM": [
+       -0.009,
+       -0.2412,
+       0.0173
+      ],
+      "RR": [
+       -0.2383,
+       -0.1889,
+       0.0173
+      ],
+      "LF": [
+       0.2383,
+       0.2023,
+       0.0173
+      ],
+      "LM": [
+       0.009,
+       0.2546,
+       0.0173
+      ],
+      "LR": [
+       -0.2236,
+       0.219,
+       0.0173
+      ]
+     },
+     "feet_end_m": {
+      "RF": [
+       0.8838,
+       -0.2249,
+       0.0163
+      ],
+      "RM": [
+       0.5654,
+       -0.2679,
+       0.015
+      ],
+      "RR": [
+       0.4097,
+       -0.2231,
+       0.0167
+      ],
+      "LF": [
+       0.8127,
+       0.1883,
+       0.0154
+      ],
+      "LM": [
+       0.6645,
+       0.2487,
+       0.03
+      ],
+      "LR": [
+       0.3497,
+       0.201,
+       0.0163
+      ]
+     },
+     "riser_contact_s": 0.0
+    },
+    "front": {
+     "duration_s": 14.06,
+     "mean_target_z_m": 0.1704,
+     "mean_z_m": 0.1683,
+     "mean_height_deficit_m": 0.0021,
+     "max_height_deficit_m": 0.008,
+     "mean_target_rise_above_stand_m": 0.0524,
+     "mean_foot_load_weight": {
+      "RF": 0.139,
+      "RM": 0.193,
+      "RR": 0.156,
+      "LF": 0.203,
+      "LM": 0.168,
+      "LR": 0.141
+     },
+     "mean_chassis_load_weight": 0.0,
+     "mean_joint_load": {
+      "RF_coxa": 0.184,
+      "RF_femur": 0.344,
+      "RF_tibia": 0.432,
+      "RM_coxa": 0.327,
+      "RM_femur": 0.489,
+      "RM_tibia": 0.237,
+      "RR_coxa": 0.203,
+      "RR_femur": 0.448,
+      "RR_tibia": 0.228,
+      "LF_coxa": 0.272,
+      "LF_femur": 0.472,
+      "LF_tibia": 0.328,
+      "LM_coxa": 0.263,
+      "LM_femur": 0.328,
+      "LM_tibia": 0.343,
+      "LR_coxa": 0.162,
+      "LR_femur": 0.439,
+      "LR_tibia": 0.376
+     },
+     "saturated_while_loaded": {
+      "RF_coxa": 0.01,
+      "RF_femur": 0.004,
+      "RF_tibia": 0.01,
+      "RM_coxa": 0.0,
+      "RM_femur": 0.034,
+      "RM_tibia": 0.002,
+      "RR_coxa": 0.0,
+      "RR_femur": 0.014,
+      "RR_tibia": 0.006,
+      "LF_coxa": 0.004,
+      "LF_femur": 0.1,
+      "LF_tibia": 0.086,
+      "LM_coxa": 0.0,
+      "LM_femur": 0.0,
+      "LM_tibia": 0.0,
+      "LR_coxa": 0.001,
+      "LR_femur": 0.152,
+      "LR_tibia": 0.007
+     },
+     "x_start_m": 0.614,
+     "x_end_m": 0.783,
+     "feet_start_m": {
+      "RF": [
+       0.8848,
+       -0.2251,
+       0.0163
+      ],
+      "RM": [
+       0.5658,
+       -0.2673,
+       0.0154
+      ],
+      "RR": [
+       0.4112,
+       -0.2222,
+       0.0171
+      ],
+      "LF": [
+       0.8126,
+       0.1882,
+       0.0152
+      ],
+      "LM": [
+       0.6649,
+       0.2461,
+       0.0267
+      ],
+      "LR": [
+       0.3498,
+       0.2004,
+       0.0158
+      ]
+     },
+     "feet_end_m": {
+      "RF": [
+       1.131,
+       -0.2192,
+       0.1467
+      ],
+      "RM": [
+       0.7687,
+       -0.2551,
+       0.0163
+      ],
+      "RR": [
+       0.5447,
+       -0.2169,
+       0.0173
+      ],
+      "LF": [
+       1.1301,
+       0.2047,
+       0.1487
+      ],
+      "LM": [
+       0.7856,
+       0.2305,
+       0.0156
+      ],
+      "LR": [
+       0.5862,
+       0.1986,
+       0.0167
+      ]
+     },
+     "riser_contact_s": 0.0
+    },
+    "transfer": {
+     "duration_s": 9.28,
+     "mean_target_z_m": 0.195,
+     "mean_z_m": 0.1931,
+     "mean_height_deficit_m": 0.0019,
+     "max_height_deficit_m": 0.0042,
+     "mean_target_rise_above_stand_m": 0.077,
+     "mean_foot_load_weight": {
+      "RF": 0.083,
+      "RM": 0.294,
+      "RR": 0.115,
+      "LF": 0.091,
+      "LM": 0.241,
+      "LR": 0.175
+     },
+     "mean_chassis_load_weight": 0.0,
+     "mean_joint_load": {
+      "RF_coxa": 0.076,
+      "RF_femur": 0.412,
+      "RF_tibia": 0.585,
+      "RM_coxa": 0.342,
+      "RM_femur": 0.714,
+      "RM_tibia": 0.49,
+      "RR_coxa": 0.198,
+      "RR_femur": 0.188,
+      "RR_tibia": 0.367,
+      "LF_coxa": 0.105,
+      "LF_femur": 0.466,
+      "LF_tibia": 0.576,
+      "LM_coxa": 0.233,
+      "LM_femur": 0.524,
+      "LM_tibia": 0.33,
+      "LR_coxa": 0.152,
+      "LR_femur": 0.323,
+      "LR_tibia": 0.38
+     },
+     "saturated_while_loaded": {
+      "RF_coxa": 0.0,
+      "RF_femur": 0.0,
+      "RF_tibia": 0.361,
+      "RM_coxa": 0.005,
+      "RM_femur": 0.047,
+      "RM_tibia": 0.099,
+      "RR_coxa": 0.003,
+      "RR_femur": 0.0,
+      "RR_tibia": 0.155,
+      "LF_coxa": 0.001,
+      "LF_femur": 0.007,
+      "LF_tibia": 0.129,
+      "LM_coxa": 0.0,
+      "LM_femur": 0.0,
+      "LM_tibia": 0.0,
+      "LR_coxa": 0.0,
+      "LR_femur": 0.0,
+      "LR_tibia": 0.013
+     },
+     "x_start_m": 0.783,
+     "x_end_m": 0.973,
+     "feet_start_m": {
+      "RF": [
+       1.131,
+       -0.2192,
+       0.1468
+      ],
+      "RM": [
+       0.7687,
+       -0.2551,
+       0.0163
+      ],
+      "RR": [
+       0.5447,
+       -0.2169,
+       0.0172
+      ],
+      "LF": [
+       1.1301,
+       0.2039,
+       0.1473
+      ],
+      "LM": [
+       0.7856,
+       0.2306,
+       0.0156
+      ],
+      "LR": [
+       0.5862,
+       0.1987,
+       0.0167
+      ]
+     },
+     "feet_end_m": {
+      "RF": [
+       1.2951,
+       -0.211,
+       0.1468
+      ],
+      "RM": [
+       1.152,
+       -0.2617,
+       0.1469
+      ],
+      "RR": [
+       0.8004,
+       -0.2116,
+       0.0165
+      ],
+      "LF": [
+       1.2992,
+       0.1989,
+       0.1471
+      ],
+      "LM": [
+       0.7852,
+       0.23,
+       0.0172
+      ],
+      "LR": [
+       0.7105,
+       0.1986,
+       0.0163
+      ]
+     },
+     "riser_contact_s": 0.0
+    },
+    "middle": {
+     "duration_s": 5.06,
+     "mean_target_z_m": 0.1987,
+     "mean_z_m": 0.1953,
+     "mean_height_deficit_m": 0.0034,
+     "max_height_deficit_m": 0.0053,
+     "mean_target_rise_above_stand_m": 0.0807,
+     "mean_foot_load_weight": {
+      "RF": 0.158,
+      "RM": 0.059,
+      "RR": 0.293,
+      "LF": 0.145,
+      "LM": 0.103,
+      "LR": 0.241
+     },
+     "mean_chassis_load_weight": 0.0,
+     "mean_joint_load": {
+      "RF_coxa": 0.128,
+      "RF_femur": 0.757,
+      "RF_tibia": 0.78,
+      "RM_coxa": 0.174,
+      "RM_femur": 0.359,
+      "RM_tibia": 0.413,
+      "RR_coxa": 0.182,
+      "RR_femur": 0.365,
+      "RR_tibia": 0.858,
+      "LF_coxa": 0.074,
+      "LF_femur": 0.775,
+      "LF_tibia": 0.78,
+      "LM_coxa": 0.205,
+      "LM_femur": 0.341,
+      "LM_tibia": 0.231,
+      "LR_coxa": 0.149,
+      "LR_femur": 0.597,
+      "LR_tibia": 0.329
+     },
+     "saturated_while_loaded": {
+      "RF_coxa": 0.0,
+      "RF_femur": 0.153,
+      "RF_tibia": 0.328,
+      "RM_coxa": 0.049,
+      "RM_femur": 0.006,
+      "RM_tibia": 0.127,
+      "RR_coxa": 0.0,
+      "RR_femur": 0.0,
+      "RR_tibia": 0.834,
+      "LF_coxa": 0.0,
+      "LF_femur": 0.264,
+      "LF_tibia": 0.105,
+      "LM_coxa": 0.0,
+      "LM_femur": 0.0,
+      "LM_tibia": 0.001,
+      "LR_coxa": 0.0,
+      "LR_femur": 0.365,
+      "LR_tibia": 0.0
+     },
+     "x_start_m": 0.782,
+     "x_end_m": 0.977,
+     "feet_start_m": {
+      "RF": [
+       1.1296,
+       -0.2174,
+       0.147
+      ],
+      "RM": [
+       0.7692,
+       -0.2547,
+       0.0164
+      ],
+      "RR": [
+       0.5448,
+       -0.2175,
+       0.0168
+      ],
+      "LF": [
+       1.1329,
+       0.2021,
+       0.1469
+      ],
+      "LM": [
+       0.7847,
+       0.2307,
+       0.0164
+      ],
+      "LR": [
+       0.5856,
+       0.1986,
+       0.0169
+      ]
+     },
+     "feet_end_m": {
+      "RF": [
+       1.2952,
+       -0.2105,
+       0.1469
+      ],
+      "RM": [
+       1.1515,
+       -0.2597,
+       0.1472
+      ],
+      "RR": [
+       0.7982,
+       -0.2186,
+       0.0161
+      ],
+      "LF": [
+       1.3048,
+       0.2004,
+       0.1465
+      ],
+      "LM": [
+       1.1515,
+       0.2495,
+       0.1483
+      ],
+      "LR": [
+       0.7059,
+       0.2032,
+       0.0159
+      ]
+     },
+     "riser_contact_s": 0.0
+    },
+    "rear": {
+     "duration_s": 16.36,
+     "mean_target_z_m": 0.2359,
+     "mean_z_m": 0.2343,
+     "mean_height_deficit_m": 0.0016,
+     "max_height_deficit_m": 0.0052,
+     "mean_target_rise_above_stand_m": 0.1179,
+     "mean_foot_load_weight": {
+      "RF": 0.154,
+      "RM": 0.14,
+      "RR": 0.197,
+      "LF": 0.142,
+      "LM": 0.164,
+      "LR": 0.199
+     },
+     "mean_chassis_load_weight": 0.0,
+     "mean_joint_load": {
+      "RF_coxa": 0.208,
+      "RF_femur": 0.387,
+      "RF_tibia": 0.161,
+      "RM_coxa": 0.372,
+      "RM_femur": 0.395,
+      "RM_tibia": 0.239,
+      "RR_coxa": 0.371,
+      "RR_femur": 0.333,
+      "RR_tibia": 0.433,
+      "LF_coxa": 0.18,
+      "LF_femur": 0.313,
+      "LF_tibia": 0.314,
+      "LM_coxa": 0.246,
+      "LM_femur": 0.354,
+      "LM_tibia": 0.201,
+      "LR_coxa": 0.232,
+      "LR_femur": 0.523,
+      "LR_tibia": 0.32
+     },
+     "saturated_while_loaded": {
+      "RF_coxa": 0.0,
+      "RF_femur": 0.0,
+      "RF_tibia": 0.006,
+      "RM_coxa": 0.005,
+      "RM_femur": 0.0,
+      "RM_tibia": 0.002,
+      "RR_coxa": 0.204,
+      "RR_femur": 0.027,
+      "RR_tibia": 0.026,
+      "LF_coxa": 0.001,
+      "LF_femur": 0.008,
+      "LF_tibia": 0.037,
+      "LM_coxa": 0.006,
+      "LM_femur": 0.0,
+      "LM_tibia": 0.009,
+      "LR_coxa": 0.001,
+      "LR_femur": 0.022,
+      "LR_tibia": 0.002
+     },
+     "x_start_m": 0.977,
+     "x_end_m": 1.188,
+     "feet_start_m": {
+      "RF": [
+       1.2953,
+       -0.2104,
+       0.1469
+      ],
+      "RM": [
+       1.1515,
+       -0.2596,
+       0.1471
+      ],
+      "RR": [
+       0.7981,
+       -0.2186,
+       0.0161
+      ],
+      "LF": [
+       1.3048,
+       0.2005,
+       0.1465
+      ],
+      "LM": [
+       1.1516,
+       0.2478,
+       0.147
+      ],
+      "LR": [
+       0.7059,
+       0.2032,
+       0.016
+      ]
+     },
+     "feet_end_m": {
+      "RF": [
+       1.3971,
+       -0.2147,
+       0.1479
+      ],
+      "RM": [
+       1.2139,
+       -0.2545,
+       0.1472
+      ],
+      "RR": [
+       1.1256,
+       -0.2089,
+       0.1449
+      ],
+      "LF": [
+       1.3983,
+       0.21,
+       0.147
+      ],
+      "LM": [
+       1.2122,
+       0.2462,
+       0.1455
+      ],
+      "LR": [
+       1.1226,
+       0.2135,
+       0.1484
+      ]
+     },
+     "riser_contact_s": 0.0
+    },
+    "top": {
+     "duration_s": 3.46,
+     "mean_target_z_m": 0.2457,
+     "mean_z_m": 0.2455,
+     "mean_height_deficit_m": 0.0002,
+     "max_height_deficit_m": 0.0021,
+     "mean_target_rise_above_stand_m": 0.1277,
+     "mean_foot_load_weight": {
+      "RF": 0.155,
+      "RM": 0.17,
+      "RR": 0.181,
+      "LF": 0.123,
+      "LM": 0.245,
+      "LR": 0.125
+     },
+     "mean_chassis_load_weight": 0.0,
+     "mean_joint_load": {
+      "RF_coxa": 0.244,
+      "RF_femur": 0.347,
+      "RF_tibia": 0.39,
+      "RM_coxa": 0.342,
+      "RM_femur": 0.445,
+      "RM_tibia": 0.26,
+      "RR_coxa": 0.312,
+      "RR_femur": 0.362,
+      "RR_tibia": 0.351,
+      "LF_coxa": 0.251,
+      "LF_femur": 0.347,
+      "LF_tibia": 0.381,
+      "LM_coxa": 0.324,
+      "LM_femur": 0.531,
+      "LM_tibia": 0.284,
+      "LR_coxa": 0.302,
+      "LR_femur": 0.367,
+      "LR_tibia": 0.297
+     },
+     "saturated_while_loaded": {
+      "RF_coxa": 0.002,
+      "RF_femur": 0.0,
+      "RF_tibia": 0.118,
+      "RM_coxa": 0.051,
+      "RM_femur": 0.371,
+      "RM_tibia": 0.037,
+      "RR_coxa": 0.102,
+      "RR_femur": 0.0,
+      "RR_tibia": 0.046,
+      "LF_coxa": 0.001,
+      "LF_femur": 0.0,
+      "LF_tibia": 0.112,
+      "LM_coxa": 0.022,
+      "LM_femur": 0.204,
+      "LM_tibia": 0.031,
+      "LR_coxa": 0.143,
+      "LR_femur": 0.0,
+      "LR_tibia": 0.036
+     },
+     "x_start_m": 1.188,
+     "x_end_m": 1.497,
+     "feet_start_m": {
+      "RF": [
+       1.3971,
+       -0.2147,
+       0.1478
+      ],
+      "RM": [
+       1.2139,
+       -0.2544,
+       0.1472
+      ],
+      "RR": [
+       1.1256,
+       -0.2089,
+       0.1449
+      ],
+      "LF": [
+       1.3983,
+       0.21,
+       0.147
+      ],
+      "LM": [
+       1.2122,
+       0.2462,
+       0.1456
+      ],
+      "LR": [
+       1.1226,
+       0.212,
+       0.1472
+      ]
+     },
+     "feet_end_m": {
+      "RF": [
+       1.6965,
+       -0.203,
+       0.1456
+      ],
+      "RM": [
+       1.5292,
+       -0.2431,
+       0.1582
+      ],
+      "RR": [
+       1.2329,
+       -0.2044,
+       0.1466
+      ],
+      "LF": [
+       1.7643,
+       0.2095,
+       0.1543
+      ],
+      "LM": [
+       1.4636,
+       0.23,
+       0.1446
+      ],
+      "LR": [
+       1.2864,
+       0.2166,
+       0.156
+      ]
+     },
+     "riser_contact_s": 0.0
+    }
+   },
+   "front_deficit": null,
+   "transfer_deficit": null,
+   "middle_deficit": null,
+   "rear_deficit": null,
+   "plan_log": [
+    {
+     "phase": "front",
+     "leg": 5,
+     "kind": "advance",
+     "torque_ratio": 1.111659603338571,
+     "worst_joint": "LM_femur",
+     "t": 8.06,
+     "body": [
+      0.747,
+      0.0,
+      0.152
+     ],
+     "pitch_deg": 8.5,
+     "landing": [
+      0.487,
+      0.203,
+      0.016
+     ],
+     "lift_off": [
+      0.347,
+      0.205,
+      0.016
+     ]
+    },
+    {
+     "t": 9.64,
+     "landed": "LR",
+     "at": [
+      0.475,
+      0.211,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.152
+    },
+    {
+     "phase": "front",
+     "leg": 2,
+     "kind": "advance",
+     "torque_ratio": 0.8323367221696902,
+     "worst_joint": "LR_femur",
+     "t": 9.72,
+     "body": [
+      0.78,
+      0.0,
+      0.193
+     ],
+     "pitch_deg": 14.3,
+     "landing": [
+      0.552,
+      -0.205,
+      0.016
+     ],
+     "lift_off": [
+      0.411,
+      -0.223,
+      0.016
+     ]
+    },
+    {
+     "t": 11.26,
+     "landed": "RR",
+     "at": [
+      0.544,
+      -0.215,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.192
+    },
+    {
+     "phase": "front",
+     "leg": 4,
+     "kind": "advance",
+     "torque_ratio": 0.8287481104481103,
+     "worst_joint": "LR_femur",
+     "t": 11.34,
+     "body": [
+      0.778,
+      -0.003,
+      0.193
+     ],
+     "pitch_deg": 14.4,
+     "landing": [
+      0.78,
+      0.233,
+      0.016
+     ],
+     "lift_off": [
+      0.668,
+      0.251,
+      0.017
+     ]
+    },
+    {
+     "t": 12.1,
+     "landed": "LM",
+     "at": [
+      0.783,
+      0.233,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.193
+    },
+    {
+     "phase": "front",
+     "leg": 5,
+     "kind": "advance",
+     "torque_ratio": 0.7077019298969986,
+     "worst_joint": "RR_femur",
+     "t": 12.18,
+     "body": [
+      0.779,
+      -0.006,
+      0.193
+     ],
+     "pitch_deg": 14.0,
+     "landing": [
+      0.583,
+      0.201,
+      0.016
+     ],
+     "lift_off": [
+      0.475,
+      0.211,
+      0.017
+     ]
+    },
+    {
+     "t": 12.92,
+     "landed": "LR",
+     "at": [
+      0.584,
+      0.2,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.193
+    },
+    {
+     "phase": "front",
+     "leg": 0,
+     "kind": "up",
+     "torque_ratio": 0.8220667021516026,
+     "worst_joint": "RM_femur",
+     "t": 13.0,
+     "body": [
+      0.78,
+      0.015,
+      0.194
+     ],
+     "pitch_deg": 15.0,
+     "landing": [
+      1.125,
+      -0.208,
+      0.146
+     ],
+     "lift_off": [
+      0.944,
+      -0.193,
+      0.016
+     ]
+    },
+    {
+     "t": 16.12,
+     "landed": "RF",
+     "at": [
+      1.127,
+      -0.214,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.194
+    },
+    {
+     "phase": "front",
+     "leg": 3,
+     "kind": "up",
+     "torque_ratio": 0.898969833577685,
+     "worst_joint": "LM_tibia",
+     "t": 16.2,
+     "body": [
+      0.78,
+      0.0,
+      0.194
+     ],
+     "pitch_deg": 15.0,
+     "landing": [
+      1.127,
+      0.205,
+      0.146
+     ],
+     "lift_off": [
+      0.989,
+      0.218,
+      0.016
+     ]
+    },
+    {
+     "t": 19.28,
+     "landed": "LF",
+     "at": [
+      1.131,
+      0.203,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.193
+    },
+    {
+     "phase": "middle",
+     "leg": 1,
+     "kind": "advance",
+     "torque_ratio": 0.9874438706765809,
+     "worst_joint": "RF_femur",
+     "t": 19.36,
+     "body": [
+      0.78,
+      -0.003,
+      0.194
+     ],
+     "pitch_deg": 14.8,
+     "landing": [
+      0.88,
+      -0.234,
+      0.016
+     ],
+     "lift_off": [
+      0.768,
+      -0.251,
+      0.017
+     ]
+    },
+    {
+     "t": 20.1,
+     "landed": "RM",
+     "at": [
+      0.881,
+      -0.241,
+      0.016
+     ],
+     "contact": true,
+     "body_z": 0.192
+    },
+    {
+     "phase": "middle",
+     "leg": 0,
+     "kind": "advance",
+     "torque_ratio": 1.0554618639889233,
+     "worst_joint": "RM_femur",
+     "t": 20.18,
+     "body": [
+      0.842,
+      0.0,
+      0.2
+     ],
+     "pitch_deg": 10.0,
+     "landing": [
+      1.24,
+      -0.204,
+      0.146
+     ],
+     "lift_off": [
+      1.127,
+      -0.214,
+      0.147
+     ]
+    },
+    {
+     "t": 21.86,
+     "landed": "RF",
+     "at": [
+      1.245,
+      -0.208,
+      0.148
+     ],
+     "contact": true,
+     "body_z": 0.197
+    },
+    {
+     "phase": "middle",
+     "leg": 3,
+     "kind": "advance",
+     "torque_ratio": 1.0189207488023466,
+     "worst_joint": "RM_femur",
+     "t": 21.94,
+     "body": [
+      0.844,
+      -0.002,
+      0.198
+     ],
+     "pitch_deg": 9.7,
+     "landing": [
+      1.246,
+      0.2,
+      0.146
+     ],
+     "lift_off": [
+      1.131,
+      0.203,
+      0.147
+     ]
+    },
+    {
+     "t": 22.9,
+     "landed": "LF",
+     "at": [
+      1.254,
+      0.2,
+      0.145
+     ],
+     "contact": true,
+     "body_z": 0.193
+    },
+    {
+     "phase": "middle",
+     "leg": 2,
+     "kind": "advance",
+     "torque_ratio": 1.0596468646984287,
+     "worst_joint": "RM_femur",
+     "t": 22.98,
+     "body": [
+      0.847,
+      -0.002,
+      0.196
+     ],
+     "pitch_deg": 9.4,
+     "landing": [
+      0.687,
+      -0.204,
+      0.016
+     ],
+     "lift_off": [
+      0.544,
+      -0.215,
+      0.017
+     ]
+    },
+    {
+     "t": 23.76,
+     "landed": "RR",
+     "at": [
+      0.685,
+      -0.212,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.189
+    },
+    {
+     "phase": "middle",
+     "leg": 5,
+     "kind": "advance",
+     "torque_ratio": 1.0437435957848356,
+     "worst_joint": "LM_femur",
+     "t": 23.84,
+     "body": [
+      0.846,
+      -0.002,
+      0.191
+     ],
+     "pitch_deg": 9.5,
+     "landing": [
+      0.708,
+      0.2,
+      0.016
+     ],
+     "lift_off": [
+      0.584,
+      0.2,
+      0.017
+     ]
+    },
+    {
+     "t": 24.62,
+     "landed": "LR",
+     "at": [
+      0.708,
+      0.201,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.187
+    },
+    {
+     "phase": "middle",
+     "leg": 2,
+     "kind": "advance",
+     "torque_ratio": 1.0403719232625495,
+     "worst_joint": "RM_femur",
+     "t": 24.7,
+     "body": [
+      0.846,
+      -0.003,
+      0.189
+     ],
+     "pitch_deg": 9.5,
+     "landing": [
+      0.804,
+      -0.197,
+      0.016
+     ],
+     "lift_off": [
+      0.685,
+      -0.212,
+      0.017
+     ]
+    },
+    {
+     "t": 25.46,
+     "landed": "RR",
+     "at": [
+      0.792,
+      -0.215,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.182
+    },
+    {
+     "phase": "middle",
+     "leg": 0,
+     "kind": "advance",
+     "torque_ratio": 0.9321506442833388,
+     "worst_joint": "LF_femur",
+     "t": 25.54,
+     "body": [
+      0.847,
+      0.0,
+      0.2
+     ],
+     "pitch_deg": 5.0,
+     "landing": [
+      1.285,
+      -0.204,
+      0.146
+     ],
+     "lift_off": [
+      1.245,
+      -0.208,
+      0.148
+     ]
+    },
+    {
+     "t": 26.22,
+     "landed": "RF",
+     "at": [
+      1.289,
+      -0.204,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.196
+    },
+    {
+     "phase": "middle",
+     "leg": 3,
+     "kind": "advance",
+     "torque_ratio": 1.044321709690296,
+     "worst_joint": "RF_tibia",
+     "t": 26.3,
+     "body": [
+      0.85,
+      0.0,
+      0.2
+     ],
+     "pitch_deg": 0.0,
+     "landing": [
+      1.287,
+      0.202,
+      0.146
+     ],
+     "lift_off": [
+      1.254,
+      0.2,
+      0.145
+     ]
+    },
+    {
+     "t": 26.96,
+     "landed": "LF",
+     "at": [
+      1.294,
+      0.203,
+      0.146
+     ],
+     "contact": true,
+     "body_z": 0.195
+    },
+    {
+     "phase": "middle",
+     "leg": 1,
+     "kind": "up",
+     "torque_ratio": 1.1271750998176975,
+     "worst_joint": "LF_femur",
+     "t": 27.04,
+     "body": [
+      0.91,
+      0.0,
+      0.2
+     ],
+     "pitch_deg": 5.0,
+     "landing": [
+      1.14,
+      -0.242,
+      0.146
+     ],
+     "lift_off": [
+      0.881,
+      -0.241,
+      0.016
+     ]
+    },
+    {
+     "t": 30.5,
+     "landed": "RM",
+     "at": [
+      1.146,
+      -0.254,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.196
+    },
+    {
+     "phase": "middle",
+     "leg": 4,
+     "kind": "up",
+     "torque_ratio": 1.1274485251439323,
+     "worst_joint": "LF_femur",
+     "t": 30.58,
+     "body": [
+      0.971,
+      -0.015,
+      0.2
+     ],
+     "pitch_deg": 5.0,
+     "landing": [
+      1.144,
+      0.242,
+      0.146
+     ],
+     "lift_off": [
+      0.783,
+      0.233,
+      0.017
+     ]
+    },
+    {
+     "t": 33.66,
+     "landed": "LM",
+     "at": [
+      1.152,
+      0.242,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.195
+    },
+    {
+     "phase": "rear",
+     "leg": 5,
+     "kind": "advance",
+     "torque_ratio": 1.0804090861115376,
+     "worst_joint": "RR_femur",
+     "t": 33.74,
+     "body": [
+      1.031,
+      -0.015,
+      0.22
+     ],
+     "pitch_deg": 10.0,
+     "landing": [
+      0.852,
+      0.201,
+      0.016
+     ],
+     "lift_off": [
+      0.708,
+      0.201,
+      0.017
+     ]
+    },
+    {
+     "t": 35.26,
+     "landed": "LR",
+     "at": [
+      0.859,
+      0.199,
+      0.017
+     ],
+     "contact": true,
+     "body_z": 0.217
+    },
+    {
+     "phase": "rear",
+     "leg": 2,
+     "kind": "advance",
+     "torque_ratio": 0.9363165453497184,
+     "worst_joint": "LR_femur",
+     "t": 35.34,
+     "body": [
+      1.09,
+      0.0,
+      0.22
+     ],
+     "pitch_deg": 10.0,
+     "landing": [
+      0.932,
+      -0.198,
+      0.016
+     ],
+     "lift_off": [
+      0.792,
+      -0.215,
+      0.017
+     ]
+    },
+    {
+     "t": 36.92,
+     "landed": "RR",
+     "at": [
+      0.938,
+      -0.204,
+      0.018
+     ],
+     "contact": true,
+     "body_z": 0.216
+    },
+    {
+     "phase": "rear",
+     "leg": 0,
+     "kind": "advance",
+     "torque_ratio": 1.0758142303170115,
+     "worst_joint": "LF_tibia",
+     "t": 37.0,
+     "body": [
+      1.13,
+      0.0,
+      0.235
+     ],
+     "pitch_deg": 20.0,
+     "landing": [
+      1.38,
+      -0.209,
+      0.146
+     ],
+     "lift_off": [
+      1.289,
+      -0.204,
+      0.147
+     ]
+    },
+    {
+     "t": 38.3,
+     "landed": "RF",
+     "at": [
+      1.389,
+      -0.215,
+      0.146
+     ],
+     "contact": true,
+     "body_z": 0.236
+    },
+    {
+     "phase": "rear",
+     "leg": 3,
+     "kind": "advance",
+     "torque_ratio": 1.0449870615813612,
+     "worst_joint": "LM_coxa",
+     "t": 38.38,
+     "body": [
+      1.132,
+      -0.002,
+      0.237
+     ],
+     "pitch_deg": 19.7,
+     "landing": [
+      1.382,
+      0.204,
+      0.146
+     ],
+     "lift_off": [
+      1.294,
+      0.203,
+      0.146
+     ]
+    },
+    {
+     "t": 39.12,
+     "landed": "LF",
+     "at": [
+      1.392,
+      0.21,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.236
+    },
+    {
+     "phase": "rear",
+     "leg": 5,
+     "kind": "advance",
+     "torque_ratio": 0.9589573884405165,
+     "worst_joint": "LM_coxa",
+     "t": 39.2,
+     "body": [
+      1.134,
+      -0.002,
+      0.237
+     ],
+     "pitch_deg": 19.7,
+     "landing": [
+      0.929,
+      0.202,
+      0.016
+     ],
+     "lift_off": [
+      0.859,
+      0.199,
+      0.017
+     ]
+    },
+    {
+     "t": 39.88,
+     "landed": "LR",
+     "at": [
+      0.933,
+      0.202,
+      0.016
+     ],
+     "contact": true,
+     "body_z": 0.235
+    },
+    {
+     "phase": "rear",
+     "leg": 1,
+     "kind": "advance",
+     "torque_ratio": 0.6348724723812186,
+     "worst_joint": "RR_femur",
+     "t": 39.96,
+     "body": [
+      1.13,
+      0.015,
+      0.235
+     ],
+     "pitch_deg": 14.1,
+     "landing": [
+      1.199,
+      -0.249,
+      0.146
+     ],
+     "lift_off": [
+      1.146,
+      -0.254,
+      0.147
+     ]
+    },
+    {
+     "t": 41.02,
+     "landed": "RM",
+     "at": [
+      1.204,
+      -0.253,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.236
+    },
+    {
+     "phase": "rear",
+     "leg": 4,
+     "kind": "advance",
+     "torque_ratio": 0.844621018648457,
+     "worst_joint": "LR_femur",
+     "t": 41.1,
+     "body": [
+      1.13,
+      -0.03,
+      0.22
+     ],
+     "pitch_deg": 10.0,
+     "landing": [
+      1.201,
+      0.244,
+      0.146
+     ],
+     "lift_off": [
+      1.152,
+      0.242,
+      0.147
+     ]
+    },
+    {
+     "t": 42.84,
+     "landed": "LM",
+     "at": [
+      1.205,
+      0.246,
+      0.148
+     ],
+     "contact": true,
+     "body_z": 0.218
+    },
+    {
+     "phase": "rear",
+     "leg": 2,
+     "kind": "up",
+     "torque_ratio": 0.7264323106285302,
+     "worst_joint": "RM_femur",
+     "t": 42.92,
+     "body": [
+      1.189,
+      0.03,
+      0.245
+     ],
+     "pitch_deg": 10.0,
+     "landing": [
+      1.116,
+      -0.204,
+      0.146
+     ],
+     "lift_off": [
+      0.938,
+      -0.204,
+      0.018
+     ]
+    },
+    {
+     "t": 46.74,
+     "landed": "RR",
+     "at": [
+      1.123,
+      -0.204,
+      0.147
+     ],
+     "contact": true,
+     "body_z": 0.242
+    },
+    {
+     "phase": "rear",
+     "leg": 5,
+     "kind": "up",
+     "torque_ratio": 0.9761638107293916,
+     "worst_joint": "LM_femur",
+     "t": 46.82,
+     "body": [
+      1.18,
+      0.0,
+      0.26
+     ],
+     "pitch_deg": 5.0,
+     "landing": [
+      1.116,
+      0.207,
+      0.146
+     ],
+     "lift_off": [
+      0.933,
+      0.202,
+      0.016
+     ]
+    },
+    {
+     "t": 49.96,
+     "landed": "LR",
+     "at": [
+      1.123,
+      0.209,
+      0.146
+     ],
+     "contact": true,
+     "body_z": 0.257
+    }
+   ],
+   "blocked_reasons": null
+  }
+ ],
+ "wall_s": 84.2
+}

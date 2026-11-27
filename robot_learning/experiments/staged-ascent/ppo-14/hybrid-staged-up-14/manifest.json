@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "course": "hybrid-staged-up-14",
+  "seed": 6301,
+  "eval_seed": 1016100,
+  "final_seed": 1017300,
+  "envs": 2,
+  "body_control": true,
+  "attitude_control": true,
+  "body_support": true,
+  "total_transitions": 229376,
+  "model_sha256": "4188a06f2142730146189752d0b2252d6fecd9d070ab1b26bc78012771a932f9",
+  "python": "3.13.18",
+  "mujoco": "3.17.0",
+  "stable_baselines3": "2.9.2",
+  "policy_export_allowed": false,
+  "action_scale": 0.5,
+  "controller": "staged-ascent",
+  "start_fraction": 0.5,
+  "start_seeds": "500000-500011",
+  "ppo_epochs": 10,
+  "ppo_gamma": 0.99,
+  "ppo_gae_lambda": 0.95,
+  "steps_per_worker": 512,
+  "net_arch": {
+    "pi": [
+      128,
+      128
+    ],
+    "vf": [
+      128,
+      128
+    ]
+  }
+}

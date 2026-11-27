@@ -1,0 +1,1669 @@
+{
+ "course": "hybrid-brace-transfer-up-18",
+ "run": null,
+ "first_seed": 1017300,
+ "episodes": 20,
+ "successes": 0,
+ "falls": 6,
+ "chassis_hits": 5,
+ "out_of_lane": 0,
+ "mean_progress_m": 0.8425125088860099,
+ "mean_forward_m_s": 0.02374390328165483,
+ "mean_touchdowns": 93.65,
+ "mean_slip_m": 2.6011005129156097,
+ "mean_mechanical_work_j": 111.37495598959603,
+ "max_clearance_m": 0.3731975551710151,
+ "body_height_range_m": 0.10742706466289902,
+ "max_lateral_com_m": 0.08226418722541098,
+ "approach_speed_m_s": 0.09443865168042942,
+ "precision_speed_m_s": 0.016522656847584714,
+ "rear_riser_contact_steps": 0.0,
+ "interleg_peak_m": 0.0013231078220595797,
+ "rear_step_peak_m": 0.0,
+ "link_overlap_passed": true,
+ "min_knee_deg": -151.69076258648795,
+ "knee_clearance_passed": true,
+ "peak_target_rpy_deg": [
+  8.594366926962348,
+  28.64788975654116,
+  0.0
+ ],
+ "peak_upper_contacts": 4,
+ "forward_transfer_m": 0.026,
+ "min_upper_foot_gap_m": 0.04894001371718692,
+ "mean_upper_foot_gap_m": 0.37678603627847346,
+ "leg_stair_peak_m": 0.0008292855654175035,
+ "mean_riser_contact_s": 0.9099,
+ "max_riser_contact_s": 2.87,
+ "riser_clearance_passed": false,
+ "sole_top_peak_m": 0.005525969589807538,
+ "body_impacts": 5,
+ "mean_body_support_s": 0.1143,
+ "max_body_support_weight": 0.5254705256341176,
+ "max_body_impact_weight": 2.146071859099326,
+ "mean_servo_saturation_fraction": 0.1531650420710923,
+ "outcomes": [
+  {
+   "seed": 1017300,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 0.7414380734806073,
+   "touchdowns": 68,
+   "feet_xyz_m": [
+    [
+     1.1063791321077352,
+     -0.15375499078072558,
+     0.23855614335680592
+    ],
+    [
+     0.7491497731483796,
+     -0.21502128360099032,
+     0.018566496551750494
+    ],
+    [
+     0.5747943994001534,
+     -0.18944274625205285,
+     0.01673966984864203
+    ],
+    [
+     0.9334854439864494,
+     0.2936849213739166,
+     0.019740570080517772
+    ],
+    [
+     0.7808324889204739,
+     0.30902139964031256,
+     0.01966816805421348
+    ],
+    [
+     0.36987405828387787,
+     0.32016299920288793,
+     0.029937548036778103
+    ]
+   ],
+   "mean_forward_m_s": 0.012357301224676789,
+   "slip_m": 1.0934447383393742,
+   "mechanical_work_j": 61.23944089460533,
+   "max_clearance_m": 0.30059177855739355,
+   "supply_scale": 0.9981128911789525,
+   "pack_voltage_proxy_v": 7.98490312943162,
+   "interleg_peak_m": 0.0,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 0,
+   "sole_top_peak_m": 0.0024415883242283436,
+   "body_z_m": 0.18968705212403297,
+   "body_target_z_m": 0.1909999999999999,
+   "body_height_range_m": 0.0851397302156916,
+   "max_lateral_com_m": 0.10245734358126335,
+   "supporting_feet": 1,
+   "gait": "wave",
+   "approach_x_m": 0.36965905378804115,
+   "approach_speed_m_s": 0.0952729520072271,
+   "precision_speed_m_s": 0.006624715247551071,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -148.2431677765077,
+   "peak_target_rpy_deg": [
+    4.37255272051496,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 1,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": false,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 0.0,
+   "servo_saturation_fraction": 0.08303703703703216
+  },
+  {
+   "seed": 1017301,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 0.7703961262238688,
+   "touchdowns": 92,
+   "feet_xyz_m": [
+    [
+     1.010491252624765,
+     -0.21138485691792044,
+     0.016903082541151956
+    ],
+    [
+     0.746821405341151,
+     -0.2499234911575974,
+     0.0169866826236324
+    ],
+    [
+     0.5953350343048707,
+     -0.12489092879529398,
+     0.017076110845318182
+    ],
+    [
+     0.8901430256417712,
+     0.24239441576624648,
+     0.0828715850824782
+    ],
+    [
+     0.6773751718159007,
+     0.4596088450310299,
+     0.016524666895889023
+    ],
+    [
+     0.47398007108814794,
+     0.2908498936997099,
+     0.01712452700134942
+    ]
+   ],
+   "mean_forward_m_s": 0.01283993543706448,
+   "slip_m": 4.29357102572488,
+   "mechanical_work_j": 136.83526693663424,
+   "max_clearance_m": 0.206318797855385,
+   "supply_scale": 0.8511067179983093,
+   "pack_voltage_proxy_v": 6.808853743986474,
+   "interleg_peak_m": 0.0,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 1008,
+   "sole_top_peak_m": 0.0,
+   "body_z_m": 0.1183018243795241,
+   "body_target_z_m": 0.1909999999999999,
+   "body_height_range_m": 0.0794951080574854,
+   "max_lateral_com_m": 0.1376588912531693,
+   "supporting_feet": 4,
+   "gait": "wave",
+   "approach_x_m": 0.3565208564403834,
+   "approach_speed_m_s": 0.09333006713099042,
+   "precision_speed_m_s": 0.007366950334344703,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -151.16264523556768,
+   "peak_target_rpy_deg": [
+    4.424744897648086,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 0,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": false,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 0.0,
+   "servo_saturation_fraction": 0.23522222222222827
+  },
+  {
+   "seed": 1017302,
+   "steps": 786,
+   "success": false,
+   "fallen": true,
+   "chassis_hit": true,
+   "out": false,
+   "progress_m": 0.8816388467568677,
+   "touchdowns": 49,
+   "feet_xyz_m": [
+    [
+     0.9639487221950566,
+     -0.22162854332942772,
+     0.015233020319919688
+    ],
+    [
+     0.7260445490241287,
+     -0.2819796040708128,
+     0.016621464459790708
+    ],
+    [
+     0.5958496210428794,
+     -0.2297481461145286,
+     0.09111869698818509
+    ],
+    [
+     0.8013140800207861,
+     0.28402546008741864,
+     0.015451923867802586
+    ],
+    [
+     0.7477052169575281,
+     0.25758859706764037,
+     0.015681153450033763
+    ],
+    [
+     0.49630610909441736,
+     0.2980624245636271,
+     0.26189420169032473
+    ]
+   ],
+   "mean_forward_m_s": 0.05608389610412644,
+   "slip_m": 1.0106006993869359,
+   "mechanical_work_j": 45.79388990753401,
+   "max_clearance_m": 0.24389420169032475,
+   "supply_scale": 0.9004152875289567,
+   "pack_voltage_proxy_v": 7.203322300231654,
+   "interleg_peak_m": 0.0013231078220595797,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 0,
+   "sole_top_peak_m": 0.0,
+   "body_z_m": 0.09342842228150829,
+   "body_target_z_m": 0.17600611837442767,
+   "body_height_range_m": 0.03438078011920899,
+   "max_lateral_com_m": 0.04597804292779734,
+   "supporting_feet": 3,
+   "gait": "wave",
+   "approach_x_m": 0.36314809531978026,
+   "approach_speed_m_s": 0.09407981744035758,
+   "precision_speed_m_s": 0.04371760130160939,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -148.4964116283747,
+   "peak_target_rpy_deg": [
+    4.348999909038232,
+    23.76628934202659,
+    0.0
+   ],
+   "peak_upper_contacts": 0,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": true,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 1.879783924251248,
+   "servo_saturation_fraction": 0.0884930732258978
+  },
+  {
+   "seed": 1017303,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 0.7472229772957423,
+   "touchdowns": 124,
+   "feet_xyz_m": [
+    [
+     0.980878152320815,
+     -0.2572620101325262,
+     0.11313488523946269
+    ],
+    [
+     0.7316301685294101,
+     -0.26584429517502106,
+     0.015582366097881356
+    ],
+    [
+     0.44563268697040037,
+     -0.2077858916299288,
+     0.01676236954346369
+    ],
+    [
+     0.9321426555068775,
+     0.19914092099857666,
+     0.016405384627294545
+    ],
+    [
+     0.7767918635176415,
+     0.2573142697727885,
+     0.016904642540221226
+    ],
+    [
+     0.5272082507337105,
+     0.23023447961232626,
+     0.017810618337863626
+    ]
+   ],
+   "mean_forward_m_s": 0.01245371628826237,
+   "slip_m": 3.6012886899246923,
+   "mechanical_work_j": 158.13240186340693,
+   "max_clearance_m": 0.27424776215304175,
+   "supply_scale": 0.9486323057551838,
+   "pack_voltage_proxy_v": 7.58905844604147,
+   "interleg_peak_m": 0.0,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 642,
+   "sole_top_peak_m": 0.001704851368768523,
+   "body_z_m": 0.1261452028709978,
+   "body_target_z_m": 0.13081631702866175,
+   "body_height_range_m": 0.09838754561626481,
+   "max_lateral_com_m": 0.133021989710901,
+   "supporting_feet": 5,
+   "gait": "wave",
+   "approach_x_m": 0.3664164198460007,
+   "approach_speed_m_s": 0.09492653363886029,
+   "precision_speed_m_s": 0.006783159199318517,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -151.69076258648795,
+   "peak_target_rpy_deg": [
+    4.3915052769567495,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 0,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": false,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 0.0,
+   "servo_saturation_fraction": 0.15672222222222393
+  },
+  {
+   "seed": 1017304,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 0.4720189240366866,
+   "touchdowns": 179,
+   "feet_xyz_m": [
+    [
+     0.8794182635474508,
+     -0.2772391828861416,
+     0.11392067095338715
+    ],
+    [
+     0.6045777209777122,
+     -0.31364986045377785,
+     0.01665707195039523
+    ],
+    [
+     0.42429801504863096,
+     -0.3004621820062301,
+     0.01661010239435526
+    ],
+    [
+     0.9290903751140672,
+     0.12022522412747097,
+     0.017214117686494515
+    ],
+    [
+     0.6795288474428042,
+     0.24342704848196056,
+     0.02352301931315612
+    ],
+    [
+     0.43207415045436504,
+     0.16314352545793384,
+     0.013924202332515678
+    ]
+   ],
+   "mean_forward_m_s": 0.00786698206727811,
+   "slip_m": 5.32319055578749,
+   "mechanical_work_j": 205.42099088778028,
+   "max_clearance_m": 0.27730475247899977,
+   "supply_scale": 0.865326258421726,
+   "pack_voltage_proxy_v": 6.922610067373808,
+   "interleg_peak_m": 0.0,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.000260360025360562,
+   "riser_contact_substeps": 713,
+   "sole_top_peak_m": 0.003293297182704307,
+   "body_z_m": 0.0815280856911591,
+   "body_target_z_m": 0.11668942678896096,
+   "body_height_range_m": 0.10696322313043193,
+   "max_lateral_com_m": 0.11674178888330397,
+   "supporting_feet": 3,
+   "gait": "wave",
+   "approach_x_m": 0.3605118863004785,
+   "approach_speed_m_s": 0.09437483934567499,
+   "precision_speed_m_s": 0.0019848173324351747,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -151.29115102794043,
+   "peak_target_rpy_deg": [
+    4.397180223235705,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 1,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": false,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 0.0,
+   "servo_saturation_fraction": 0.25801851851852164
+  },
+  {
+   "seed": 1017305,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 1.180704857349285,
+   "touchdowns": 112,
+   "feet_xyz_m": [
+    [
+     1.2805161213470526,
+     -0.2323669792525553,
+     0.19661262409291824
+    ],
+    [
+     1.1028424841698306,
+     -0.3262245882545551,
+     0.19559344110616628
+    ],
+    [
+     0.8013196897430925,
+     -0.2877392738046835,
+     0.06437261128656513
+    ],
+    [
+     1.2622181380226454,
+     0.2568386735288452,
+     0.19643712474049374
+    ],
+    [
+     0.9955004805014224,
+     0.28890443388775955,
+     0.14417627904577462
+    ],
+    [
+     0.7277012987311121,
+     0.10248933879307548,
+     0.14733031504730265
+    ]
+   ],
+   "mean_forward_m_s": 0.01967841428915475,
+   "slip_m": 2.85978453713667,
+   "mechanical_work_j": 136.0545454393502,
+   "max_clearance_m": 0.25510443305448244,
+   "supply_scale": 0.9920121327304516,
+   "pack_voltage_proxy_v": 7.936097061843613,
+   "interleg_peak_m": 3.521575776895577e-05,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 33,
+   "sole_top_peak_m": 0.004419017188294249,
+   "body_z_m": 0.25758016624957636,
+   "body_target_z_m": 0.27500000000000024,
+   "body_height_range_m": 0.18333949128454796,
+   "max_lateral_com_m": 0.07331675488493497,
+   "supporting_feet": 3,
+   "gait": "wave",
+   "approach_x_m": 0.3691547504685323,
+   "approach_speed_m_s": 0.09514297692487945,
+   "precision_speed_m_s": 0.01446097838347742,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -150.56908317081016,
+   "peak_target_rpy_deg": [
+    8.530316305018408,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 4,
+   "forward_transfer_m": 0.026,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": 0.05578570721064614,
+   "mean_upper_foot_gap_m": 0.20437792916228456,
+   "body_support_s": 0.0,
+   "body_impact": false,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 0.0,
+   "servo_saturation_fraction": 0.1539629629629641
+  },
+  {
+   "seed": 1017306,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 1.0245253155282816,
+   "touchdowns": 71,
+   "feet_xyz_m": [
+    [
+     1.1466057334486675,
+     -0.14514970767453841,
+     0.19626507909635202
+    ],
+    [
+     1.033741634907721,
+     -0.4278783492245473,
+     0.20046837262293413
+    ],
+    [
+     0.6845104340873666,
+     -0.2093195863101182,
+     0.016132495744008546
+    ],
+    [
+     1.141300232540289,
+     0.2534822796857789,
+     0.19501222299671206
+    ],
+    [
+     0.8445210511960176,
+     0.24233883374507273,
+     0.024423139396873045
+    ],
+    [
+     0.6746432231807886,
+     0.21356516672131037,
+     0.01732822581461299
+    ]
+   ],
+   "mean_forward_m_s": 0.01707542192547136,
+   "slip_m": 1.9675609505526754,
+   "mechanical_work_j": 111.60569882982553,
+   "max_clearance_m": 0.29895897900745183,
+   "supply_scale": 0.9973704404760846,
+   "pack_voltage_proxy_v": 7.978963523808677,
+   "interleg_peak_m": 0.0002682958714254986,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 235,
+   "sole_top_peak_m": 0.004367410070992932,
+   "body_z_m": 0.25537013675256026,
+   "body_target_z_m": 0.2729999999999997,
+   "body_height_range_m": 0.15688182739365625,
+   "max_lateral_com_m": 0.10911247826942029,
+   "supporting_feet": 4,
+   "gait": "wave",
+   "approach_x_m": 0.3706041748558087,
+   "approach_speed_m_s": 0.09502671150148942,
+   "precision_speed_m_s": 0.011656348318582406,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -150.6022545678298,
+   "peak_target_rpy_deg": [
+    7.53207845759749,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 2,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": 0.39223446101113746,
+   "mean_upper_foot_gap_m": 0.39963509847991596,
+   "body_support_s": 0.0,
+   "body_impact": false,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 0.0,
+   "servo_saturation_fraction": 0.12027777777777608
+  },
+  {
+   "seed": 1017307,
+   "steps": 2907,
+   "success": false,
+   "fallen": true,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 1.011281629987536,
+   "touchdowns": 103,
+   "feet_xyz_m": [
+    [
+     1.2640245882759047,
+     -0.23607752883781996,
+     0.2063790821809272
+    ],
+    [
+     1.1220888417922958,
+     -0.35133401837379574,
+     0.206366567234005
+    ],
+    [
+     0.9790139560808561,
+     -0.44618522531343974,
+     0.026820356051680913
+    ],
+    [
+     1.2681766180006548,
+     0.2318661282199754,
+     0.2058727746286929
+    ],
+    [
+     1.0168258302066338,
+     0.2595002111143425,
+     0.028185536980968345
+    ],
+    [
+     0.6070079633650161,
+     0.06148980784701637,
+     0.017073144735436772
+    ]
+   ],
+   "mean_forward_m_s": 0.017393904884546542,
+   "slip_m": 2.8782100400678035,
+   "mechanical_work_j": 141.6886506699518,
+   "max_clearance_m": 0.2765970331670268,
+   "supply_scale": 0.9186500646374779,
+   "pack_voltage_proxy_v": 7.349200517099823,
+   "interleg_peak_m": 0.0008579260327546212,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 0,
+   "sole_top_peak_m": 0.0038254992929948432,
+   "body_z_m": 0.2187937211822,
+   "body_target_z_m": 0.352,
+   "body_height_range_m": 0.1792942592586115,
+   "max_lateral_com_m": 0.07033407703883159,
+   "supporting_feet": 1,
+   "gait": "wave",
+   "approach_x_m": 0.3655692419806379,
+   "approach_speed_m_s": 0.09470705750793729,
+   "precision_speed_m_s": 0.011895954090031285,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -150.73409051658703,
+   "peak_target_rpy_deg": [
+    5.793898254776289,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 4,
+   "forward_transfer_m": 0.026,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": 0.05503051708746483,
+   "mean_upper_foot_gap_m": 0.3485159639872826,
+   "body_support_s": 0.266,
+   "body_impact": false,
+   "body_support_weight": 0.45633225095160046,
+   "body_impact_weight": 0.0,
+   "servo_saturation_fraction": 0.14377173871497995
+  },
+  {
+   "seed": 1017308,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 0.7695164699174974,
+   "touchdowns": 81,
+   "feet_xyz_m": [
+    [
+     1.1655970317919664,
+     -0.12305907567371334,
+     0.19658396722184088
+    ],
+    [
+     0.6905518539673521,
+     -0.16613328237466812,
+     0.015287139650224768
+    ],
+    [
+     0.5286813449903918,
+     -0.12500853801670775,
+     0.04339572665995714
+    ],
+    [
+     0.8460571012801842,
+     0.5240463484332369,
+     0.10069763078628055
+    ],
+    [
+     0.7660079056033537,
+     0.22306279250112965,
+     0.016981936398501832
+    ],
+    [
+     0.36807563393283005,
+     0.36024577021376303,
+     0.028202691261577744
+    ]
+   ],
+   "mean_forward_m_s": 0.012825274498624957,
+   "slip_m": 1.8403731569618533,
+   "mechanical_work_j": 88.1559832335488,
+   "max_clearance_m": 0.30826238695427366,
+   "supply_scale": 0.9500023204042287,
+   "pack_voltage_proxy_v": 7.60001856323383,
+   "interleg_peak_m": 0.0,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 0,
+   "sole_top_peak_m": 0.0027236000357580663,
+   "body_z_m": 0.14029384621737703,
+   "body_target_z_m": 0.19100000000000011,
+   "body_height_range_m": 0.08530464844467912,
+   "max_lateral_com_m": 0.11333196280656076,
+   "supporting_feet": 3,
+   "gait": "wave",
+   "approach_x_m": 0.3640626889404442,
+   "approach_speed_m_s": 0.09383058993310417,
+   "precision_speed_m_s": 0.007224764450767164,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -150.79207772070288,
+   "peak_target_rpy_deg": [
+    4.640958140559668,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 1,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": false,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 0.0,
+   "servo_saturation_fraction": 0.12501851851851153
+  },
+  {
+   "seed": 1017309,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 0.9744524576845146,
+   "touchdowns": 105,
+   "feet_xyz_m": [
+    [
+     1.1193545558046407,
+     -0.12356227850312834,
+     0.19361184873145648
+    ],
+    [
+     1.0009735704471772,
+     -0.28614934216658416,
+     0.03472401931435912
+    ],
+    [
+     0.7054281201651583,
+     -0.2453090867271191,
+     0.05410956206817413
+    ],
+    [
+     1.0243363637478884,
+     0.27076896159014135,
+     0.11427868205586089
+    ],
+    [
+     0.7204537419308088,
+     0.20776207450993828,
+     0.016680647118662892
+    ],
+    [
+     0.6604893533533992,
+     0.14851483587814718,
+     0.01653295473583921
+    ]
+   ],
+   "mean_forward_m_s": 0.01624087429474191,
+   "slip_m": 2.1166159595205425,
+   "mechanical_work_j": 90.9000244290208,
+   "max_clearance_m": 0.2883814155120728,
+   "supply_scale": 0.9087467805898193,
+   "pack_voltage_proxy_v": 7.269974244718554,
+   "interleg_peak_m": 0.00011838799058055006,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 1435,
+   "sole_top_peak_m": 0.004610251093017253,
+   "body_z_m": 0.2349482275678415,
+   "body_target_z_m": 0.2729999999999997,
+   "body_height_range_m": 0.1624404020696012,
+   "max_lateral_com_m": 0.07411172317413112,
+   "supporting_feet": 3,
+   "gait": "wave",
+   "approach_x_m": 0.36179138377327724,
+   "approach_speed_m_s": 0.09470978632808304,
+   "precision_speed_m_s": 0.010905323494326049,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -151.68536650529634,
+   "peak_target_rpy_deg": [
+    8.594366926962348,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 2,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": 0.45369933480839814,
+   "mean_upper_foot_gap_m": 0.47022510641812115,
+   "body_support_s": 0.0,
+   "body_impact": false,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 0.0,
+   "servo_saturation_fraction": 0.12366666666665778
+  },
+  {
+   "seed": 1017310,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 1.0262910574282622,
+   "touchdowns": 119,
+   "feet_xyz_m": [
+    [
+     1.144396775145734,
+     -0.2241802060529601,
+     0.19461655774126607
+    ],
+    [
+     1.0665135978145752,
+     -0.362240864367307,
+     0.20433174704564636
+    ],
+    [
+     0.7087529322233536,
+     -0.23805910124015134,
+     0.017173709666307074
+    ],
+    [
+     1.0868648309873283,
+     0.25411242649267496,
+     0.19613215426550326
+    ],
+    [
+     1.0300185333836502,
+     0.21541853123754798,
+     0.18386587320156733
+    ],
+    [
+     0.675524687244849,
+     0.20811876753938197,
+     0.01688342582912937
+    ]
+   ],
+   "mean_forward_m_s": 0.017104850957137704,
+   "slip_m": 2.4153827408334685,
+   "mechanical_work_j": 105.82214900446992,
+   "max_clearance_m": 0.2711355054521886,
+   "supply_scale": 0.9220777874217406,
+   "pack_voltage_proxy_v": 7.376622299373925,
+   "interleg_peak_m": 0.0002651190637911554,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 1319,
+   "sole_top_peak_m": 0.003906207632068736,
+   "body_z_m": 0.24848745663706792,
+   "body_target_z_m": 0.2729999999999997,
+   "body_height_range_m": 0.15787589642717104,
+   "max_lateral_com_m": 0.06668415228522061,
+   "supporting_feet": 4,
+   "gait": "wave",
+   "approach_x_m": 0.36834162459015674,
+   "approach_speed_m_s": 0.09493340839952494,
+   "precision_speed_m_s": 0.011723974213080995,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -151.15852009506284,
+   "peak_target_rpy_deg": [
+    7.575673746799149,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 3,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": 0.16866169179380694,
+   "mean_upper_foot_gap_m": 0.4632391773364674,
+   "body_support_s": 0.0,
+   "body_impact": false,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 0.0,
+   "servo_saturation_fraction": 0.15575925925926495
+  },
+  {
+   "seed": 1017311,
+   "steps": 782,
+   "success": false,
+   "fallen": true,
+   "chassis_hit": true,
+   "out": false,
+   "progress_m": 0.8816936397642912,
+   "touchdowns": 51,
+   "feet_xyz_m": [
+    [
+     0.9587607231181464,
+     -0.23608831051444729,
+     0.016994684914778735
+    ],
+    [
+     0.7327854825579507,
+     -0.2850926378789438,
+     0.016769651405275032
+    ],
+    [
+     0.5931083819236163,
+     -0.23413132649033352,
+     0.07104103662611982
+    ],
+    [
+     0.8085441850211262,
+     0.28210843339938996,
+     0.01566925401840233
+    ],
+    [
+     0.753071590656836,
+     0.2573992521546977,
+     0.01612603731243467
+    ],
+    [
+     0.4994921051128371,
+     0.304347760479024,
+     0.25663881318905457
+    ]
+   ],
+   "mean_forward_m_s": 0.0563742736422181,
+   "slip_m": 0.9798920716195317,
+   "mechanical_work_j": 44.70839221151849,
+   "max_clearance_m": 0.23863881318905458,
+   "supply_scale": 0.9177085962120206,
+   "pack_voltage_proxy_v": 7.341668769696165,
+   "interleg_peak_m": 0.0008478576169297623,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 0,
+   "sole_top_peak_m": 0.0,
+   "body_z_m": 0.09026509723443941,
+   "body_target_z_m": 0.1728459328163707,
+   "body_height_range_m": 0.03708201271645885,
+   "max_lateral_com_m": 0.036128263455783,
+   "supporting_feet": 3,
+   "gait": "wave",
+   "approach_x_m": 0.36477262430206947,
+   "approach_speed_m_s": 0.09450067987100245,
+   "precision_speed_m_s": 0.043881240701377056,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -148.31371121547727,
+   "peak_target_rpy_deg": [
+    4.3373205801297985,
+    22.597455439959706,
+    0.0
+   ],
+   "peak_upper_contacts": 0,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": true,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 1.9511880468862386,
+   "servo_saturation_fraction": 0.10038363171355523
+  },
+  {
+   "seed": 1017312,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 0.7629940182878105,
+   "touchdowns": 53,
+   "feet_xyz_m": [
+    [
+     1.1311521601462768,
+     -0.11338127946873648,
+     0.19667265380079577
+    ],
+    [
+     0.7197687290997753,
+     -0.17102284507639343,
+     0.01567820287787311
+    ],
+    [
+     0.5476833059930276,
+     -0.15016693027350425,
+     0.03981864380997646
+    ],
+    [
+     0.8296197474153841,
+     0.500145897505798,
+     0.02478635422390102
+    ],
+    [
+     0.7665658227041978,
+     0.20659020910175716,
+     0.04089267813383753
+    ],
+    [
+     0.3460832012207081,
+     0.33035866624767307,
+     0.024615234359770456
+    ]
+   ],
+   "mean_forward_m_s": 0.012716566971463509,
+   "slip_m": 1.0849801742092013,
+   "mechanical_work_j": 58.31915903455246,
+   "max_clearance_m": 0.31051049067293646,
+   "supply_scale": 0.993998441827098,
+   "pack_voltage_proxy_v": 7.951987534616784,
+   "interleg_peak_m": 0.0,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 0,
+   "sole_top_peak_m": 0.0023183159309500927,
+   "body_z_m": 0.1464108158094629,
+   "body_target_z_m": 0.1909999999999999,
+   "body_height_range_m": 0.08548642646569397,
+   "max_lateral_com_m": 0.09828235450939096,
+   "supporting_feet": 2,
+   "gait": "wave",
+   "approach_x_m": 0.3705192699347642,
+   "approach_speed_m_s": 0.09500494100891389,
+   "precision_speed_m_s": 0.006995984819127386,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -150.3315856373901,
+   "peak_target_rpy_deg": [
+    4.3540329496575385,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 1,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": false,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 0.0,
+   "servo_saturation_fraction": 0.10418518518518262
+  },
+  {
+   "seed": 1017313,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 0.7825330712952695,
+   "touchdowns": 53,
+   "feet_xyz_m": [
+    [
+     1.1753942067709104,
+     -0.09464620458891287,
+     0.19673144498558756
+    ],
+    [
+     0.7406356100635488,
+     -0.1832047526217074,
+     0.015940162475623354
+    ],
+    [
+     0.5796600197705587,
+     -0.1486947112888501,
+     0.0381132454469672
+    ],
+    [
+     0.7685049570555498,
+     0.507281806282715,
+     0.12015567298112237
+    ],
+    [
+     0.7846071350163686,
+     0.2039514178533283,
+     0.03650540751348677
+    ],
+    [
+     0.3616707784312362,
+     0.2899940945076561,
+     0.017256065543452354
+    ]
+   ],
+   "mean_forward_m_s": 0.013042217854921158,
+   "slip_m": 1.4637488128224208,
+   "mechanical_work_j": 72.16287329876067,
+   "max_clearance_m": 0.2549259314270528,
+   "supply_scale": 0.9525122302040963,
+   "pack_voltage_proxy_v": 7.62009784163277,
+   "interleg_peak_m": 0.0,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 0,
+   "sole_top_peak_m": 0.002338204679679639,
+   "body_z_m": 0.1456085551352471,
+   "body_target_z_m": 0.1909999999999999,
+   "body_height_range_m": 0.07511511498265633,
+   "max_lateral_com_m": 0.08728716671891046,
+   "supporting_feet": 3,
+   "gait": "wave",
+   "approach_x_m": 0.37184122033014466,
+   "approach_speed_m_s": 0.09485745416585323,
+   "precision_speed_m_s": 0.007323321165569273,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -150.63666496750614,
+   "peak_target_rpy_deg": [
+    4.359400321824164,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 1,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": false,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 0.0,
+   "servo_saturation_fraction": 0.13537037037036329
+  },
+  {
+   "seed": 1017314,
+   "steps": 994,
+   "success": false,
+   "fallen": true,
+   "chassis_hit": true,
+   "out": false,
+   "progress_m": 0.8924789953021224,
+   "touchdowns": 48,
+   "feet_xyz_m": [
+    [
+     1.01766547547186,
+     -0.3603230884061692,
+     0.016090305216634522
+    ],
+    [
+     0.727066154318839,
+     -0.302329389206504,
+     0.016556187591835178
+    ],
+    [
+     0.6412767492341704,
+     -0.19881773010567244,
+     0.017993543654956506
+    ],
+    [
+     0.8246155454298951,
+     0.3312210584772383,
+     0.014931532325057117
+    ],
+    [
+     0.7762027863102865,
+     0.3027619358370914,
+     0.015787640407239983
+    ],
+    [
+     0.4536180756454757,
+     0.2547058752354352,
+     0.22081658343894253
+    ]
+   ],
+   "mean_forward_m_s": 0.04489330962284318,
+   "slip_m": 1.318575947179967,
+   "mechanical_work_j": 55.27922829066268,
+   "max_clearance_m": 0.20281658343894254,
+   "supply_scale": 0.9921053164736269,
+   "pack_voltage_proxy_v": 7.936842531789015,
+   "interleg_peak_m": 0.0,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 677,
+   "sole_top_peak_m": 0.0,
+   "body_z_m": 0.1119983249660672,
+   "body_target_z_m": 0.19099999999175366,
+   "body_height_range_m": 0.07406957501500466,
+   "max_lateral_com_m": 0.04854702412745461,
+   "supporting_feet": 4,
+   "gait": "wave",
+   "approach_x_m": 0.36179637774636886,
+   "approach_speed_m_s": 0.09372963154051007,
+   "precision_speed_m_s": 0.03312625577751271,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -148.2697446832122,
+   "peak_target_rpy_deg": [
+    4.440471367416196,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 0,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": true,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 1.593155942808211,
+   "servo_saturation_fraction": 0.11245249273418284
+  },
+  {
+   "seed": 1017315,
+   "steps": 795,
+   "success": false,
+   "fallen": true,
+   "chassis_hit": true,
+   "out": false,
+   "progress_m": 0.8918865596020055,
+   "touchdowns": 51,
+   "feet_xyz_m": [
+    [
+     0.9914971620609294,
+     -0.23714086316007066,
+     0.014368023794498808
+    ],
+    [
+     0.7277409285728905,
+     -0.2951494477941723,
+     0.01728109062355032
+    ],
+    [
+     0.6117346604783704,
+     -0.21683687120297215,
+     0.03462968223746407
+    ],
+    [
+     0.8504304813355582,
+     0.26297254112264934,
+     0.015786899050115794
+    ],
+    [
+     0.7734099291891838,
+     0.26754795415736804,
+     0.016476209372305844
+    ],
+    [
+     0.4876526358915123,
+     0.26402916807888177,
+     0.2302134680392514
+    ]
+   ],
+   "mean_forward_m_s": 0.05609349431459154,
+   "slip_m": 1.05653944414058,
+   "mechanical_work_j": 48.10694185799283,
+   "max_clearance_m": 0.21221346803925142,
+   "supply_scale": 0.8655127408190466,
+   "pack_voltage_proxy_v": 6.924101926552373,
+   "interleg_peak_m": 0.0,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 0,
+   "sole_top_peak_m": 0.0,
+   "body_z_m": 0.09714124760372868,
+   "body_target_z_m": 0.18432826706349623,
+   "body_height_range_m": 0.045547013491097785,
+   "max_lateral_com_m": 0.03119687562198407,
+   "supporting_feet": 3,
+   "gait": "wave",
+   "approach_x_m": 0.358433518774801,
+   "approach_speed_m_s": 0.09383076407717303,
+   "precision_speed_m_s": 0.04416001993602686,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -148.14454082236745,
+   "peak_target_rpy_deg": [
+    4.400015205964955,
+    27.27279104822724,
+    0.0
+   ],
+   "peak_upper_contacts": 0,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": true,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 2.146071859099326,
+   "servo_saturation_fraction": 0.1185185185185192
+  },
+  {
+   "seed": 1017316,
+   "steps": 819,
+   "success": false,
+   "fallen": true,
+   "chassis_hit": true,
+   "out": false,
+   "progress_m": 0.8828679998611166,
+   "touchdowns": 56,
+   "feet_xyz_m": [
+    [
+     0.9496262531531385,
+     -0.3371003330873642,
+     0.017958935674293505
+    ],
+    [
+     0.716682547722976,
+     -0.29817859712484307,
+     0.01670646830145102
+    ],
+    [
+     0.5818034395564118,
+     -0.2514931484848015,
+     0.05139667897940793
+    ],
+    [
+     0.7859326468247881,
+     0.30399458005614954,
+     0.016729729361152815
+    ],
+    [
+     0.7387428907274868,
+     0.26595874463948516,
+     0.0161690843930824
+    ],
+    [
+     0.4928007187795981,
+     0.27613008036649606,
+     0.27115199291477304
+    ]
+   ],
+   "mean_forward_m_s": 0.053899145290666466,
+   "slip_m": 1.297564022739959,
+   "mechanical_work_j": 52.10652311125032,
+   "max_clearance_m": 0.258148135256917,
+   "supply_scale": 0.8995352272174371,
+   "pack_voltage_proxy_v": 7.1962818177394965,
+   "interleg_peak_m": 0.001074466527491014,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 0,
+   "sole_top_peak_m": 0.0,
+   "body_z_m": 0.08420305761305026,
+   "body_target_z_m": 0.19058160198893248,
+   "body_height_range_m": 0.043274888318812335,
+   "max_lateral_com_m": 0.03725243000021975,
+   "supporting_feet": 3,
+   "gait": "wave",
+   "approach_x_m": 0.36233701736210683,
+   "approach_speed_m_s": 0.09435859827138199,
+   "precision_speed_m_s": 0.04150964772719377,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -150.5459792756931,
+   "peak_target_rpy_deg": [
+    4.340603470205213,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 0,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": true,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 1.4407128944737015,
+   "servo_saturation_fraction": 0.1272554605887939
+  },
+  {
+   "seed": 1017317,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 1.1883130506549657,
+   "touchdowns": 105,
+   "feet_xyz_m": [
+    [
+     1.0271458220965934,
+     -0.29168184457474683,
+     0.1821058981914547
+    ],
+    [
+     0.9844905911620865,
+     -0.2641217125958266,
+     0.14426457474936966
+    ],
+    [
+     0.8192912653869922,
+     -0.12686029705608254,
+     0.01623747587669766
+    ],
+    [
+     1.2998560476917376,
+     0.1567717865552823,
+     0.19279519238655543
+    ],
+    [
+     1.16268310048329,
+     0.2402555832341302,
+     0.2194706182161629
+    ],
+    [
+     1.0987181889212112,
+     0.2709874759118288,
+     0.23445381286390818
+    ]
+   ],
+   "mean_forward_m_s": 0.019805217510916094,
+   "slip_m": 2.6608847389739716,
+   "mechanical_work_j": 143.65214648738475,
+   "max_clearance_m": 0.3731975551710151,
+   "supply_scale": 0.9969536471312219,
+   "pack_voltage_proxy_v": 7.975629177049775,
+   "interleg_peak_m": 0.0007757746573600316,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0,
+   "riser_contact_substeps": 1352,
+   "sole_top_peak_m": 0.005525969589807538,
+   "body_z_m": 0.25723385588417824,
+   "body_target_z_m": 0.2749999999999998,
+   "body_height_range_m": 0.1826309567794595,
+   "max_lateral_com_m": 0.04521209731813766,
+   "supporting_feet": 2,
+   "gait": "wave",
+   "approach_x_m": 0.3685304904210452,
+   "approach_speed_m_s": 0.09498208516006319,
+   "precision_speed_m_s": 0.01460767213531576,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -151.19150254261766,
+   "peak_target_rpy_deg": [
+    5.416670173247052,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 4,
+   "forward_transfer_m": 0.026,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": 0.04894001371718692,
+   "mean_upper_foot_gap_m": 0.37472294228676883,
+   "body_support_s": 2.02,
+   "body_impact": false,
+   "body_support_weight": 0.5254705256341176,
+   "body_impact_weight": 0.0,
+   "servo_saturation_fraction": 0.17587037037037276
+  },
+  {
+   "seed": 1017318,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 0.38079776839852153,
+   "touchdowns": 188,
+   "feet_xyz_m": [
+    [
+     0.7356322903874023,
+     -0.1864072174877497,
+     0.016514508857907298
+    ],
+    [
+     0.5566509036555081,
+     -0.20811282932545272,
+     0.01633014226994549
+    ],
+    [
+     0.39022348110239535,
+     -0.27540796939220924,
+     0.01725529703607892
+    ],
+    [
+     0.8338204693193251,
+     0.21224417939695248,
+     0.09582815315233942
+    ],
+    [
+     0.6278053722765763,
+     0.3453250876580293,
+     0.08378198630929917
+    ],
+    [
+     0.46325137955329215,
+     0.4517127943071864,
+     0.025788252962368703
+    ]
+   ],
+   "mean_forward_m_s": 0.006346629473308692,
+   "slip_m": 6.073313875427596,
+   "mechanical_work_j": 220.4045481497445,
+   "max_clearance_m": 0.2290711186822075,
+   "supply_scale": 0.9365493460309994,
+   "pack_voltage_proxy_v": 7.492394768247995,
+   "interleg_peak_m": 0.0,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 0.0008292855654175035,
+   "riser_contact_substeps": 506,
+   "sole_top_peak_m": 0.0,
+   "body_z_m": 0.06380152873051187,
+   "body_target_z_m": 0.11709762371779779,
+   "body_height_range_m": 0.12871059378534103,
+   "max_lateral_com_m": 0.10260109542081866,
+   "supporting_feet": 3,
+   "gait": "wave",
+   "approach_x_m": 0.35514937063670277,
+   "approach_speed_m_s": 0.09346036069386915,
+   "precision_speed_m_s": 0.00045637718437399936,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -151.38873577317509,
+   "peak_target_rpy_deg": [
+    4.448768213995737,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 0,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": false,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 0.06641934569462787,
+   "servo_saturation_fraction": 0.22970370370370571
+  },
+  {
+   "seed": 1017319,
+   "steps": 3000,
+   "success": false,
+   "fallen": false,
+   "chassis_hit": false,
+   "out": false,
+   "progress_m": 0.5871983388649493,
+   "touchdowns": 165,
+   "feet_xyz_m": [
+    [
+     0.9073913869911245,
+     -0.2367803618959745,
+     0.0359231631410146
+    ],
+    [
+     0.5993708865184553,
+     -0.2951075793839069,
+     0.015561171635681798
+    ],
+    [
+     0.4698161264180799,
+     -0.2755094723582537,
+     0.015937355218315713
+    ],
+    [
+     1.0087251427098858,
+     0.14988123796000205,
+     0.016507702582547037
+    ],
+    [
+     0.7698089142113909,
+     0.29481338847091704,
+     0.01650179341102022
+    ],
+    [
+     0.19420337378551303,
+     0.28205464671876257,
+     0.017858163867551922
+    ]
+   ],
+   "mean_forward_m_s": 0.009786638981082488,
+   "slip_m": 6.686488076962573,
+   "mechanical_work_j": 251.11026525392649,
+   "max_clearance_m": 0.2990530035152875,
+   "supply_scale": 0.8632137106373965,
+   "pack_voltage_proxy_v": 6.905709685099172,
+   "interleg_peak_m": 0.0,
+   "rear_step_peak_m": 0.0,
+   "interleg_overlap_samples": 0,
+   "rear_step_overlap_samples": 0,
+   "leg_stair_peak_m": 3.722235734926471e-05,
+   "riser_contact_substeps": 1179,
+   "sole_top_peak_m": 0.004217078104366428,
+   "body_z_m": 0.07193467891836271,
+   "body_target_z_m": 0.11686852232479479,
+   "body_height_range_m": 0.14712179968610611,
+   "max_lateral_com_m": 0.11602723251998655,
+   "supporting_feet": 5,
+   "gait": "wave",
+   "approach_x_m": 0.3598609100609016,
+   "approach_speed_m_s": 0.09371377866169313,
+   "precision_speed_m_s": 0.0040480311396732145,
+   "rear_riser_contact_steps": 0,
+   "min_knee_deg": -151.17299286416036,
+   "peak_target_rpy_deg": [
+    8.594366926962348,
+    28.64788975654116,
+    0.0
+   ],
+   "peak_upper_contacts": 1,
+   "forward_transfer_m": 0.0,
+   "ledge_index": 0,
+   "min_upper_foot_gap_m": null,
+   "mean_upper_foot_gap_m": null,
+   "body_support_s": 0.0,
+   "body_impact": false,
+   "body_support_weight": 0.0,
+   "body_impact_weight": 0.385137962364548,
+   "servo_saturation_fraction": 0.3156111111111125
+  }
+ ],
+ "passed_gate": false,
+ "wall_s": 57.5
+}
