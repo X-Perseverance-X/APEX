@@ -374,6 +374,39 @@ eğitim 2/10, 15 cm daha yüksek engel deneyi 0/10 sonuç verdi.
 taraftaki gövdeyi yükseltti ve yaw hedefiyle o tarafı öne aldı.
 Ayrı değerlendirmede bu profil 0/10 kaldı.
 
+#### Öne yük aktarımı ve daha yüksek basamaklar
+
+`hybrid-transfer-up-12` ve daha yüksek aktarım parkurlarında
+arka ayak geçişi için ön ve orta dört ayak üst yüzeye basmış
+olmalıdır. Kontrolcü bu dört ayağı yerinde tutarken arka
+ayakları sırayla kaldırır. Kütle merkezi hedefini öne doğru
+en fazla 26 mm kaydırır ve yeni hedefi destek çokgeninin
+içine geri taşır. Hedef kayması gövdenin simülasyon kütlesini
+veya ataletini değiştirmez.
+
+`hybrid-probe-up-*` parkurlarında basamağa yaklaşınca ayrıca
+iki ön ayağın üst yüzeye yerleşmesine öncelik verilir. Eğitim
+üst yüzeye gerçekten basan her farklı ayak için bölüm başına
+bir kez ödül verir. Çıkış denemeleri 11, 12, 13, 14, 16, 18 ve
+20 cm olarak düzenlendi. Sonraki aşamaya geçiş için başarı,
+düşme, diz açıklığı ve örtüşme ölçütleri birlikte uygulanır.
+
+```powershell
+& $py -m apex_rl.cli course-view --course hybrid-transfer-up-12 --randomize --seed 1008380
+& $py -m apex_rl.cli course-view --course hybrid-probe-up-14 --randomize --seed 1008620
+```
+
+Bu iki tohum, başarılı örneklerdir. 12 cm ilk aktarım modeli
+7/10, referans 8/10 tamamlandı. Düşme sınırı sağlanmadı.
+14 cm referans denetimi ilk grupta 5/5, bağımsız tekrarda
+4/10 tamamlandı. 14 cm PPO politikası 1/10 tamamlandı.
+16 cm 1/5, 18 ve 20 cm 0/5 kaldı.
+20 cm'de üst yüzeyde birden fazla ayağı aynı anda tutamadı.
+Simülasyonda gövde içi kütle merkezini öne kaydıran üçer
+denemelik karşılaştırmada başarı artmadı.
+Toplam 229.376 yeni simülasyon geçişi toplandı. Bu koşu sonunda
+güvenilir çıkış eşiğini koruyan yükseklik 10 cm'dir.
+
 #### Önceki sabit desenli parkurlar
 
 | Seviye | Parkur | Başarı |

@@ -55,6 +55,8 @@ def training_recorder(stage: Path):
                             "approach_speed_m_s",
                             "precision_speed_m_s",
                             "min_knee_deg",
+                            "peak_upper_contacts",
+                            "forward_transfer_m",
                         )
                         if key in info
                     }
@@ -91,6 +93,8 @@ def training_recorder(stage: Path):
                     "max_lateral_com_m",
                     "rear_riser_contact_steps",
                     "min_knee_deg",
+                    "peak_upper_contacts",
+                    "forward_transfer_m",
                 ):
                     if field in self.completed[-1]:
                         row[field] = float(np.mean([episode[field] for episode in self.completed]))
@@ -252,6 +256,11 @@ def watch_stage(stage: Path, *, live: bool):
                     f"{row['progress_m']:.2f} m  landings {row['touchdowns']}{body_status}"
                     + (f"  {row['gait'].upper()}" if "gait" in row else "")
                     + (f"  knee {row['min_knee_deg']:.1f} deg" if "min_knee_deg" in row else "")
+                    + (
+                        f"  upper {row['peak_upper_contacts']}/6"
+                        if "peak_upper_contacts" in row
+                        else ""
+                    )
                 )
             replay_help = "" if live else " | R replay"
             window.set_texts(
@@ -338,6 +347,11 @@ def write_report(run: Path) -> Path:
                     f" · en kapalı diz {p['min_knee_deg']:.1f}°"
                     f" · tepe R/P/Y hedefi {roll:.1f}° / {pitch:.1f}° / {yaw:.1f}°"
                 )
+            if "forward_transfer_m" in p:
+                text += (
+                    f" · üst temas en fazla {p['peak_upper_contacts']}/6"
+                    f" · öne ağırlık merkezi hedefi {1000 * p['forward_transfer_m']:.0f} mm"
+                )
             body = "".join(
                 "<tr>"
                 f"<td>{row['seed']}</td>"
@@ -374,9 +388,18 @@ def write_report(run: Path) -> Path:
                 ("optimizer_epochs", "Tamamlanan PPO epoch"),
                 ("rear_riser_contact_steps", "Arka ayak kenar teması, örnek"),
                 ("min_knee_deg", "En kapalı diz, °"),
+                ("peak_upper_contacts", "Üst yüzeyde en çok ayak"),
+                ("forward_transfer_m", "Öne ağırlık merkezi hedefi, m"),
             )
             if body_control or key not in ("body_height_range_m", "max_lateral_com_m")
-            if key not in ("optimizer_epochs", "rear_riser_contact_steps", "min_knee_deg")
+            if key
+            not in (
+                "optimizer_epochs",
+                "rear_riser_contact_steps",
+                "min_knee_deg",
+                "peak_upper_contacts",
+                "forward_transfer_m",
+            )
             or any(key in row for row in rows)
         )
         sample = (

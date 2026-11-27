@@ -28,6 +28,8 @@ class Course:
     attitude_control: bool = False
     steep_approach: bool = False
     diagonal_transfer: bool = False
+    ledge_transfer: bool = False
+    fore_probe: bool = False
 
     @property
     def start_height(self) -> float:
@@ -280,6 +282,28 @@ COURSES = {
     ),
 }
 
+for height_cm in (12, 14, 16, 18, 20):
+    COURSES[f"hybrid-transfer-up-{height_cm:02}"] = Course(
+        height_cm / 100,
+        1,
+        edge_x=1.05,
+        link_contacts=True,
+        attitude_control=True,
+        steep_approach=True,
+        ledge_transfer=True,
+    )
+for height_cm in (11, 12, 13, 14, 16, 18, 20):
+    COURSES[f"hybrid-probe-up-{height_cm:02}"] = Course(
+        height_cm / 100,
+        1,
+        edge_x=1.05,
+        link_contacts=True,
+        attitude_control=True,
+        steep_approach=True,
+        ledge_transfer=True,
+        fore_probe=True,
+    )
+
 TRIPOD = np.array([0, 1, 0, 1, 0, 1], dtype=float) * 0.5
 
 
@@ -455,6 +479,7 @@ class LocomotionEnv(Meta1Env):
         self.max_lateral_com = 0.0
         self.min_knee_position = float(self.data.qpos[self._leg_positions][2::3].min())
         self.attitude_peak = np.zeros(3)
+        self.upper_rewarded = np.zeros(6, dtype=bool)
         return self._observation(), {"course": self.course_name}
 
     def _targets(self, residual: np.ndarray) -> np.ndarray:
@@ -643,6 +668,12 @@ class LocomotionEnv(Meta1Env):
             + 5.0 * success
             - 3.0 * (fallen or out)
         )
+        if self.course.ledge_transfer:
+            upper = self.body_motion.upper_contacts(soles, contact)
+            # Reward only the first secure placement of each foot. Repeated
+            # contacts at the same edge cannot earn the placement bonus again.
+            reward += 0.42 * np.count_nonzero(upper & ~self.upper_rewarded)
+            self.upper_rewarded |= upper
         if self.link_metrics is not None:
             info_contact = self.link_metrics.info()
         else:
@@ -691,6 +722,9 @@ class LocomotionEnv(Meta1Env):
         if self.attitude_control:
             info["min_knee_deg"] = math.degrees(self.min_knee_position)
             info["peak_target_rpy_deg"] = np.rad2deg(self.attitude_peak).tolist()
+        if self.course.ledge_transfer:
+            info["peak_upper_contacts"] = self.body_motion.peak_upper_contacts
+            info["forward_transfer_m"] = self.body_motion.transfer_peak_m
         if self.record_pose and (
             self.steps % 5 == 0 or success or fallen or out or self.steps == self.episode_steps
         ):

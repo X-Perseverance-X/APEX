@@ -89,6 +89,12 @@ REPLAY_MODELS = {
         "hybrid-steep-up-12",
         "hybrid-steep-up-15",
     },
+    "1500ef8a5ddebfe6b1481e1ab9112cd807ba7eda85e74fa914a6737d70fb96b8": {
+        "hybrid-diagonal-up-12",
+    },
+    "5938ddbb3a55a04eb745ada63e55bde6df5524496b780654d9967f500dc971c7": {
+        "hybrid-transfer-up-12",
+    },
 }
 
 
@@ -214,6 +220,9 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
         body_stats["peak_target_rpy_deg"] = np.max(
             [item["peak_target_rpy_deg"] for item in outcomes], axis=0
         ).tolist()
+    if env.course.ledge_transfer:
+        body_stats["peak_upper_contacts"] = max(item["peak_upper_contacts"] for item in outcomes)
+        body_stats["forward_transfer_m"] = max(item["forward_transfer_m"] for item in outcomes)
     return {
         "episodes": episodes,
         "successes": sum(item["success"] for item in outcomes),
@@ -314,6 +323,17 @@ def _view(env, policy, args) -> None:
                     details += f"\nRPY targets {roll:+.1f} / {pitch:+.1f} / {yaw:+.1f} deg"
                     details += "\nRPY measured " + " / ".join(f"{axis:+.1f}" for axis in measured)
                     details += f"\nKnee minimum {info['min_knee_deg']:.1f} deg"
+                if env.course.ledge_transfer:
+                    c = env.body_motion
+                    phase = (
+                        "rear transfer"
+                        if c.rear_transfer
+                        else "front setup"
+                        if c.fore_probe
+                        else "wave"
+                    )
+                    details += f"\n{phase} | upper contacts peak {info['peak_upper_contacts']}/6"
+                    details += f" | CoM shift {1000 * info['forward_transfer_m']:.0f} mm"
                 window.set_texts((None, mujoco.mjtGridPos.mjGRID_TOPLEFT, "Gait", details))
             window.sync()
             if done or truncated:

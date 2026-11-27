@@ -241,3 +241,22 @@ def test_attitude_policy_controls_roll_and_yaw_independently():
         np.testing.assert_allclose(obs[-2:], [env.body_motion.roll, env.body_motion.yaw])
     finally:
         env.close()
+
+
+def test_rear_transfer_keeps_the_four_upper_footholds_planted():
+    env = LocomotionEnv("hybrid-transfer-up-12")
+    try:
+        env.reset(seed=1008380)
+        saw_transfer = False
+        for _ in range(env.episode_steps):
+            _, _, done, truncated, info = env.step(np.zeros(8))
+            if env.body_motion.rear_transfer:
+                saw_transfer = True
+                assert env.body_motion.leg in (None, 2, 5)
+            if done or truncated:
+                break
+        assert saw_transfer and info["success"]
+        assert info["peak_upper_contacts"] == 6
+        assert 0 < info["forward_transfer_m"] <= 0.026
+    finally:
+        env.close()

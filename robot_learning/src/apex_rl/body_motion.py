@@ -11,6 +11,8 @@ from .ascent_pose import attitude_matrix
 WAVE = (0, 3, 1, 4, 2, 5)
 DOWN_WAVE = (2, 5, 1, 4, 0, 3)
 DT = 0.02
+UPPER_SUPPORT = (0, 1, 3, 4)
+REAR_SUPPORT = (2, 5)
 
 
 def ease(x):
@@ -85,6 +87,10 @@ class BodyMotion:
         self.swing_height = 0.04
         self.rear_edge_swing = False
         self.support_count = 0
+        self.rear_transfer = False
+        self.fore_probe = False
+        self.transfer_peak_m = 0.0
+        self.peak_upper_contacts = 0
 
     def contacts(self):
         contact = self.env.data.contact
@@ -104,6 +110,13 @@ class BodyMotion:
         step = np.isin(side_pairs, self.env._terrain_ids)
         return bool(np.any(np.any(rear, axis=1) & np.any(step, axis=1)))
 
+    def upper_contacts(self, feet, contacts):
+        return (
+            contacts
+            & (feet[:, 0] >= self.terrain.edge_x + 0.017)
+            & (feet[:, 2] >= self.terrain.rise_m + self.radius - 0.012)
+        )
+
     def _pick_landing(self, foot, support, pace):
         course = self.terrain
         actual = self.env.data.qpos[:3]
@@ -122,6 +135,11 @@ class BodyMotion:
             if abs(x - edge) < edge_margin:
                 x = edge + edge_margin
         max_x = min(actual[0], float(support[0]) + 0.027) + self.neutral_xy[self.leg, 0] + 0.185
+        if self.fore_probe and self.leg in (0, 3):
+            x = max(x, course.edge_x + 0.052)
+        if self.rear_transfer and self.leg in REAR_SUPPORT:
+            x = max(x, course.edge_x + 0.065)
+            y += math.copysign(0.034, y)
         x = min(x, max_x)
         if self.env.rubble:
             y = self.neutral_xy[self.leg, 1] + course.route_y(actual[0] + 0.09)
@@ -165,23 +183,44 @@ class BodyMotion:
         self.elapsed += DT
         contacts = self.contacts()
         feet = data.xpos[env._foot_ids].copy()
+        ledge = env.course.ledge_transfer
+        upper = self.upper_contacts(feet, contacts) if ledge else None
+        low_probe = env.course.fore_probe and self.terrain.rise_m <= 0.12
+        if ledge:
+            self.peak_upper_contacts = max(self.peak_upper_contacts, int(upper.sum()))
+            if self.leg is None:
+                lead = 0.315 if low_probe else 0.280
+                self.fore_probe = (
+                    env.course.fore_probe
+                    and not (upper[0] and upper[3])
+                    and self.terrain.edge_x - lead <= data.qpos[0] < self.terrain.edge_x
+                )
+                self.rear_transfer = (
+                    all(upper[i] for i in UPPER_SUPPORT)
+                    and not all(upper[i] for i in REAR_SUPPORT)
+                    and data.qpos[0] >= self.terrain.edge_x + 0.16
+                )
         steep_descent = env.hybrid and self.terrain.descending and self.terrain.rise_m >= 0.08
         pace = (0.032 + 0.010 * residual[0]) if steep_descent else (0.037 + 0.012 * residual[0])
         if env.short_climb:
             pace = 0.033 + 0.010 * residual[0]
         order = DOWN_WAVE if steep_descent else WAVE
-        duration = 0.80
+        duration = 1.02 if self.rear_transfer else 0.80
         if (
             self.leg is not None
             and self.elapsed >= duration
             and (contacts[self.leg] or self.elapsed >= duration + 0.22)
         ):
-            self.anchors[self.leg] = feet[self.leg] if contacts[self.leg] else self.landing
+            self.anchors[self.leg] = feet[self.leg] if contacts[self.leg] or ledge else self.landing
             self.leg = None
             self.next_leg += 1
             self.elapsed = 0.0
         if self.leg is None and self.elapsed >= self.settle:
             candidate = order[self.next_leg % len(order)]
+            if self.fore_probe:
+                candidate = 3 if upper[0] else 0
+            if self.rear_transfer:
+                candidate = next((i for i in REAR_SUPPORT if not upper[i]), candidate)
             stance = contacts.copy()
             stance[candidate] = False
             if stance.sum() >= 3:
@@ -215,6 +254,10 @@ class BodyMotion:
         com_offset = data.subtree_com[self.base_id, :2] - root[:2]
         xy = self.body[:2].copy()
         self.path_x = min(self.path_x + DT * pace, root[0] + (0.018 if env.short_climb else 0.022))
+        if self.fore_probe:
+            self.path_x = min(self.path_x, self.terrain.edge_x - (0.260 if low_probe else 0.238))
+        if self.rear_transfer:
+            self.path_x = min(self.path_x, self.terrain.edge_x + 0.27)
         tall_ascent = env.contact_ascent and self.terrain.rise_m >= 0.07
         steep = env.course.steep_approach
         preview = 0.29 if steep else (0.24 if tall_ascent else 0.17)
@@ -234,6 +277,12 @@ class BodyMotion:
             bounded = support_target(support[:, :2], np.array(target) + com_offset)
             if bounded is not None:
                 xy = bounded - com_offset
+            if self.rear_transfer:
+                shifted = support_target(support[:, :2], xy + com_offset + np.array([0.026, 0.0]))
+                if shifted is not None:
+                    transfer = float(np.clip(shifted[0] - xy[0] - com_offset[0], 0.0, 0.026))
+                    self.transfer_peak_m = max(self.transfer_peak_m, transfer)
+                    xy = shifted - com_offset
             levels = support[:, 2] - self.radius
             support_height = (
                 0.45 * float(levels.mean()) + 0.55 * float(levels.max())
@@ -250,6 +299,10 @@ class BodyMotion:
             # Raise the leading low-mounted hardware before it reaches the riser.
             ahead = self.terrain.height(root[0] + 0.24, root[1])
             z = max(z, ahead + (0.094 if tall_ascent else 0.076))
+        if self.fore_probe:
+            z = env.stand_height + (0.051 if low_probe else 0.059)
+        if self.rear_transfer:
+            z = max(z, self.terrain.rise_m + env.stand_height - 0.009)
         target = np.array([*xy, z])
         rate = np.clip(5 * (target - self.body), [-0.065, -0.065, -0.05], [0.08, 0.065, 0.05])
         self.velocity += np.clip(rate - self.velocity, -0.50 * DT, 0.50 * DT)
@@ -259,6 +312,10 @@ class BodyMotion:
         pitch = float(
             np.clip((front - centre) * pitch_gain + 0.16 * residual[5], -0.14, pitch_limit)
         )
+        if self.fore_probe:
+            pitch = 0.36 if low_probe else 0.28
+        if self.rear_transfer:
+            pitch = min(pitch, -0.055)
         self.pitch += float(np.clip(pitch - self.pitch, -0.34 * DT, 0.34 * DT))
         if env.attitude_control:
             # Estimate left/right support slope from measured feet, then let
