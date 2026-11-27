@@ -374,6 +374,8 @@ def write_report(run: Path) -> Path:
                     f" · sert gövde teması {p['body_impacts']}/{p['episodes']}"
                     f" · servo tork sınırı örnekleri {p['mean_servo_saturation_fraction']:.1%}"
                 )
+            if p.get("min_upper_foot_gap_m") is not None:
+                text += f" · üst basamakta ölçülen en yakın iki ayak {100 * p['min_upper_foot_gap_m']:.1f} cm"
             body = "".join(
                 "<tr>"
                 f"<td>{row['seed']}</td>"

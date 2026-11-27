@@ -8,6 +8,7 @@ import json
 import math
 import platform
 import time
+from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from pathlib import Path
 
@@ -121,6 +122,9 @@ REPLAY_MODELS = {
     "4e1ef836f9951dc3f4cd327094eb93989221c6acde0e90638300de799ec1629a": {
         "hybrid-brace-transfer-up-13",
     },
+    "c2d8cdeff6c918a4a3863050118887def9cacbb39d2c5bda2e0bd107c989679c": {
+        "hybrid-brace-transfer-up-13",
+    },
 }
 
 
@@ -137,6 +141,7 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     bench.add_argument("--course", choices=STAGES)
     bench.add_argument("--run", type=Path)
     bench.add_argument("--episodes", type=int, default=10)
+    bench.add_argument("--eval-workers", type=int, default=1)
     bench.add_argument("--seed", type=int, default=EVALUATION_SEED)
     watch = sub.add_parser(
         "course-watch", help="watch the recorded training workers on separate lanes"
@@ -166,6 +171,7 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     )
     train.add_argument("--gae-lambda", type=float, default=0.95, help="PPO advantage trace decay")
     train.add_argument("--eval-episodes", type=int, default=10)
+    train.add_argument("--eval-workers", type=int, default=1)
     train.add_argument("--eval-seed", type=int, default=EVALUATION_SEED)
     train.add_argument("--seed", type=int, default=42)
     train.add_argument("--resume", type=Path, help="load a previous stage policy and optimizer")
@@ -198,6 +204,7 @@ def _fingerprint(env: LocomotionEnv) -> str:
             "ascent_pose.py",
             "home_stairs.py",
             "body_support.py",
+            "stair_footholds.py",
         )
     ]
     return hashlib.sha256(
@@ -240,7 +247,7 @@ def _action(env: LocomotionEnv, policy, obs: np.ndarray) -> np.ndarray:
     )
 
 
-def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATION_SEED) -> dict:
+def _run_episodes(env, policy, episodes, seed):
     outcomes = []
     for episode in range(episodes):
         obs, _ = env.reset(seed=seed + episode)
@@ -249,6 +256,40 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
             if done or truncated:
                 outcomes.append({"seed": seed + episode, "steps": env.steps, **info})
                 break
+    return outcomes
+
+
+def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATION_SEED) -> dict:
+    return _summarize(env, _run_episodes(env, policy, episodes, seed))
+
+
+def _benchmark_batch(course, body_control, run, count, seed):
+    env = LocomotionEnv(course, body_control=body_control)
+    try:
+        model = None
+        if run is not None:
+            import torch
+
+            torch.set_num_threads(1)
+            model = _read_policy(run, env, exact_course=True)
+        return _run_episodes(env, model, count, seed)
+    finally:
+        env.close()
+
+
+def _benchmark_parallel(env, run, episodes, seed, workers):
+    workers = min(workers, episodes)
+    capacity, remainder = divmod(episodes, workers)
+    batches = [capacity + int(i < remainder) for i in range(workers)]
+    starts = [seed + sum(batches[:i]) for i in range(workers)]
+    score = partial(_benchmark_batch, env.course_name, env.body_motion is not None, run)
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        outcomes = [outcome for batch in pool.map(score, batches, starts) for outcome in batch]
+    return _summarize(env, outcomes)
+
+
+def _summarize(env, outcomes):
+    episodes = len(outcomes)
     body_stats = {}
     if env.body_motion is not None:
         for key in ("body_height_range_m", "max_lateral_com_m"):
@@ -276,6 +317,16 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
     if env.course.ledge_transfer:
         body_stats["peak_upper_contacts"] = max(item["peak_upper_contacts"] for item in outcomes)
         body_stats["forward_transfer_m"] = max(item["forward_transfer_m"] for item in outcomes)
+    if env.course.brace_rear_placement:
+        measured = [item for item in outcomes if item["mean_upper_foot_gap_m"] is not None]
+        body_stats["min_upper_foot_gap_m"] = min(
+            (item["min_upper_foot_gap_m"] for item in measured), default=None
+        )
+        body_stats["mean_upper_foot_gap_m"] = (
+            float(np.mean([item["mean_upper_foot_gap_m"] for item in measured]))
+            if measured
+            else None
+        )
     if env.course.home_stairs is not None:
         body_stats["leg_stair_peak_m"] = max(item["leg_stair_peak_m"] for item in outcomes)
         side_times = env.model.opt.timestep * np.array(
@@ -332,11 +383,18 @@ def _inspect(args) -> None:
     randomized = args.command == "course-bench" or getattr(args, "randomize", False)
     env = env_type(course or "flat", randomize=randomized, body_control=body_control)
     try:
-        policy = _read_policy(args.run, env, exact_course=True) if args.run else None
+        policy = None
         if args.command == "course-bench":
-            report = benchmark(env, policy, args.episodes, seed=args.seed)
+            if args.eval_workers > 1 and not args.camera_gate:
+                report = _benchmark_parallel(
+                    env, args.run, args.episodes, args.seed, args.eval_workers
+                )
+            else:
+                policy = _read_policy(args.run, env, exact_course=True) if args.run else None
+                report = benchmark(env, policy, args.episodes, seed=args.seed)
             print(json.dumps({"course": env.course_name, **report}, indent=2))
         else:
+            policy = _read_policy(args.run, env, exact_course=True) if args.run else None
             _view(env, policy, args)
     finally:
         env.close()
@@ -550,10 +608,21 @@ def _train(args) -> None:
             updated = stage / "manifest.tmp"
             updated.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
             updated.replace(manifest_path)
-            evaluation = benchmark(eval_env, policy, args.eval_episodes, seed=args.eval_seed)
-            baseline = benchmark(eval_env, None, args.eval_episodes, seed=args.eval_seed)
+            if args.eval_workers > 1:
+                vector.close()
+                vector = None
+                evaluation = _benchmark_parallel(
+                    eval_env, stage, args.eval_episodes, args.eval_seed, args.eval_workers
+                )
+                baseline = _benchmark_parallel(
+                    eval_env, None, args.eval_episodes, args.eval_seed, args.eval_workers
+                )
+            else:
+                evaluation = benchmark(eval_env, policy, args.eval_episodes, seed=args.eval_seed)
+                baseline = benchmark(eval_env, None, args.eval_episodes, seed=args.eval_seed)
         finally:
-            vector.close()
+            if vector is not None:
+                vector.close()
             eval_env.close()
         passed = _passed_stage(evaluation, body_support=COURSES[course].body_support)
         baseline_key = "body_reference" if eval_env.body_motion is not None else "tripod"
@@ -571,6 +640,8 @@ def _train(args) -> None:
 
 
 def run_command(args, parser: argparse.ArgumentParser) -> None:
+    if hasattr(args, "eval_workers") and not 1 <= args.eval_workers <= 16:
+        parser.error("--eval-workers must be between 1 and 16")
     if args.command == "course-sensors":
         from .sensor_lab import sensor_report
 
@@ -617,7 +688,9 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
             parser.error("use at least 512 training transitions and 10–100 evaluation episodes")
         hybrid = args.start.startswith("hybrid-")
         if args.through is None:
-            if COURSES[args.start].brace_rear_placement:
+            if COURSES[args.start].spread_footholds:
+                args.through = "hybrid-spread-up-20"
+            elif COURSES[args.start].brace_rear_placement:
                 args.through = "hybrid-brace-transfer-up-20"
             elif hybrid:
                 brace = COURSES[args.start].body_support
@@ -635,6 +708,8 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
             parser.error("body-support courses use a separate policy and curriculum")
         if COURSES[args.start].brace_rear_placement != COURSES[args.through].brace_rear_placement:
             parser.error("use one rear-placement controller family per curriculum run")
+        if COURSES[args.start].spread_footholds != COURSES[args.through].spread_footholds:
+            parser.error("use one foothold planner per curriculum run")
         if COURSES[args.start].body_support and args.eval_episodes < BRACE_EVAL_EPISODES:
             parser.error(
                 f"body-support courses require at least {BRACE_EVAL_EPISODES} evaluation episodes"

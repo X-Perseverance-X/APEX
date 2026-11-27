@@ -546,6 +546,45 @@ sonuçlandı. 14–20 cm'nin her birinde beş bağımsız referans denemesi yap�
 
 - [ANYmal Parkour, ETH Zürich](https://arxiv.org/abs/2306.14874)
 
+### Üst basamakta ayak yerleşimi
+
+`hybrid-spread-up-13` ile `hybrid-spread-up-20` parkurları basış adaylarını
+üst yüzeyde daha öne ve yana arar. Her aday için taban çevresinin aynı
+basamakta kalması, hedefin mevcut eklem sınırları içinde erişilebilir olması
+ve komşu ayak merkezlerine en az 7,5 cm mesafe bırakması kontrol edilir. Yerinde
+ölçülen mesafe süpürme, gövde hareketi ve temas esnemesine bağlıdır. Her bölümde
+üst yüzeyde aynı anda basan ayakların en küçük mesafesi ayrıca kaydedilir.
+
+Basıştan önce kaldırılacak ayak destek hesabından çıkarılır. Kalan temasların
+oluşturduğu destek alanı ve ağırlık merkezinin yatay konumu kontrol edilir.
+Gövde gerektiğinde önce o yöne kayar. Üç ana destek ayağı kalabilir. Kütle,
+servo torku, eklem hızları ve rıht sürtmesi eşikleri korunur. Bu yöntem, ayak
+teması seçimini gövde duruşuyla birlikte ele alan planlama araştırmalarını
+izler. [Bütün gövde planlama](https://onlinelibrary.wiley.com/doi/10.1002/rob.21974),
+[Altı ayaklı destek çokgeni](https://comrob.fel.cvut.cz/papers/ecmr21gaitfree.pdf),
+[Basamak çıkışında gövde duruşu](https://doi.org/10.1002/rob.22037)
+
+```powershell
+& $py -m apex_rl.cli course-train --start hybrid-spread-up-13 --through hybrid-spread-up-20 --timesteps 262144 --envs 8 --eval-workers 6 --eval-episodes 20 --eval-seed 1014200 --seed 6281 --resume robot_learning/experiments/body-support-13/residual-quarter/hybrid-brace-transfer-up-13 --output robot_learning/runs/course-spread-curriculum
+& $py -m apex_rl.cli course-view --course hybrid-spread-up-15 --randomize --seed 1013208
+```
+
+1013208–1013213 tohumlarıyla yapılan eşleştirilmiş 13 cm referans denemelerinde
+minimum ayak aralığı 5,4 cm'den 11,6 cm'ye, dik yüze ortalama temas 0,77 saniyeden
+0,16 saniyeye değişti. Önceki denetleyici 1/6, yeni denetleyici 0/6 tamamladı.
+Yeni denetleyici en fazla dört ayağı üst yüzeye yerleştirdi. Aralık ve temas
+ölçümleri, tamamlanma sayısı ve üstteki ayak sayısıyla birlikte okunmalıdır.
+
+Mevcut PPO kontrol noktasından 262.144 yeni geçişle devam edildi. Ayrı
+1014200–1014219 grubunda önceki politika 1/20 tamamlama ve dört düşme,
+geniş basış planlayıcısıyla eğitilen politika 0/20 tamamlama ve sıfır düşme
+verdi. Yeni politikada ortalama dik yüz teması 2,08 saniyeydi. 13–20 cm'nin
+her birinde yapılan altı referans denemesinde hiçbir çıkış tamamlanmadı.
+20 cm'de üstte ölçülen en fazla ayak sayısı birdi. Ön basış evresi ayrıca üç
+tohumda ölçüldü. Ortalama gövde yüksekliği hedefin 4,2–5,9 cm altında kaldı.
+Aralığı açan denetleyici araştırma parkurlarında tutulur. Önceki 13 cm
+politikasının kayıtlı koşusu ayrı olarak açılabilir.
+
 #### Önceki sabit desenli parkurlar
 
 | Seviye | Parkur | Başarı |

@@ -37,6 +37,7 @@ class Course:
     home_stairs: HomeStairGeometry | None = None
     body_support: bool = False
     brace_rear_placement: bool = False
+    spread_footholds: bool = False
 
     @property
     def start_height(self) -> float:
@@ -402,6 +403,11 @@ for height_cm in range(13, 21):
         COURSES[f"hybrid-brace-up-{height_cm:02}"], brace_rear_placement=True
     )
 
+for height_cm in range(13, 21):
+    COURSES[f"hybrid-spread-up-{height_cm:02}"] = replace(
+        COURSES[f"hybrid-brace-transfer-up-{height_cm:02}"], spread_footholds=True
+    )
+
 TRIPOD = np.array([0, 1, 0, 1, 0, 1], dtype=float) * 0.5
 
 
@@ -585,6 +591,9 @@ class LocomotionEnv(Meta1Env):
         self.hold = 0
         self.work_j = 0.0
         self.slip_m = 0.0
+        self.upper_gap_min = math.inf
+        self.upper_gap_sum = 0.0
+        self.upper_gap_count = 0
         self.rear_riser_contact_steps = 0
         if self.link_metrics is not None:
             self.link_metrics.reset()
@@ -747,7 +756,7 @@ class LocomotionEnv(Meta1Env):
 
         return self._solve_ik(foot)
 
-    def _solve_ik(self, foot: np.ndarray) -> np.ndarray:
+    def _solve_ik(self, foot: np.ndarray, *, leg: int | None = None) -> np.ndarray:
         length, a, b = self.lengths
         radius = np.hypot(foot[:, 0], foot[:, 1]) - length
         z = foot[:, 2]
@@ -755,9 +764,11 @@ class LocomotionEnv(Meta1Env):
         knee = -np.arccos(cos_knee)
         shoulder = np.arctan2(z, radius) - np.arctan2(b * np.sin(knee), a + b * cos_knee)
         coxa = np.arctan2(foot[:, 1], foot[:, 0])
-        return np.clip(
-            np.column_stack((coxa, shoulder, knee)).ravel(), self.joint_low, self.joint_high
-        )
+        joints = np.column_stack((coxa, shoulder, knee))
+        if leg is not None:
+            limits = slice(3 * leg, 3 * leg + 3)
+            return np.clip(joints, self.joint_low[limits], self.joint_high[limits])
+        return np.clip(joints.ravel(), self.joint_low, self.joint_high)
 
     def _observe_link_contacts(self, contacts):
         self.link_metrics.observe(contacts)
@@ -855,6 +866,13 @@ class LocomotionEnv(Meta1Env):
                 self.upper_reward_index = self.body_motion.ledge_index
                 self.upper_rewarded.fill(False)
             upper = self.body_motion.upper_contacts(soles, contact)
+            if self.course.brace_rear_placement and (count := int(upper.sum())) >= 2:
+                feet = soles[upper, :2]
+                rows, cols = np.triu_indices(count, k=1)
+                gap = float(np.linalg.norm(feet[rows] - feet[cols], axis=1).min())
+                self.upper_gap_min = min(self.upper_gap_min, gap)
+                self.upper_gap_sum += gap
+                self.upper_gap_count += 1
             # Reward only the first secure placement of each foot. Repeated
             # contacts at the same edge cannot earn the placement bonus again.
             reward += 0.42 * np.count_nonzero(upper & ~self.upper_rewarded)
@@ -919,6 +937,11 @@ class LocomotionEnv(Meta1Env):
             info["peak_upper_contacts"] = self.body_motion.peak_upper_contacts
             info["forward_transfer_m"] = self.body_motion.transfer_peak_m
             info["ledge_index"] = self.body_motion.ledge_index
+        if self.course.brace_rear_placement:
+            info["min_upper_foot_gap_m"] = self.upper_gap_min if self.upper_gap_count else None
+            info["mean_upper_foot_gap_m"] = (
+                self.upper_gap_sum / self.upper_gap_count if self.upper_gap_count else None
+            )
         if self.brace is not None:
             info.update(
                 body_support_s=self.brace.support_steps * self.model.opt.timestep,

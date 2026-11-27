@@ -7,6 +7,7 @@ import math
 import numpy as np
 
 from .ascent_pose import attitude_matrix
+from .stair_footholds import select_foothold
 
 WAVE = (0, 3, 1, 4, 2, 5)
 DOWN_WAVE = (2, 5, 1, 4, 0, 3)
@@ -248,6 +249,8 @@ class BodyMotion:
         brace = env.brace
         brace_xy = None if brace is None else brace.xy
         rear_placement = env.course.brace_rear_placement
+        spread = env.course.spread_footholds and ledge and int(upper.sum()) >= 2
+        next_support_xy = None
         if (
             home
             and ledge
@@ -338,8 +341,17 @@ class BodyMotion:
                         candidate = other
             stance = contacts.copy()
             stance[candidate] = False
-            minimum_support = 4 if middle_probe and brace_xy is None else 3
-            if stance.sum() >= minimum_support:
+            minimum_support = 4 if middle_probe and brace_xy is None and not spread else 3
+            can_swing = stance.sum() >= minimum_support
+            if spread and can_swing:
+                com_xy = data.subtree_com[self.base_id, :2]
+                shifted = support_target(feet[stance, :2], com_xy, inset=0.021)
+                # Leave the foot down while the real centre of mass moves
+                # over the remaining feet. A braced body may still help lift.
+                can_swing = shifted is not None and np.linalg.norm(shifted - com_xy) <= 0.022
+                if not can_swing and shifted is not None:
+                    next_support_xy = shifted
+            if can_swing:
                 self.leg = candidate
                 self.lift_off = feet[candidate].copy()
                 self.landing = self._pick_landing(
@@ -352,6 +364,19 @@ class BodyMotion:
                 if rear_placement and self.rear_transfer:
                     self.landing[0] = min(self.landing[0], self.ledge_x + 0.092)
                     self.landing[1] = self.neutral_xy[candidate, 1] + 0.20 * data.qpos[1]
+                if spread and self.landing[2] > self.ledge_top:
+                    neighbors = upper.copy()
+                    neighbors[candidate] = False
+                    alternative = select_foothold(
+                        env,
+                        candidate,
+                        self.landing,
+                        feet[neighbors],
+                        self.body,
+                        attitude_matrix(self.roll, self.pitch, self.yaw),
+                    )
+                    if alternative is not None:
+                        self.landing = alternative
                 self.swing_edge = (
                     next(
                         (
@@ -433,6 +458,8 @@ class BodyMotion:
             bounded = support_target(support_xy, np.array(target) + com_offset)
             if bounded is not None:
                 xy = bounded - com_offset
+            if next_support_xy is not None:
+                xy = next_support_xy - com_offset
             if self.rear_transfer:
                 shifted = support_target(support_xy, xy + com_offset + np.array([0.026, 0.0]))
                 if shifted is not None:
@@ -469,6 +496,8 @@ class BodyMotion:
             # Permit a controlled lowering of the nose onto the top tread.
             # A negative policy output keeps the body in a higher stance.
             z -= 0.045 * max(0.0, residual[11])
+        if spread and brace_xy is not None and self.rear_transfer and self.support_count >= 3:
+            z -= 0.010 * float(np.clip(brace.support_load, 0.0, 0.65))
         target = np.array([*xy, z])
         rate = np.clip(5 * (target - self.body), [-0.065, -0.065, -0.05], [0.08, 0.065, 0.05])
         self.velocity += np.clip(rate - self.velocity, -0.50 * DT, 0.50 * DT)

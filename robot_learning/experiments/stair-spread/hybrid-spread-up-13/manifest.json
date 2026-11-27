@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "course": "hybrid-spread-up-13",
+  "seed": 6281,
+  "eval_seed": 1014200,
+  "envs": 8,
+  "body_control": true,
+  "attitude_control": true,
+  "total_transitions": 393216,
+  "model_sha256": "8138f04c452a6d7057015ade4ade0dc58e339ee4281f1324d1a77761ed46c652",
+  "python": "3.12.9",
+  "mujoco": "3.17.0",
+  "stable_baselines3": "2.9.2",
+  "policy_export_allowed": false,
+  "action_scale": 0.25,
+  "ppo_epochs": 10,
+  "ppo_gamma": 0.99,
+  "ppo_gae_lambda": 0.95,
+  "steps_per_worker": 512,
+  "net_arch": {
+    "pi": [
+      128,
+      128
+    ],
+    "vf": [
+      128,
+      128
+    ]
+  },
+  "body_support": true
+}
