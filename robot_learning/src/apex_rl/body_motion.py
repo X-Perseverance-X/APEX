@@ -95,6 +95,7 @@ class BodyMotion:
         self.ledge_index = 0
         self.swing_edge = None
         self.retreat_swing = False
+        self.confirmed_tread_contact = np.zeros(6, dtype=bool)
 
     @property
     def ledge_x(self):
@@ -246,6 +247,7 @@ class BodyMotion:
         home = env.course.home_stairs is not None
         brace = env.brace
         brace_xy = None if brace is None else brace.xy
+        rear_placement = env.course.brace_rear_placement
         if (
             home
             and ledge
@@ -255,6 +257,7 @@ class BodyMotion:
         ):
             self.ledge_index += 1
             upper = self.upper_contacts(feet, contacts)
+            self.confirmed_tread_contact.fill(False)
         # Anchor state is updated on touchdown; brief unloading of a planted
         # forefoot must not restart the front transfer under the body.
         planted = (
@@ -272,6 +275,7 @@ class BodyMotion:
         low_probe = env.course.fore_probe and self.terrain.rise_m <= 0.12
         if ledge:
             self.peak_upper_contacts = max(self.peak_upper_contacts, int(upper.sum()))
+            settled = self.confirmed_tread_contact if rear_placement else planted
             if self.leg is None:
                 lead = 0.315 if low_probe or self.high_home_step else 0.280
                 self.fore_probe = (
@@ -280,8 +284,8 @@ class BodyMotion:
                     and self.ledge_x - lead <= data.qpos[0] < self.ledge_x
                 )
                 self.rear_transfer = (
-                    all(planted[i] for i in UPPER_SUPPORT)
-                    and not all(planted[i] for i in REAR_SUPPORT)
+                    all(settled[i] for i in UPPER_SUPPORT)
+                    and not all(settled[i] for i in REAR_SUPPORT)
                     and data.qpos[0] >= self.ledge_x + (0.035 if self.high_home_step else 0.16)
                 )
         steep_descent = env.hybrid and self.terrain.descending and self.terrain.rise_m >= 0.08
@@ -289,13 +293,16 @@ class BodyMotion:
         if env.short_climb:
             pace = 0.033 + 0.010 * residual[0]
         order = DOWN_WAVE if steep_descent else WAVE
-        duration = 1.38 if self.retreat_swing else (1.02 if self.rear_transfer else 0.80)
+        rear_duration = 1.40 if rear_placement else 1.02
+        duration = 1.38 if self.retreat_swing else (rear_duration if self.rear_transfer else 0.80)
         if (
             self.leg is not None
             and self.elapsed >= duration
             and (contacts[self.leg] or self.elapsed >= duration + 0.22)
         ):
             self.anchors[self.leg] = feet[self.leg] if contacts[self.leg] or ledge else self.landing
+            if rear_placement:
+                self.confirmed_tread_contact[self.leg] = upper[self.leg]
             self.leg = None
             self.next_leg += 1
             self.elapsed = 0.0
@@ -310,7 +317,7 @@ class BodyMotion:
                     if self.high_home_step and self.next_leg % 2
                     else REAR_SUPPORT
                 )
-                candidate = next((i for i in rears if not planted[i]), candidate)
+                candidate = next((i for i in rears if not settled[i]), candidate)
             if middle_probe:
                 candidates = (
                     MIDDLE_SUPPORT if data.qpos[0] >= self.ledge_x - 0.119 else REAR_SUPPORT
@@ -342,6 +349,9 @@ class BodyMotion:
                     middle_probe,
                     residual[8:10] if brace is not None else None,
                 )
+                if rear_placement and self.rear_transfer:
+                    self.landing[0] = min(self.landing[0], self.ledge_x + 0.092)
+                    self.landing[1] = self.neutral_xy[candidate, 1] + 0.20 * data.qpos[1]
                 self.swing_edge = (
                     next(
                         (
@@ -360,7 +370,9 @@ class BodyMotion:
                     and self.landing[2] >= self.lift_off[2] + 0.065
                     and not self.terrain.descending
                 )
-                duration = 1.38 if self.retreat_swing else (1.02 if self.rear_transfer else 0.80)
+                duration = (
+                    1.38 if self.retreat_swing else (rear_duration if self.rear_transfer else 0.80)
+                )
                 rise = max(0.0, self.landing[2] - self.lift_off[2])
                 lift = 0.034 + 0.14 * rise if env.course.steep_approach else 0.040 + 0.25 * rise
                 self.swing_height = float(np.clip(lift + 0.028 * residual[1], 0.018, 0.080))
@@ -451,6 +463,8 @@ class BodyMotion:
             z = self.ledge_top + 0.052 + nose_clearance + 0.009 * residual[3]
         if self.rear_transfer:
             z = max(z, self.ledge_top + env.stand_height - 0.009)
+            if rear_placement:
+                z = self.ledge_top + 0.095
         if brace is not None and (middle_probe or self.rear_transfer):
             # Permit a controlled lowering of the nose onto the top tread.
             # A negative policy output keeps the body in a higher stance.

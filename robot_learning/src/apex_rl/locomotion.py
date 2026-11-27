@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import xml.etree.ElementTree as ET
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import mujoco
 import numpy as np
@@ -36,6 +36,7 @@ class Course:
     fore_probe: bool = False
     home_stairs: HomeStairGeometry | None = None
     body_support: bool = False
+    brace_rear_placement: bool = False
 
     @property
     def start_height(self) -> float:
@@ -395,6 +396,10 @@ for height_cm in (13, 14, 15, 16, 17, 18, 19, 20):
         home_stairs=HomeStairGeometry(),
         body_support=True,
     )
+
+COURSES["hybrid-brace-transfer-up-13"] = replace(
+    COURSES["hybrid-brace-up-13"], brace_rear_placement=True
+)
 
 TRIPOD = np.array([0, 1, 0, 1, 0, 1], dtype=float) * 0.5
 

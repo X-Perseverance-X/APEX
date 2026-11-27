@@ -499,6 +499,21 @@ Politikalar, manifestler, eğitim eğrileri ve tohum bazlı ölçümler
 `robot_learning/experiments/body-support-13` altında arşivlendi. Bunlar
 simülasyon kontrol noktalarıdır ve merdiven yeterlilik eşiğini geçmemiştir.
 
+`hybrid-brace-transfer-up-13` arka ayak aktarımını ayrı bir parkurda sınar.
+Arka ayakların basamağa yakın bir noktaya inmesi için daha uzun süre tanınır.
+Gövde hedefi bu aktarımda düşürülür. Denetleyici sonraki hareketi seçerken
+basamak üzerinde ölçülen ayak temaslarını hatırlar. Görüntüleyicide gövdeden
+taşınan yük, temas süresi ve servo tork sınırına ulaşan örneklerin oranı gösterilir.
+
+```powershell
+& $py -m apex_rl.cli course-view --course hybrid-brace-transfer-up-13 --randomize --seed 1013208
+```
+
+Arka ayak aktarımıyla referans 1013200–1013219 grubunda 2/20 tamamladı.
+1013208 koşusunda altı ayak da çıktı. Dik yüz teması ve sert uzuv örtüşmesi
+ölçülmedi. Aynı parkurda 65.536 geçişle eğitilen PPO 0/20 ve üç düşme ile
+kaldı. Üç PPO koşusunda toplam 851.968 yeni geçiş toplandı.
+
 - [ANYmal Parkour, ETH Zürich](https://arxiv.org/abs/2306.14874)
 
 #### Önceki sabit desenli parkurlar

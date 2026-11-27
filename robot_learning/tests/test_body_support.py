@@ -2,7 +2,7 @@ import mujoco
 import numpy as np
 
 from apex_rl.body_support import BodySupport
-from apex_rl.curriculum import _passed_stage
+from apex_rl.curriculum import _passed_stage, benchmark
 from apex_rl.locomotion import LocomotionEnv
 
 
@@ -67,3 +67,14 @@ def test_brace_curriculum_rejects_small_or_unsafe_evaluations():
     assert not _passed_stage({**clean, "body_impacts": 1}, body_support=True)
     assert not _passed_stage({**clean, "riser_clearance_passed": False}, body_support=True)
     assert not _passed_stage({"episodes": 10, "successes": 10, "falls": 0}, body_support=True)
+
+
+def test_rear_transfer_records_support_and_all_six_upper_contacts():
+    env = LocomotionEnv("hybrid-brace-transfer-up-13")
+    try:
+        result = benchmark(env, None, 1, seed=1012211)
+        assert result["peak_upper_contacts"] == 6
+        assert result["falls"] == 0
+        assert result["mean_body_support_s"] > 0.25
+    finally:
+        env.close()

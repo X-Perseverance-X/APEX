@@ -115,6 +115,9 @@ REPLAY_MODELS = {
     "e14016b3b23185a4613947451c641cf25ad869aeb24d2651444821eb83330d26": {
         "hybrid-home-up-20-single",
     },
+    "de3c16e2749fcd9c0182d4e10be6b4872ecf64a5ce1b7a0e3fcbc5a4eb21e065": {
+        "hybrid-brace-up-13",
+    },
 }
 
 
@@ -392,6 +395,10 @@ def _view(env, policy, args) -> None:
                     side_time = info["riser_contact_substeps"] * env.model.opt.timestep
                     details += f"\nRiser contact {side_time:.2f} s"
                     details += f" | rigid links {1000 * info['leg_stair_peak_m']:.2f} mm"
+                if env.brace is not None:
+                    details += f"\nBody support {env.brace.support_load:.0%} of weight"
+                    details += f" | time {info['body_support_s']:.2f} s"
+                    details += f" | servo saturation {info['servo_saturation_fraction']:.0%}"
                 window.set_texts((None, mujoco.mjtGridPos.mjGRID_TOPLEFT, "Gait", details))
             window.sync()
             if done or truncated:
@@ -553,10 +560,15 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
             parser.error("use at least 512 training transitions and 10–100 evaluation episodes")
         hybrid = args.start.startswith("hybrid-")
         if args.through is None:
-            if hybrid:
+            if COURSES[args.start].brace_rear_placement:
+                args.through = args.start
+            elif hybrid:
                 brace = COURSES[args.start].body_support
                 args.through = next(
-                    name for name in reversed(STAGES) if COURSES[name].body_support == brace
+                    name
+                    for name in reversed(STAGES)
+                    if COURSES[name].body_support == brace
+                    and not COURSES[name].brace_rear_placement
                 )
             else:
                 args.through = "stairs-down-20"
@@ -564,6 +576,8 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
             parser.error("use a single controller family in each curriculum run")
         if COURSES[args.start].body_support != COURSES[args.through].body_support:
             parser.error("body-support courses use a separate policy and curriculum")
+        if COURSES[args.start].brace_rear_placement != COURSES[args.through].brace_rear_placement:
+            parser.error("the rear-placement experiment runs as a standalone course")
         if COURSES[args.start].body_support and args.eval_episodes < BRACE_EVAL_EPISODES:
             parser.error(
                 f"body-support courses require at least {BRACE_EVAL_EPISODES} evaluation episodes"
