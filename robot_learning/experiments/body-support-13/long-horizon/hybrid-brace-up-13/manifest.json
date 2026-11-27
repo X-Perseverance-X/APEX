@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "course": "hybrid-brace-up-13",
+  "seed": 6201,
+  "eval_seed": 1012200,
+  "envs": 4,
+  "body_control": true,
+  "attitude_control": true,
+  "total_transitions": 262144,
+  "model_sha256": "de3c16e2749fcd9c0182d4e10be6b4872ecf64a5ce1b7a0e3fcbc5a4eb21e065",
+  "python": "3.12.9",
+  "mujoco": "3.17.0",
+  "stable_baselines3": "2.9.2",
+  "policy_export_allowed": false,
+  "ppo_epochs": 10,
+  "ppo_gamma": 0.9975,
+  "ppo_gae_lambda": 0.98,
+  "steps_per_worker": 512,
+  "net_arch": {
+    "pi": [
+      128,
+      128
+    ],
+    "vf": [
+      128,
+      128
+    ]
+  },
+  "body_support": true
+}

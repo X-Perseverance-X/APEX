@@ -1,0 +1,10 @@
+[
+  {
+    "course": "hybrid-brace-up-13",
+    "passed": false,
+    "episodes": 20,
+    "successes": 0,
+    "falls": 9,
+    "mean_progress_m": 0.8066433005879056
+  }
+]

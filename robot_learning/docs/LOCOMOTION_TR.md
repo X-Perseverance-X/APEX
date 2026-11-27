@@ -486,6 +486,19 @@ Değerlendirmelerde robot bütün yaklaşmayı yapar.
 & $py -m apex_rl.cli course-watch --run robot_learning/runs/course-brace-524k/hybrid-brace-up-13 --live
 ```
 
+13 cm için 524.288 geçişli standart PPO ve `--gamma 0.9975 --gae-lambda 0.98`
+ile 262.144 geçişli uzun ufuk PPO koşuları tamamlandı. İkisi de 1012200–1012219
+tohumlarında 0/20 çıktı. Sırasıyla dokuz ve 15 düşme vardı. Aynı tohumlarda
+referans denetleyici 0/20, üç düşme ile kaldı. Referans dört ayağı üst yüzeye
+yerleştirdi ve üst yüzeye dayandığı örneklerde gövdesinden taşıttığı yük anlık
+olarak robot ağırlığının %96'sına ulaştı. İki PPO politikası bu doğrulamada
+gövdeyle yük taşıyan bir duruşa geçemedi. Müfredat 13 cm'de kaldı. 14 ve 15 cm
+için ayrı beşer referans denemesinde tamamlanan çıkış yoktu.
+
+Politikalar, manifestler, eğitim eğrileri ve tohum bazlı ölçümler
+`robot_learning/experiments/body-support-13` altında arşivlendi. Bunlar
+simülasyon kontrol noktalarıdır ve merdiven yeterlilik eşiğini geçmemiştir.
+
 - [ANYmal Parkour, ETH Zürich](https://arxiv.org/abs/2306.14874)
 
 #### Önceki sabit desenli parkurlar
