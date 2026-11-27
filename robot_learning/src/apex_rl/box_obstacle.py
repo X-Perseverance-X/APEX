@@ -9,7 +9,7 @@ clearance to the box, the whole swing path), evaluated in a mirrored frame:
 stepping forward down an edge is, geometrically, stepping backward up it.
 After the last rear sole is down the flat tripod walks to the goal.
 
-Nothing here edits the sources that recorded policies are fingerprinted against.
+The guarded replay keeps the same course and adds measured descent gates.
 """
 
 from __future__ import annotations
@@ -94,7 +94,9 @@ COURSES["hybrid-box-16"] = BoxCourse(
     **{f.name: getattr(_BASE, f.name) for f in dataclasses.fields(Course)}
     | {"rise_m": 0.16, "risers": 1, "home_stairs": None}
 )
-BOX_COURSES = ("hybrid-box-16",)
+GUARDED_BOX_COURSE = "hybrid-box-16-guarded"
+COURSES[GUARDED_BOX_COURSE] = COURSES["hybrid-box-16"]
+BOX_COURSES = ("hybrid-box-16", GUARDED_BOX_COURSE)
 BOX_TIME_LIMIT_S = 150.0  # climb, walk on top and step down take about two minutes
 
 
@@ -109,6 +111,8 @@ class BoxTraverse(StagedAscent):
         self.halting = False
         self.halted_s = 0.0
         self.descent_log = []
+        self.descent_abort = None
+        self.clearance_wait_s = 0.0
 
     # The controller plans with the box it is told about. ``geometry_error`` on the
     # environment (near edge, far edge, height; metres) models a measured box that
@@ -336,8 +340,12 @@ class BoxTraverse(StagedAscent):
         feet = self.anchors.copy()
         down = self._down(feet)
         if down.all():
-            self.descended = True
-            self._hand_back()
+            measured = self.env.data.xpos[self.env._foot_ids]
+            if self.env.course_name != GUARDED_BOX_COURSE or (
+                self._down(measured).all() and self.contacts().sum() >= 5
+            ):
+                self.descended = True
+                self._hand_back()
             return None
         margin = self._joint_margin_now()
         targets, pose, movers = self._descent_layout(feet)
@@ -527,13 +535,15 @@ class BoxTraverse(StagedAscent):
         }  # fmt: skip
 
     def _swing_update(self, contacts, feet):
-        """Descent two-pose swings tilt the body exactly where the check split the path."""
+        """Advance a descent only after measured clearance and body settling."""
         plan = self.plan
-        if self.mode != "descend" or plan.get("post_body") is None:
+        if self.mode != "descend" or plan["kind"] != "down":
             return super()._swing_update(contacts, feet)
+        guarded = self.env.course_name == GUARDED_BOX_COURSE
         if self.elapsed <= 0.02:
             self.segment, self.progress = 0, 0.0
-        if not self.post_settled:
+            self.clearance_wait_s = 0.0
+        if plan.get("post_body") is not None and not self.post_settled:
             index = plan["split_index"]
             seg, frac = index // 6, (index % 6) / 6
             reached = self.segment > seg or (self.segment == seg and ease(self.progress) >= frac)
@@ -551,15 +561,48 @@ class BoxTraverse(StagedAscent):
                     and np.abs(self.velocity).max() < 0.02
                 )
                 self.post_wait += 0.02
-                if near or self.post_wait > 4.0:
+                if near or (not guarded and self.post_wait > 4.0):
                     self.post_settled = True
                 else:
                     self.elapsed -= 0.02  # the swing waits; do not run into its time-out
+                    if self.post_wait > 4.0:
+                        self.descent_abort = "post pose did not settle"
                     return False
+        waypoints = plan["waypoints"]
+        observed = feet[self.leg]
+        if guarded and self.progress >= 0.80:
+            below_crest = self.segment == 0 and observed[2] < waypoints[1][2] - 0.018
+            before_edge = self.segment == 1 and observed[0] < self.far + self.radius + 0.006
+            if below_crest or before_edge:
+                self.swing_point = waypoints[self.segment + 1].copy()
+                self.clearance_wait_s += 0.02
+                self.elapsed -= 0.02
+                if self.clearance_wait_s > 2.0:
+                    self.descent_abort = "sole did not clear the lip"
+                return False
+        self.clearance_wait_s = 0.0
         view = {k: v for k, v in plan.items() if k != "post_body"}
         self.plan = view
         try:
-            return super()._swing_update(contacts, feet)
+            done = super()._swing_update(contacts, feet)
+            if not guarded:
+                return done
+            lowering = self.segment == 2 and self.progress >= 1.0
+            landed = contacts[self.leg] and self._down(feet[[self.leg]])[0]
+            if lowering and landed:
+                return True
+            if done:
+                # If the sole is already clear of the edge, give the bounded
+                # floor probe time to load it before judging the step.
+                if (
+                    self.probe >= 2.4
+                    or contacts[self.leg]
+                    or observed[0] < self.far + self.radius + 0.006
+                ):
+                    self.descent_abort = "lower landing was not confirmed"
+                else:
+                    self.swing_point[2] -= min(0.008, max(0.0, self.probe - 1.0) * 0.008)
+            return False
         finally:
             self.plan = plan
 
@@ -629,3 +672,10 @@ class BoxEnv(StagedEnv):
                 0.85, 1.0, size=(18, 1)
             )
         return obs, info
+
+    def step(self, action):
+        obs, reward, done, truncated, info = super().step(action)
+        if self.body_motion.descent_abort:
+            info["descent_abort"] = self.body_motion.descent_abort
+            return obs, reward, done, True, info
+        return obs, reward, done, truncated, info

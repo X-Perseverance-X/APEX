@@ -91,3 +91,27 @@ $py = '.\.runtime\sim-rl-env\Scripts\python.exe'
 ```
 
 `results/` klasöründeki dosyalar tablonun kaynağıdır.
+
+## Windows'ta iniş denetimi
+
+`course-bench` kutu parkurlarında rıht temas süresini, 0,25 s sınırı içinde
+bitiren koşu sayısını ve geçiş sonucunu yazdırır. `hybrid-box-16-guarded`
+aynı kutuda iniş denetiminin deneysel sürümüdür. Ayak kenarı ölçülen konumda
+aşınca alçalır. İkinci gövde pozu yerleşmezse veya iniş teması doğrulanamazsa
+simülasyon bölümü güvenli durdurma gerekçesiyle sonlanır.
+
+| Tohum | Mevcut sürüm | Ölçümle korunan iniş |
+| --- | --- | --- |
+| 1013200 | 117,80 s, 0,162 s rıht teması | 75,58 s, ön ayağın alt zemin teması doğrulanamadı |
+| 1017300 | 109,58 s, 0 s rıht teması | 110,12 s, 0 s rıht teması |
+| 1017317 | 103,30 s, 0 s rıht teması | 105,46 s, 0 s rıht teması |
+
+Bu üç karşılaştırmada düşme ve gövde darbesi görülmedi. Örnekler iniş
+denetimlerinin çalışmasını gösteriyor. Dağılım testi ve donanım doğrulaması için
+önceki bölümdeki açıklar sürüyor. ESP yazılımında ayak kontağı telemetrisi
+mevcut. Gerçek robotta altı anahtarın ve gövde konum tahmininin ölçümle
+doğrulanması gerekiyor. HOME ve STAND firmware kalibrasyonu bağımsızdır.
+
+```powershell
+& $py -m apex_rl.cli course-view --course hybrid-box-16-guarded --randomize --seed 1017317
+```

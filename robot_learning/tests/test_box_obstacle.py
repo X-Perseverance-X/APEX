@@ -1,9 +1,11 @@
+import json
+
 import numpy as np
 import pytest
 
 from apex_rl import box_obstacle as box
 from apex_rl.ascent_planner import check_stance
-from apex_rl.curriculum import STAGES
+from apex_rl.curriculum import STAGES, _summarize
 from apex_rl.locomotion import COURSES
 
 
@@ -16,6 +18,7 @@ def test_box_course_is_16_cm_high_60_cm_wide_and_long():
     assert course.height(course.edge_x + 0.30, 0.31) == 0.0
     assert course.last_edge == pytest.approx(course.edge_x + 0.60)
     assert "hybrid-box-16" not in STAGES
+    assert box.GUARDED_BOX_COURSE not in STAGES
 
 
 def test_mirrored_descent_checks_equal_the_direct_checks():
@@ -63,5 +66,14 @@ def test_box_traverse_climbs_walks_on_top_and_steps_down():
         assert info["success"] and not info["fallen"] and not info["body_impact"]
         assert {"top", "down-front", "down-middle", "down-rear", "floor"} <= phases
         assert info["riser_contact_substeps"] * env.model.opt.timestep <= 0.25
+        # A completed box run with excessive side contact fails the same
+        # report check as a stair run, even though BoxCourse has no home stairs.
+        scraped = dict(info, riser_contact_substeps=150)
+        report = _summarize(env, [scraped])
+        assert report["successes"] == 1
+        assert report["clean_completions"] == 0
+        assert report["max_riser_contact_s"] == pytest.approx(0.30)
+        assert not report["riser_clearance_passed"]
+        json.dumps(report)
     finally:
         env.close()

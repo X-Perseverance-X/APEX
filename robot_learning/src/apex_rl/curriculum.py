@@ -332,6 +332,8 @@ def _benchmark_parallel(env, run, episodes, seed, workers):
 
 def _summarize(env, outcomes):
     episodes = len(outcomes)
+    is_box = env.course_name in box_obstacle.BOX_COURSES
+    measures_riser = env.course.home_stairs is not None or is_box
     body_stats = {}
     if env.body_motion is not None:
         for key in ("body_height_range_m", "max_lateral_com_m"):
@@ -348,7 +350,7 @@ def _summarize(env, outcomes):
     if env.attitude_control:
         body_stats["min_knee_deg"] = min(item["min_knee_deg"] for item in outcomes)
         knee_limit = (
-            math.radians(-152) if env.course.home_stairs is not None else KNEE_CLEARANCE_LIMIT
+            math.radians(-152) if measures_riser else KNEE_CLEARANCE_LIMIT
         )
         body_stats["knee_clearance_passed"] = bool(
             np.deg2rad(body_stats["min_knee_deg"]) > knee_limit
@@ -369,7 +371,7 @@ def _summarize(env, outcomes):
             if measured
             else None
         )
-    if env.course.home_stairs is not None:
+    if measures_riser:
         body_stats["leg_stair_peak_m"] = max(item["leg_stair_peak_m"] for item in outcomes)
         side_times = env.model.opt.timestep * np.array(
             [item["riser_contact_substeps"] for item in outcomes]
@@ -379,6 +381,11 @@ def _summarize(env, outcomes):
         body_stats["riser_clearance_passed"] = (
             body_stats["max_riser_contact_s"] <= MAX_RISER_CONTACT_S
         )
+        if is_box:
+            body_stats["clean_completions"] = sum(
+                bool(item["success"] and duration <= MAX_RISER_CONTACT_S)
+                for item, duration in zip(outcomes, side_times, strict=True)
+            )
         body_stats["sole_top_peak_m"] = max(item["sole_top_peak_m"] for item in outcomes)
         body_stats["link_overlap_passed"] &= body_stats["leg_stair_peak_m"] <= OVERLAP_LIMIT_M
     if env.course.body_support:
@@ -437,6 +444,8 @@ def _inspect(args) -> None:
             else:
                 policy = _read_policy(args.run, env, exact_course=True) if args.run else None
                 report = benchmark(env, policy, args.episodes, seed=args.seed)
+            if env.course_name in box_obstacle.BOX_COURSES:
+                report["passed_gate"] = _passed_stage(report, body_support=env.course.body_support)
             print(json.dumps({"course": env.course_name, **report}, indent=2))
         else:
             if args.replay_seconds is not None:
