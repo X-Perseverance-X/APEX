@@ -16,7 +16,31 @@ from apex_rl.contract import LEG_ORDER
 from apex_rl.env import Meta1Env
 
 
-def run(output: Path | None = None, *, seed: int = 42, randomize: bool = False) -> dict:
+def wave_offsets(t):
+    """Right-front joint offsets in degrees, in the simulation convention."""
+    u = min(1.0, max(0.0, min(t - 1, 7 - t)))
+    lift = u * u * (3 - 2 * u)
+    envelope = min(1.0, max(0.0, min(2 * (t - 2), 2 * (6 - t))))
+    envelope = envelope * envelope * (3 - 2 * envelope)
+    phase = math.pi * (t - 2)
+    return (
+        22 * envelope * math.sin(phase),
+        35 * lift,
+        25 * envelope * (1 - math.cos(phase)),
+    )
+
+
+def fast_wave_offsets(t):
+    """Same excursions with smooth starts and stops within the manual speed limit."""
+    u = max(0.0, min(1.0, min((t - 1.0) / 2.4, (19.4 - t) / 2.4)))
+    lift = u * u * (3 - 2 * u)
+    phase = math.pi * max(0.0, min(4.0, (t - 3.4) / 3.4))
+    return (22 * math.sin(phase) ** 3, 35 * lift, 25 * (1 - math.cos(phase)))
+
+
+def run(
+    output: Path | None = None, *, seed: int = 42, randomize: bool = False, fast: bool = False
+) -> dict:
     if output:
         from PIL import Image, ImageDraw
 
@@ -34,26 +58,21 @@ def run(output: Path | None = None, *, seed: int = 42, randomize: bool = False) 
         frames, margins, gaps, tibia_angles = [], [], [], []
         initial = None
         minimum_support = 5
+        offsets_at = fast_wave_offsets if fast else wave_offsets
+        swing_start, swing_end = (3.4, 17.0) if fast else (2.0, 6.0)
         with scene as renderer:
-            for step in range(round(8 / dt)):
+            for step in range(round((20.4 if fast else 8.0) / dt)):
                 t = step * dt
                 if step == round(1 / dt):
                     initial = env.data.xpos[foot_ids[0]].copy()
-                u = min(1.0, max(0.0, min(t - 1, 7 - t)))
-                lift = u * u * (3 - 2 * u)
-                envelope = min(1.0, max(0.0, min(2 * (t - 2), 2 * (6 - t))))
-                envelope = envelope * envelope * (3 - 2 * envelope)
-                phase = math.pi * (t - 2)
-                wave = envelope * math.sin(phase)
-                extension = envelope * (1 - math.cos(phase)) / 2
                 target = env.nominal.copy()
-                target[:3] += np.deg2rad((22 * wave, 35 * lift, 50 * extension))
+                target[:3] += np.deg2rad(offsets_at(t))
                 env._apply_joint_targets(target)
                 feet = env.data.xpos[foot_ids]
                 contacts = env._contacts().astype(bool)
                 if t >= 1:
                     minimum_support = min(minimum_support, int(contacts[1:].sum()))
-                if 2 <= t < 6:
+                if swing_start <= t < swing_end:
                     gaps.append(float(feet[0, 2] - radius))
                     margins.append(hull_margin(feet[1:, :2], env.data.subtree_com[base_id, :2]))
                     tibia_angles.append(float(env.data.joint("rf_tibia_joint").qpos[0]))
@@ -85,4 +104,6 @@ def run(output: Path | None = None, *, seed: int = 42, randomize: bool = False) 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, help="write an animated GIF")
-    print(json.dumps(run(parser.parse_args().output), indent=2))
+    parser.add_argument("--fast", action="store_true", help="rehearse the faster hardware timing")
+    args = parser.parse_args()
+    print(json.dumps(run(args.output, fast=args.fast), indent=2))
