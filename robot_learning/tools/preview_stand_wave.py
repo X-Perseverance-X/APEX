@@ -31,7 +31,7 @@ def run(output: Path | None = None, *, seed: int = 42, randomize: bool = False) 
         camera.lookat[:] = (0.04, 0, 0.10)
         camera.distance, camera.azimuth, camera.elevation = 1.12, 128, -25
         scene = mujoco.Renderer(env.model, 300, 520) if output else nullcontext()
-        frames, margins, gaps = [], [], []
+        frames, margins, gaps, tibia_angles = [], [], [], []
         initial = None
         minimum_support = 5
         with scene as renderer:
@@ -42,9 +42,12 @@ def run(output: Path | None = None, *, seed: int = 42, randomize: bool = False) 
                 u = min(1.0, max(0.0, min(t - 1, 7 - t)))
                 lift = u * u * (3 - 2 * u)
                 envelope = min(1.0, max(0.0, min(2 * (t - 2), 2 * (6 - t))))
-                wave = envelope * math.sin(2 * math.pi * (t - 2) / 1.8)
+                envelope = envelope * envelope * (3 - 2 * envelope)
+                phase = math.pi * (t - 2)
+                wave = envelope * math.sin(phase)
+                extension = envelope * (1 - math.cos(phase)) / 2
                 target = env.nominal.copy()
-                target[:3] += np.deg2rad((4 * wave, 14 * lift, 0))
+                target[:3] += np.deg2rad((22 * wave, 35 * lift, 50 * extension))
                 env._apply_joint_targets(target)
                 feet = env.data.xpos[foot_ids]
                 contacts = env._contacts().astype(bool)
@@ -53,6 +56,7 @@ def run(output: Path | None = None, *, seed: int = 42, randomize: bool = False) 
                 if 2 <= t < 6:
                     gaps.append(float(feet[0, 2] - radius))
                     margins.append(hull_margin(feet[1:, :2], env.data.subtree_com[base_id, :2]))
+                    tibia_angles.append(float(env.data.joint("rf_tibia_joint").qpos[0]))
                 if output and step % 3 == 0:
                     renderer.update_scene(env.data, camera=camera)
                     frame = Image.fromarray(renderer.render())
@@ -70,6 +74,7 @@ def run(output: Path | None = None, *, seed: int = 42, randomize: bool = False) 
             "minimum_other_contacts": minimum_support,
             "minimum_swing_clearance_mm": round(1000 * min(gaps), 2),
             "minimum_support_margin_mm": round(1000 * min(margins), 2),
+            "measured_tibia_sweep_deg": round(math.degrees(max(tibia_angles) - min(tibia_angles)), 2),
             "return_error_mm": round(1000 * float(np.linalg.norm(feet[0] - initial)), 2),
             "final_contacts": int(contacts.sum()),
         }
