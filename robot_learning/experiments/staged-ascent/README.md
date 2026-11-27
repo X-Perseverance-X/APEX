@@ -67,6 +67,27 @@ PPO, 12 çıkışlı aynı politika arayüzünü kullanır. Planlı denetleyicid
 gövde ileri/geri, yükseklik, yana kayma, eğim ve iniş noktası X/Y düzeltmeleri
 etkindir. Diğer çıkışlar sıfırlanır.
 
+## Servo yuvaları (femur ve tibia)
+
+Femur ve tibia servo kasaları artık STL'deki dört vida deliğine göre yerleştirildi
+(`src/apex_rl/model.py`). Femur yuvasında delikler yerel X/Z düzleminde 10 × 48,1 mm
+dikdörtgendir ve yuva dik durur. Tibia yuvasında delikler 41,36 × 24,65 mm uç uca
+ölçüdür; bu da yuvanın tibia parçası içinde yaklaşık 31° eğik olduğunu gösterir.
+Kasalar yalnız görseldir (`contype=0`); kütle, atalet ve çarpışma modeli değişmedi,
+bu yüzden hareket sonuçları kasa düzeltmesinden etkilenmez.
+
+`tools/check_servo_mounts.py` on iki kasanın hepsini (`servo-mounts.txt`) denetler:
+mil ekseni eklem ekseniyle 0,00° farklı, mil kasa merkezinden 10,05 mm (femur) ve
+10,08 mm (tibia) kaymış (gerçek 40 mm servoda milin merkezden uzaklığı ≈ 10 mm),
+holder ağındaki hiçbir köşe noktası kasanın içinde değil, dört delik merkezi kasanın
+±24,05 mm × ±5 mm desenine 0,000 mm hatayla oturuyor.
+
+Not: bu doğrulama modelin STL'e ve kendi bildirdiği vida delik ölçülerine göre
+tutarlılığını gösterir. Fiziksel parçada servo mili iki vida çiftinden birine
+yakındır: modelde mil, delik çiftlerinden birine 14 mm, diğerine 34 mm uzaklıktadır.
+Servoyu robota takmadan önce çıkış milinin yuvadaki yakın delik çiftinin tarafında
+olduğunu bir kez elle kontrol et.
+
 ## Tohum grupları
 
 | Grup | Kullanım |
@@ -145,8 +166,8 @@ aktarıma kayar. Planlayıcının kayıtlı gerekçeleri `six-foot RR reach` ve
 geçmesi için gövde ≈0,27–0,29 m yükseğe çıkmalıdır. Bu durumda yerdeki arka
 tabanlar, 27,1 cm'lik femur+tibia boyunun erişebileceği pozda kalmaz. Statik
 taramada da gövde desteği olmadan 20 cm arka aktarım için uygun duruş bulunmadı.
-18–20 cm için sıradaki iş, gövde kutusunu basamak üstünde destek olarak kullanan
-arka aktarımdır.
+Bu yüzden 20 cm için ayrı bir parkur ve kaldır-sonra-eğ hareketi geliştirildi
+(aşağıda).
 
 ### Artık PPO (`ppo-13/`, `ppo-14/`, `ppo-15/`)
 
@@ -201,6 +222,52 @@ Yürüyüşten duruşa geçişte yeni yürüyüş 10/10 bölümde duruş pozunda
 yürüyüş komut sonrası 3,6 cm daha ilerler. Sola yürüyüşteki 2 sert basış henüz
 çözülmedi.
 
+### 20 cm: kaldır-sonra-eğ (`hybrid-wide-rear-up-20`, ayrı deney parkuru)
+
+Bu parkur `hybrid-staged-up-20` ile aynı basamağı, kütleyi, servo sınırlarını ve
+çarpışma modelini kullanır. Yalnız son iki arka ayağın aktarımı farklıdır; 13–19 cm
+parkurlarının kodu bu parkurun kurallarından etkilenmez.
+
+**Neden tıkanıyordu.** Dört ayak üstteyken son arka ayak kaldırılamıyordu. Planlayıcı
+bir poz arıyordu ki altı ayak yerdeyken tüm bacaklar erişsin ve o pozda arka bacak
+tepeye katlanabilsin. Böyle bir poz yoktur. Gövde yüksekte (z ≈ 0,29 m) olduğu için
+yerdeki arka taban neredeyse tam gergindir, ama basamağa taşınırken bacağın katlanacak
+yeri kalmaz. Ağırlık merkezini dört+bir ayağın çokgenine sokmak için gövdeyi öne almak
+ise yerdeki arka ayağın erişimini bozar. Planlayıcı bu yüzden iki gövde kaydırma
+önerisi arasında gidip geliyordu (`shift` döngüsü, 21 s ve daha uzun).
+Poz arama listesi ayrıca en düşük öne eğimi +5° ile sınırlıydı; burun aşağı poz hiç
+denenmiyordu.
+
+**Yeni hareket.** Ayak mevcut pozda birkaç santim kaldırılır; ayak havadayken gövde
+hedef pozuna (burun aşağı, 5–10° daha az öne eğim ve gerekirse 8 cm'ye kadar sağa/sola)
+getirilir; sonra ayak basamağa taşınır. Her aşama ayrı denetlenir: mevcut pozda beş
+ayaklı denge, hedef pozda beş ayaklı denge, aradaki poz, kaldırma yolu ve geri kalan yol.
+Gövde hedef poza ölçülen konumla yerleşmeden ayak basamağın kenarını geçmez.
+
+**Sonuçlar** (`climb/20-*.json`, süre sınırı 90 s; eski parkurlardaki 60 s sınırı
+başarılı koşuların yarısını kesiyordu):
+
+| Parkur ve grup | Tamamlama | Düşme | 60 s içinde | Ortanca süre | Rıht teması (başarılılarda) |
+| --- | --- | --- | --- | --- | --- |
+| Önceki geniş arka ayak, 1013200–19 (120 s) | 1/20 | 4 | 0 | 64,1 s | 0 |
+| **Kaldır-sonra-eğ, 1013200–19** (geliştirme) | 11/20 | 1 | 9 | 59,4 s | 0 |
+| **Kaldır-sonra-eğ, 1017300–19** (son değerlendirme) | **13/20** | **0** | **12** | 59,3 s | **0** |
+
+Son değerlendirmede gövde darbesi yok, diz −148,9°'den fazla kapanmadı, başarılı
+koşuların hiçbirinde rıht teması yok. Geçiş ölçütü 18/20 olduğu için **20 cm geçmedi**.
+Takılan 7 koşunun 6'sı beş ayak üstteyken son arka ayakta (rear), biri orta ayakta
+(middle) kaldı. Takılan koşularda tabanın rıhta değdiği süre 0,5–4,1 s arasındadır.
+
+**Denenip bırakılanlar** (6 tohumluk kısa denemeler ve 1013200–19 grubu):
+gövdeyi 0,105–0,12 m yükseltmek 0–1/6 verdi (temel ayar 2/6); ön ayakları 7 cm geri
+çekmek 2/6 verdi ama başka tohumları bozdu; başlangıç pozunda tork ve ağırlık
+merkezi payını gevşetmek 9 takılı koşunun 2'sini çözdü ama daha önce geçen 3 koşuyu
+bozdu (toplam 11/20 → 9/20); tork payını sıkılaştırmak hiç plan bırakmadı (0/6).
+Beş ayaklı duruşta RR tibia/femur ve LM femur/tibia sürekli tork sınırındadır; ağırlığın
+%30–40'ını bu iki bacak taşır, ön ayaklar 0,2 m önde kaldığı için neredeyse yük almaz.
+Bu yüzden payı simülasyonda bu servo sınırlarıyla artırmak mümkün görünmüyor. Güçlü
+femur servoları (DS5160) veya gövde kutusunu basamakta destek yapmak gerekir.
+
 ## Tekrar oynatma
 
 Proje kökünde PowerShell:
@@ -224,6 +291,13 @@ $ppo15 = 'robot_learning\experiments\staged-ascent\ppo-15\hybrid-staged-up-15'
 & $py -m apex_rl.cli course-view --course hybrid-staged-up-13 --randomize --seed 1017309
 # 20 cm: ön ve orta ayaklar üstte, arka aktarım tıkanıyor
 & $py -m apex_rl.cli course-view --course hybrid-staged-up-20 --randomize --seed 1017300
+# 20 cm kaldır-sonra-eğ: en iyi çıkış (tohum 1017317, 58,3 s) ve takılan örnek (1017301, arka ayak)
+& $py -m apex_rl.cli course-view --course hybrid-wide-rear-up-20 --randomize --seed 1017317 --replay-seconds 90
+& $py -m apex_rl.cli course-view --course hybrid-wide-rear-up-20 --randomize --seed 1017301 --replay-seconds 90
+# 20 cm ölçümünü yeniden üret (yaklaşık 6 dk, iki çekirdek)
+& $py robot_learning\tools\staged_experiments.py climb --course hybrid-wide-rear-up-20 --seed 1017300 --episodes 20 --output robot_learning\runs\wide-rear-20.json
+# Servo kasası / yuva doğrulaması
+& $py robot_learning\tools\check_servo_mounts.py
 # Ölçümleri yeniden üret
 & $py robot_learning\tools\staged_experiments.py climb --course hybrid-staged-up-13 --seed 1017300 --episodes 20 --output robot_learning\runs\staged-13.json
 & $py robot_learning\tools\staged_experiments.py climb --course hybrid-staged-up-13 --run $ppo13 --seed 1017300 --episodes 20 --output robot_learning\runs\staged-ppo-13.json

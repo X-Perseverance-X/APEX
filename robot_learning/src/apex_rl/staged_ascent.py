@@ -58,6 +58,15 @@ for _height in range(13, 21):
     COURSES[_name] = COURSES[f"hybrid-brace-transfer-up-{_height:02}"]
     STAGED[_name] = _height / 100
 
+WIDE_REAR_COURSE = "hybrid-wide-rear-up-20"
+# Layout for the experimental 20 cm course while the last rear sole is lifted
+# (distances beyond the lip, metres; height above the tread; pitch in degrees).
+# Measured on seeds 1013200-1013219: a higher body, closer front soles and looser
+# start-pose limits all completed fewer runs than these values.
+TILT_LAYOUT = {"front": 0.33, "middle": 0.15, "x": 0.15, "height": 0.09, "pitch": 10}
+COURSES[WIDE_REAR_COURSE] = COURSES["hybrid-staged-up-20"]
+STAGED[WIDE_REAR_COURSE] = 0.20
+
 CHASSIS_BOTTOM = np.array(
     [
         [x, y, z]
@@ -89,6 +98,8 @@ class StagedAscent(BodyMotion):
         self.pose_pitch = 0.0
         self.stage_body = None
         self.last_shift = None
+        self.post_started = self.post_settled = False
+        self.post_wait = 0.0
 
     @property
     def edge(self):
@@ -243,21 +254,38 @@ class StagedAscent(BodyMotion):
                 targets[leg] = (x - 0.22, side[leg] * 0.200, low)
             return targets, pose, MIDDLE if ready else ()
         if phase == "rear":
-            ready = all(feet[leg, 0] >= e + 0.29 for leg in FRONT) and all(
+            front_need = (
+                TILT_LAYOUT.get("front", 0.33) - 0.04
+                if self.env.course_name == WIDE_REAR_COURSE
+                else 0.29
+            )
+            ready = all(feet[leg, 0] >= e + front_need for leg in FRONT) and all(
                 feet[leg, 0] >= e + 0.12 for leg in MIDDLE
             )
             x = e + (0.16 if ready else 0.08)
             pose = (x, h + (0.10 if ready else 0.09), math.radians(10))
+            cfg = TILT_LAYOUT if self.env.course_name == WIDE_REAR_COURSE else {}
             for leg in FRONT:
-                targets[leg] = (e + 0.33, side[leg] * 0.205, high)
+                targets[leg] = (e + cfg.get("front", 0.33), side[leg] * 0.205, high)
             for leg in MIDDLE:
-                targets[leg] = (e + 0.15, side[leg] * 0.245, high)
+                targets[leg] = (e + cfg.get("middle", 0.15), side[leg] * 0.245, high)
             for leg in REAR:
                 targets[leg] = (
                     (e + 0.065, side[leg] * 0.205, high)
                     if ready
                     else (min(x - 0.20, front_lip), side[leg] * 0.200, low)
                 )
+            if ready and self.env.course_name == WIDE_REAR_COURSE:
+                # Make room for the flexed knee at the crest. The other five
+                # feet and the full swing still go through the usual checks.
+                pose = (
+                    e + TILT_LAYOUT.get("x", 0.15),
+                    h + TILT_LAYOUT.get("height", 0.09),
+                    math.radians(TILT_LAYOUT.get("pitch", 10)),
+                )
+                for leg in REAR:
+                    if not up[leg]:
+                        targets[leg] = (e + 0.05, side[leg] * 0.265, high)
             return targets, pose, REAR if ready else ()
         return targets, (float(self.body[0]), stand, 0.0), ()
 
@@ -332,11 +360,32 @@ class StagedAscent(BodyMotion):
         dxs = (0.0, -0.03, 0.03, -0.06)
         dzs = (0.0, 0.015, -0.015, 0.03, -0.03)
         dps = tuple(math.radians(v) for v in (0, 5, -5, 10))
+        if phase == "rear" and self.env.course_name == WIDE_REAR_COURSE:
+            # Nose-down poses lift the rear hips so the last rear legs can fold
+            # onto the tread; the usual reach, torque and swing checks still apply.
+            dps = tuple(math.radians(v) for v in (0, -5, -10, -15, -20, 5))
+            dzs = (0.0, 0.015, 0.03, 0.045, -0.015, -0.03)
         dys = (0.0, -0.015 * side, -0.03 * side) if side else (0.0,)
+        if phase == "rear" and self.env.course_name == WIDE_REAR_COURSE and side:
+            # Sideways towards the standing side puts the centre of mass over
+            # the part of the support polygon that reaches furthest back.
+            dys = tuple(-v * side for v in (0.0, 0.02, 0.04, 0.06, 0.08))
         cands = []
         for dx, dz, dp, dy in itertools.product(dxs, dzs, dps, dys):
             cost = abs(dx) / 0.03 + abs(dz) / 0.015 + abs(dp) / math.radians(5) + abs(dy) / 0.015
             cands.append((cost, nx + dx, dy, max(stand - 0.015, nz + dz), npitch + dp))
+        if phase == "rear" and self.env.course_name == WIDE_REAR_COURSE:
+            # Pitch is the lever here, so weigh it lightly and look at every tilt.
+            cands = [
+                (
+                    abs(c[1] - nx) / 0.06
+                    + abs(c[3] - nz) / 0.06
+                    + abs(c[4] - npitch - math.radians(-10)) / math.radians(20)
+                    + abs(c[2]) / 0.03,
+                    *c[1:],
+                )
+                for c in cands
+            ]
         cands.sort(key=lambda c: c[0])
         if kind == "advance":
             cands.insert(0, (0.0, cx, float(self.body[1]), cz, cp))
@@ -370,7 +419,10 @@ class StagedAscent(BodyMotion):
         weight = self._weight()
         steps = [(self.edge, self.top)]
         margin = self._joint_margin_now()
-        budget = 1400
+        tilt = phase == "rear" and self.env.course_name == WIDE_REAR_COURSE
+        budget = 4200 if tilt else 1400
+        leg_budget = 1300 if tilt else LEG_BUDGET
+        pose_count = 600 if tilt else POSES_PER_LANDING
         checks = 0
         reasons = self.last_reasons = {}
 
@@ -409,12 +461,17 @@ class StagedAscent(BodyMotion):
                 neighbours = feet[
                     [n for n in (leg - 1, leg + 1) if 0 <= n < 6 and n // 3 == leg // 3]
                 ]
-                for _, x, y, z, pitch in self._poses(phase, leg, kind, landing, feet)[
-                    :POSES_PER_LANDING
-                ]:
+                if tilt and kind == "up":
+                    lifted = self._lift_then_tilt(
+                        phase, leg, landing, feet, neighbours, note, residual
+                    )
+                    if lifted is not None:
+                        self.plans += 1
+                        return lifted
+                for _, x, y, z, pitch in self._poses(phase, leg, kind, landing, feet)[:pose_count]:
                     checks += 1
                     leg_checks += 1
-                    if checks > budget or leg_checks > LEG_BUDGET:
+                    if checks > budget or leg_checks > leg_budget:
                         break
                     body = np.array([x, y, z])
                     if not self._chassis_clear(body, pitch):
@@ -517,7 +574,7 @@ class StagedAscent(BodyMotion):
                                 "checks": checks,
                                 "concurrent": concurrent,
                             }
-                if checks > budget or leg_checks > LEG_BUDGET:
+                if checks > budget or leg_checks > leg_budget:
                     break
             if checks > budget:
                 break
@@ -606,6 +663,104 @@ class StagedAscent(BodyMotion):
                     "checks": 0,
                     "concurrent": False,
                 }
+        return None
+
+    def _lift_then_tilt(self, phase, leg, landing, feet, neighbours, note, residual):
+        """Lift the sole a little where the body is, tilt the body while it hangs, then cross.
+
+        Used for the last rear soles: no single pose both keeps the soles on
+        the ground within reach and lets the leg fold onto the tread, but the
+        soles that stay down only need the five-foot stance to hold at the
+        start pose, at the end pose and halfway between them.
+        """
+        geom = self.geom
+        torque = self._torque_limit()
+        com_body = self._com_body()
+        weight = self._weight()
+        steps = [(self.edge, self.top)]
+        margin = self._joint_margin_now()
+        stance = np.ones(6, dtype=bool)
+        stance[leg] = False
+        a_body = np.array(self.body, dtype=float)
+        a_pitch = float(self.pitch)
+        hold_a = check_stance(
+            geom, torque, feet, stance, a_body, a_pitch, com_body, weight, steps,
+            required_margin=margin,
+        )  # fmt: skip
+        if not hold_a.feasible:
+            note(leg, "up", "start pose " + hold_a.reason)
+            return None
+        crossing = feet[leg, 0] < self.edge <= landing[0]
+        lift = 0.030 + 0.015 * residual[1]
+        for _, x, y, z, pitch in self._poses(phase, leg, "up", landing, feet)[:600]:
+            body = np.array([x, y, z])
+            if not self._chassis_clear(body, pitch):
+                note(leg, "up", "chassis over tread")
+                continue
+            if self._max_lag(body, feet, skip=leg) > MAX_LAG_M:
+                note(leg, "up", "leaves a sole behind")
+                continue
+            hold = check_stance(
+                geom, torque, feet, stance, body, pitch, com_body, weight, steps,
+                required_margin=margin,
+            )  # fmt: skip
+            if not hold.feasible:
+                note(leg, "up", "end pose " + hold.reason)
+                continue
+            mid = 0.5 * (a_body + body)
+            mid_pitch = 0.5 * (a_pitch + pitch)
+            if not self._chassis_clear(mid, mid_pitch) or not check_stance(
+                geom, torque, feet, stance, mid, mid_pitch, com_body, weight, steps,
+                required_margin=margin,
+            ).feasible:  # fmt: skip
+                note(leg, "up", "halfway pose")
+                continue
+            for retreat, bulge, clearance in itertools.product(
+                (0.030, 0.060), (0.0, 0.03, 0.06), (0.026, 0.040)
+            ):
+                if not crossing and (retreat != 0.030 or bulge or clearance != 0.026):
+                    continue
+                crest = (
+                    self.top + self.radius + clearance
+                    if crossing
+                    else max(landing[2], feet[leg, 2]) + lift
+                )
+                path, waypoints = swing_path(
+                    feet[leg],
+                    landing,
+                    crest,
+                    self.edge if crossing else None,
+                    self.radius,
+                    retreat=retreat,
+                    bulge=bulge,
+                )
+                for split in (2, 3, 4, 5, 6):
+                    first = check_swing(
+                        geom, leg, path[: split + 1], a_body, a_pitch, neighbours, steps
+                    )
+                    if not first.feasible:
+                        note(leg, "up", "lift at start pose: " + first.reason)
+                        break
+                    rest = check_swing(geom, leg, path[split:], body, pitch, neighbours, steps)
+                    if rest.feasible:
+                        return {
+                            "phase": phase,
+                            "leg": leg,
+                            "kind": "up",
+                            "landing": landing,
+                            "waypoints": waypoints,
+                            "body": a_body,
+                            "pitch": a_pitch,
+                            "post_body": body,
+                            "post_pitch": pitch,
+                            "split": split / 6.0,
+                            "torque_ratio": hold.torque_ratio,
+                            "worst_joint": hold.worst_joint,
+                            "com_margin": hold.com_margin,
+                            "checks": 0,
+                            "concurrent": False,
+                        }
+                    note(leg, "up", "after tilt: " + rest.reason)
         return None
 
     # ------------------------------------------------------------- execution
@@ -709,6 +864,8 @@ class StagedAscent(BodyMotion):
                 ready, reason = self._measured_ready(self.plan)
                 if ready:
                     self.state, self.timer = "swing", 0.0
+                    self.post_started = self.post_settled = False
+                    self.post_wait = 0.0
                     self.leg = self.plan["leg"]
                     self.lift_off = self.anchors[self.leg].copy()
                     self.landing = self.plan["landing"]
@@ -769,6 +926,27 @@ class StagedAscent(BodyMotion):
         shares = (0.30, 0.42, 0.28)
         observed = feet[self.leg]
         self.progress += 0.02 / (shares[self.segment] * duration)
+        post = plan.get("post_body")
+        if post is not None and not self.post_settled:
+            if not self.post_started and self.segment == 0 and ease(self.progress) >= plan["split"]:
+                self.post_started = True
+                self.stage_body = np.array(post, dtype=float)
+                self.pose_pitch = float(plan["post_pitch"])
+            if self.post_started:
+                data = self.env.data
+                r = data.xmat[self.base_id].reshape(3, 3)
+                pitch_now = math.atan2(r[2, 0], math.hypot(r[2, 1], r[2, 2]))
+                near = (
+                    np.abs(self.stage_body - data.qpos[:3]).max() < 0.012
+                    and abs(pitch_now - self.pose_pitch) < math.radians(3.0)
+                    and np.abs(self.velocity).max() < 0.02
+                )
+                self.post_wait += 0.02
+                if near or self.post_wait > 4.0:
+                    self.post_settled = True
+                else:
+                    self.progress -= 0.02 / (shares[self.segment] * duration)
+                    self.elapsed -= 0.02
         if self.segment == 0 and self.progress >= 1.0:
             if (
                 not crossing

@@ -31,6 +31,28 @@ def test_geometry_matches_current_firmware_constants():
     assert "stepLift = 65.0" in source  # highlights stale 50 mm ROS parameter file
 
 
+def test_leg_servo_cases_follow_four_bore_pattern_on_each_holder():
+    model = mujoco.MjModel.from_xml_string(build_xml())
+    # Corners of each four-bore rectangle, measured in link-local
+    # millimetres at the original right-hand MARK_2 assembly's mounting face.
+    for leg in LEG_ORDER:
+        side = 1 if leg.startswith("R") else -1
+        for name, corners in (
+            ("femur_DS3240", [(64, -14), (74, -14), (64, 34.1), (74, 34.1)]),
+            ("tibia_BLS3225", [(-9.46, -11.46), (-14.58, -2.87), (31.9, 13.19), (26.78, 21.78)]),
+        ):
+            geom = model.geom(f"{leg.lower()}_{name}_case")
+            rotation = np.empty(9)
+            mujoco.mju_quat2Mat(rotation, geom.quat)
+            basis = rotation.reshape(3, 3)
+            bores = np.array([[x, -20 * side, z] for x, z in corners])
+            local_mm = (bores - geom.pos * 1000) @ basis
+            half_spacing = np.linalg.norm(np.subtract(corners[2], corners[0])) / 2
+            np.testing.assert_allclose(abs(local_mm[:, 0]), half_spacing, atol=0.02)
+            np.testing.assert_allclose(abs(local_mm[:, 1]), 5.0, atol=0.02)
+            assert geom.pos[1] * 1000 * side + geom.size[2] * 1000 == pytest.approx(5)
+
+
 def test_contract_rejects_wrong_units_or_mirror():
     cfg = load_contract()
     cfg["units"] = "mm"

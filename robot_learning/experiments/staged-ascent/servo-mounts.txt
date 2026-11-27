@@ -1,0 +1,14 @@
+leg  joint  axis err shaft off  in-case  bore err
+RF   femur     0.00°   -10.05        0    0.000
+RF   tibia     0.00°   -10.08        0    0.000
+RM   femur     0.00°   -10.05        0    0.000
+RM   tibia     0.00°   -10.08        0    0.000
+RR   femur     0.00°   -10.05        0    0.000
+RR   tibia     0.00°   -10.08        0    0.000
+LF   femur     0.00°   -10.05        0    0.000
+LF   tibia     0.00°   -10.08        0    0.000
+LM   femur     0.00°   -10.05        0    0.000
+LM   tibia     0.00°   -10.08        0    0.000
+LR   femur     0.00°   -10.05        0    0.000
+LR   tibia     0.00°   -10.08        0    0.000
+all leg servo cases agree with the holders

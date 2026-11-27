@@ -19,7 +19,7 @@ from .ascent_pose import KNEE_CLEARANCE_LIMIT
 from .course_observability import training_recorder, watch_stage, write_report
 from .leg_contacts import OVERLAP_LIMIT_M
 from .locomotion import COURSES, LocomotionEnv
-from .staged_ascent import STAGED, make_env  # also registers the hybrid-staged-up-* courses
+from .staged_ascent import STAGED, WIDE_REAR_COURSE, make_env
 
 STAGES = tuple(name for name in COURSES if name != "home-corner-preview")
 SCHEMA = 1
@@ -136,6 +136,7 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     view.add_argument("--static", action="store_true", help="inspect the parkour at rest")
     view.add_argument("--seed", type=int, default=42)
     view.add_argument("--randomize", action="store_true", help="replay a benchmark seed")
+    view.add_argument("--replay-seconds", type=float, help="override the time limit for viewing one episode")
     view.add_argument("--stabilized-gaze", action="store_true", help="drive the simulated gimbal")
     view.add_argument("--front-view", action="store_true", help="look through the robot camera")
     bench = sub.add_parser("course-bench", help="evaluate the tripod reference or policy")
@@ -209,9 +210,21 @@ def _fingerprint(env: LocomotionEnv) -> str:
         *getattr(env, "fingerprint_sources", ()),
     )
     source = [Path(__file__).with_name(name).read_text(encoding="utf-8") for name in names]
-    return hashlib.sha256(
+    digest = hashlib.sha256(
         json.dumps([env.config, env.body_motion is not None, *source], sort_keys=True).encode()
     ).hexdigest()
+    if env.course_name == WIDE_REAR_COURSE:
+        return digest
+    # The original courses only gained visual CAD corrections. Bind their
+    # recorded policies to the exact equivalent builds, not to future edits.
+    return {
+        "a37f2b2c7c8cd6a68672ad94e984d3a52e1ac7abc4cd3a8467132f115529802f":
+            "4188a06f2142730146189752d0b2252d6fecd9d070ab1b26bc78012771a932f9",
+        "589c8f3a8d41b660bf378c69533e46e23f3e3ebddd20de761fd47dbc95075d27":
+            "8138f04c452a6d7057015ade4ade0dc58e339ee4281f1324d1a77761ed46c652",
+        "26500b47f57e8d3efafae7f6355db979ede5b66c02cbcb1ab4c75591a6632ea5":
+            "7857fe0c0afb26871ac194186a9ed330c9e40577cba9efcca106764ab4586ddf",
+    }.get(digest, digest)
 
 
 def _read_policy(run: Path, env: LocomotionEnv, *, exact_course: bool, vector=None):
@@ -399,6 +412,11 @@ def _inspect(args) -> None:
                 report = benchmark(env, policy, args.episodes, seed=args.seed)
             print(json.dumps({"course": env.course_name, **report}, indent=2))
         else:
+            if args.replay_seconds is not None:
+                if not math.isfinite(args.replay_seconds) or args.replay_seconds <= 0:
+                    raise ValueError("--replay-seconds must be positive and finite")
+                dt = env.control_steps * env.model.opt.timestep
+                env.episode_steps = max(1, round(args.replay_seconds / dt))
             policy = _read_policy(args.run, env, exact_course=True) if args.run else None
             _view(env, policy, args)
     finally:

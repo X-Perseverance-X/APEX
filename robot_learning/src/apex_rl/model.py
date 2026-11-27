@@ -295,20 +295,27 @@ def build_xml(config: dict | None = None, *, mesh_dir: str | Path = ASSET_DIR) -
                 **VISUAL_ONLY,
             )
             if joint == "coxa":
+                # Four mounting bores on the MARK_2 femur holder span
+                # 10 x 48.1 mm in local X/Z. The pocket floor is at Y=+5 mm.
+                depth = servo_sizes["DS3240"][2]
                 add_servo_case(
                     parent,
                     f"{prefix}_femur_DS3240_case",
                     servo_sizes["DS3240"],
-                    [float(links["coxa"]) - 0.010, -0.007 * mirror, 0],
-                    euler="1.570796327 0 0",
+                    [0.069, mirror * (0.005 - depth / 2), 0.01005],
+                    euler=fmt([mirror * math.pi / 2, 0, mirror * math.pi / 2]),
                 )
             if joint == "tibia":
+                # The knee pocket is oblique in the tibia link frame. Its bolt
+                # rectangle runs 41.36 mm in X and 24.65 mm in Z end to end.
+                depth = servo_sizes["BLS3225"][2]
+                angle = math.atan2(24.65, 41.36)
                 add_servo_case(
                     parent,
                     f"{prefix}_tibia_BLS3225_case",
                     servo_sizes["BLS3225"],
-                    [0.012, -0.004 * mirror, 0],
-                    euler="1.570796327 0 0",
+                    [0.00866, mirror * (0.005 - depth / 2), 0.00516],
+                    euler=fmt([mirror * math.pi / 2, 0, mirror * angle]),
                 )
             torque = float(cfg["joint_torque_limit_nm"][joint])
             ET.SubElement(

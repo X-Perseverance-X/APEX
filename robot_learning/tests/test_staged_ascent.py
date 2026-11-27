@@ -18,7 +18,10 @@ def test_staged_courses_reuse_the_brace_transfer_geometry_and_limits():
         assert (
             COURSES[f"hybrid-staged-up-{height}"] is COURSES[f"hybrid-brace-transfer-up-{height}"]
         )
-    assert set(STAGED) == {f"hybrid-staged-up-{h}" for h in range(13, 21)}
+    assert set(STAGED) == {f"hybrid-staged-up-{h}" for h in range(13, 21)} | {
+        "hybrid-wide-rear-up-20"
+    }
+    assert COURSES["hybrid-wide-rear-up-20"] is COURSES["hybrid-staged-up-20"]
     assert type(make_env("hybrid-brace-transfer-up-13")) is LocomotionEnv
 
 
@@ -104,3 +107,26 @@ def test_staged_env_keeps_the_policy_interface_and_resumes_a_snapshot_exactly():
         np.testing.assert_allclose(resumed.data.qpos, expected, atol=1e-9)
     finally:
         resumed.close()
+
+
+def test_last_rear_sole_is_lifted_after_tilting_the_body_on_the_20_cm_tilt_course():
+    env = make_env("hybrid-wide-rear-up-20")
+    try:
+        env.episode_steps = 4000
+        env.reset(seed=1013201)
+        action = np.zeros(env.action_space.shape, dtype=np.float32)
+        lifted = []
+        done = False
+        while not done:
+            _, _, terminated, truncated, info = env.step(action)
+            plan = env.body_motion.plan
+            if plan is not None and plan.get("post_body") is not None:
+                lifted.append((plan["pitch"], plan["post_pitch"]))
+            done = terminated or truncated
+        # All six soles reached the tread, with the body tilted forward of the
+        # start pose while the last rear sole hung, and nothing fell.
+        assert info["peak_upper_contacts"] == 6
+        assert not info["fallen"] and not info["body_impact"]
+        assert any(after < before - 0.01 for before, after in lifted)
+    finally:
+        env.close()

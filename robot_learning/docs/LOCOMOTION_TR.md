@@ -605,10 +605,18 @@ Denetleyici etrafında eğitilen artık PPO 13 cm'de 20/20 tamamladı. 14 cm PPO
 0,27 s rıht teması, PPO 16/20 verdi; müfredat 15 cm'de durdu. 18–20 cm'de ön
 ve orta ayaklar basamağa çıktı. Arka aktarım gövde desteği olmadan uygun duruş bulamadı.
 
+20 cm için ayrı deney parkuru `hybrid-wide-rear-up-20` son arka ayağı önce mevcut
+pozda kaldırır, ayak havadayken gövdeyi burun aşağı yeni poza getirir ve sonra
+basamağa taşır. 1017300–1017319 grubunda 13/20 tamamladı (düşme ve gövde darbesi
+yok, başarılı koşuların hiçbirinde rıht teması yok, 12'si 60 s içinde). Eşik 18/20
+olduğu için 20 cm geçmiş sayılmaz. `tools/check_servo_mounts.py` femur ve tibia
+servo kasalarının STL vida delikleriyle ve eklem eksenleriyle uyumunu denetler.
+
 ```powershell
 & $py -m apex_rl.cli course-view --course hybrid-staged-up-13 --randomize --seed 1017317
 & $py -m apex_rl.cli course-view --course hybrid-staged-up-13 --randomize --seed 1017309
 & $py -m apex_rl.cli course-bench --course hybrid-staged-up-14 --episodes 20 --seed 1017300 --eval-workers 2
+& $py -m apex_rl.cli course-view --course hybrid-wide-rear-up-20 --randomize --seed 1017317 --replay-seconds 90
 & $py -m apex_rl.cli course-policy-view --run robot_learning/experiments/staged-ascent/ppo-13/hybrid-staged-up-13 --seed 1017317 --output robot_learning/runs/staged-13-best.html
 ```
 
