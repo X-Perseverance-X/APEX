@@ -13,6 +13,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from .ascent_pose import KNEE_CLEARANCE_LIMIT
 from .course_observability import training_recorder, watch_stage, write_report
 from .leg_contacts import OVERLAP_LIMIT_M
 from .locomotion import COURSES, LocomotionEnv
@@ -69,6 +70,25 @@ REPLAY_MODELS = {
     "52ae7e0e3813d47545ccb18e992928da7d9c87f9d5766a4207573a0903fc8d89": {
         "hybrid-contact-up-05",
     },
+    "b1458877e84c1232ffb8a979077825708fcd56004038f9482e0c84805594f350": {
+        "hybrid-contact-up-05",
+        "hybrid-contact-up-07",
+        "hybrid-contact-up-15",
+        "hybrid-contact-stairs-up-10",
+        "hybrid-rubble-01",
+    },
+    "8d294a8593263dad55f8d9547abe018058ad2686e58db1ab2c08c5abe97153b1": {
+        "hybrid-pose-up-05",
+        "hybrid-pose-up-07",
+        "hybrid-pose-up-10",
+    },
+    "cc008c71630c095ea590864c619c166e9ae36d483316a8a7cff3d7552008daae": {
+        "hybrid-steep-up-08",
+        "hybrid-steep-up-09",
+        "hybrid-steep-up-10",
+        "hybrid-steep-up-12",
+        "hybrid-steep-up-15",
+    },
 }
 
 
@@ -124,7 +144,14 @@ def _fingerprint(env: LocomotionEnv) -> str:
     # Include the geometry and implementation that define policy observations and actions.
     source = [
         Path(__file__).with_name(name).read_text(encoding="utf-8")
-        for name in ("locomotion.py", "env.py", "model.py", "body_motion.py", "leg_contacts.py")
+        for name in (
+            "locomotion.py",
+            "env.py",
+            "model.py",
+            "body_motion.py",
+            "leg_contacts.py",
+            "ascent_pose.py",
+        )
     ]
     return hashlib.sha256(
         json.dumps([env.config, env.body_motion is not None, *source], sort_keys=True).encode()
@@ -139,6 +166,7 @@ def _read_policy(run: Path, env: LocomotionEnv, *, exact_course: bool, vector=No
     legacy = manifest["course"] in REPLAY_MODELS.get(manifest["model_sha256"], ())
     if (
         manifest["schema"] != SCHEMA
+        or manifest.get("attitude_control", False) != env.attitude_control
         or manifest.get("body_control", False) != (env.body_motion is not None)
         or not (match or legacy)
     ):
@@ -178,6 +206,14 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
         body_stats["link_overlap_passed"] = (
             max(body_stats["interleg_peak_m"], body_stats["rear_step_peak_m"]) <= OVERLAP_LIMIT_M
         )
+    if env.attitude_control:
+        body_stats["min_knee_deg"] = min(item["min_knee_deg"] for item in outcomes)
+        body_stats["knee_clearance_passed"] = bool(
+            np.deg2rad(body_stats["min_knee_deg"]) > KNEE_CLEARANCE_LIMIT
+        )
+        body_stats["peak_target_rpy_deg"] = np.max(
+            [item["peak_target_rpy_deg"] for item in outcomes], axis=0
+        ).tolist()
     return {
         "episodes": episodes,
         "successes": sum(item["success"] for item in outcomes),
@@ -264,6 +300,20 @@ def _view(env, policy, args) -> None:
                         f"\nLink overlap peak {info['interleg_peak_m'] * 1000:.1f} mm"
                         f" | rear / stair {info['rear_step_peak_m'] * 1000:.1f} mm"
                     )
+                if env.attitude_control:
+                    c = env.body_motion
+                    roll, pitch, yaw = np.rad2deg([c.roll, c.pitch, c.yaw])
+                    rotation = env.data.xmat[c.base_id].reshape(3, 3)
+                    measured = np.rad2deg(
+                        [
+                            np.arctan2(rotation[2, 1], rotation[2, 2]),
+                            np.arctan2(rotation[2, 0], np.hypot(rotation[2, 1], rotation[2, 2])),
+                            np.arctan2(rotation[1, 0], rotation[0, 0]),
+                        ]
+                    )
+                    details += f"\nRPY targets {roll:+.1f} / {pitch:+.1f} / {yaw:+.1f} deg"
+                    details += "\nRPY measured " + " / ".join(f"{axis:+.1f}" for axis in measured)
+                    details += f"\nKnee minimum {info['min_knee_deg']:.1f} deg"
                 window.set_texts((None, mujoco.mjtGridPos.mjGRID_TOPLEFT, "Gait", details))
             window.sync()
             if done or truncated:
@@ -317,6 +367,7 @@ def _train(args) -> None:
                 "eval_seed": args.eval_seed,
                 "envs": args.envs,
                 "body_control": eval_env.body_motion is not None,
+                "attitude_control": eval_env.attitude_control,
                 "total_transitions": None,
                 "model_sha256": _fingerprint(eval_env),
                 "python": platform.python_version(),
@@ -368,6 +419,7 @@ def _train(args) -> None:
             evaluation["successes"] / args.eval_episodes >= MIN_SUCCESS
             and evaluation["falls"] / args.eval_episodes <= MAX_FALLS
             and evaluation.get("link_overlap_passed", True)
+            and evaluation.get("knee_clearance_passed", True)
         )
         baseline_key = "body_reference" if eval_env.body_motion is not None else "tripod"
         report = {"course": course, "passed": passed, "policy": evaluation, baseline_key: baseline}

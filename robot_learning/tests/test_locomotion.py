@@ -2,6 +2,7 @@ import mujoco
 import numpy as np
 import pytest
 
+from apex_rl.ascent_pose import KNEE_CLEARANCE_LIMIT, KNEE_COMMAND_MIN, KNEE_STOP, attitude_matrix
 from apex_rl.course_observability import LANE_SPACING, fleet_model
 from apex_rl.leg_contacts import OVERLAP_LIMIT_M
 from apex_rl.locomotion import COURSES, LocomotionEnv
@@ -199,5 +200,44 @@ def test_rubble_height_map_matches_collision_geometry_and_offset_goal(course_nam
         assert abs(env.course.goal_y) > 0.01
         assert env.course.route_y(env.course.goal + 0.01) == pytest.approx(env.course.goal_y)
         assert env.model.geom("goal_marker").pos[1] == pytest.approx(env.course.goal_y)
+    finally:
+        env.close()
+
+
+def test_attitude_matrix_positive_pitch_raises_robot_nose():
+    pose = attitude_matrix(0.08, 0.20, -0.11)
+    np.testing.assert_allclose(pose.T @ pose, np.eye(3), atol=1e-12)
+    assert np.linalg.det(pose) == pytest.approx(1.0)
+    assert pose[2, 0] > 0 and pose[2, 1] > 0 and pose[1, 0] < 0
+
+
+def test_knee_guard_retains_clearance_during_five_centimetre_ascent():
+    env = LocomotionEnv("hybrid-pose-up-05")
+    try:
+        obs, _ = env.reset(seed=1008170)
+        assert obs.shape == (105,) and env.action_space.shape == (8,)
+        assert env.model.joint("rf_tibia_joint").range[0] == pytest.approx(KNEE_STOP)
+        assert env.joint_low[2] == pytest.approx(KNEE_COMMAND_MIN)
+        for _ in range(env.episode_steps):
+            _, _, done, truncated, info = env.step(np.zeros(8))
+            if done or truncated:
+                break
+        assert info["success"] and np.deg2rad(info["min_knee_deg"]) > KNEE_CLEARANCE_LIMIT
+        assert np.min(env.data.xpos[env._foot_ids, 0]) > env.course.last_edge
+    finally:
+        env.close()
+
+
+def test_attitude_policy_controls_roll_and_yaw_independently():
+    env = LocomotionEnv("hybrid-steep-up-10")
+    try:
+        env.reset(seed=1008210)
+        env.gait = "wave"
+        action = np.zeros(8)
+        action[6], action[7] = 1, -1
+        for _ in range(15):
+            obs, _, _, _, _ = env.step(action)
+        assert env.body_motion.roll > 0 and env.body_motion.yaw < 0
+        np.testing.assert_allclose(obs[-2:], [env.body_motion.roll, env.body_motion.yaw])
     finally:
         env.close()

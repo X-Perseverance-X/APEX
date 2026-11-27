@@ -85,6 +85,9 @@ def write_stl(path: Path, vertices: np.ndarray) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
+    parser.add_argument(
+        "--components-output", type=Path, help="export link-local parts for inspection"
+    )
     args = parser.parse_args()
     assembly = args.source / "MARK_2_LEG.SLDASM"
     stl_files = {
@@ -143,20 +146,24 @@ def main() -> None:
     foot[1] = hip[1]
     pivots = {"mount": hip, "coxa": hip, "femur": femur, "tibia": knee}
     tips = {"mount": femur, "coxa": femur, "femur": knee, "tibia": foot}
-    ASSETS.mkdir(parents=True, exist_ok=True)
+    output = args.components_output or ASSETS
+    output.mkdir(parents=True, exist_ok=True)
     lengths = {}
     for link, parts in PARTS.items():
         vector = tips[link] - pivots[link]
         pitch = float(np.arctan2(vector[2], vector[0]))
         c, s = np.cos(pitch), np.sin(pitch)
         unpitch = np.array([[c, 0, -s], [0, 1, 0], [s, 0, c]])
-        original = np.concatenate(
-            [(meshes[name] @ frame - pivots[link]) @ unpitch for name in parts]
-        )
-        write_stl(ASSETS / f"{link}_right.stl", original)
-        mirrored = original[:, [0, 2, 1]].copy()
-        mirrored[:, :, 1] *= -1
-        write_stl(ASSETS / f"{link}_left.stl", mirrored)
+        local_parts = [(meshes[name] @ frame - pivots[link]) @ unpitch for name in parts]
+        if args.components_output:
+            for name, mesh in zip(parts, local_parts, strict=True):
+                write_stl(output / f"{link}_{name}.stl", mesh)
+        else:
+            original = np.concatenate(local_parts)
+            write_stl(output / f"{link}_right.stl", original)
+            mirrored = original[:, [0, 2, 1]].copy()
+            mirrored[:, :, 1] *= -1
+            write_stl(output / f"{link}_left.stl", mirrored)
         lengths[link] = round(float(np.linalg.norm(vector)) * 1000, 3)
     manifest = {
         "source": assembly.name,
@@ -166,7 +173,7 @@ def main() -> None:
         "units": "metres",
         "mirror": "local Y",
     }
-    (ASSETS / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(lengths))
 
 

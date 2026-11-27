@@ -54,6 +54,7 @@ def training_recorder(stage: Path):
                             "gait",
                             "approach_speed_m_s",
                             "precision_speed_m_s",
+                            "min_knee_deg",
                         )
                         if key in info
                     }
@@ -89,6 +90,7 @@ def training_recorder(stage: Path):
                     "body_height_range_m",
                     "max_lateral_com_m",
                     "rear_riser_contact_steps",
+                    "min_knee_deg",
                 ):
                     if field in self.completed[-1]:
                         row[field] = float(np.mean([episode[field] for episode in self.completed]))
@@ -249,6 +251,7 @@ def watch_stage(stage: Path, *, live: bool):
                     f"{marker}{int(worker) + 1}  {state}  ep {row['episode_id'] + 1}  "
                     f"{row['progress_m']:.2f} m  landings {row['touchdowns']}{body_status}"
                     + (f"  {row['gait'].upper()}" if "gait" in row else "")
+                    + (f"  knee {row['min_knee_deg']:.1f} deg" if "min_knee_deg" in row else "")
                 )
             replay_help = "" if live else " | R replay"
             window.set_texts(
@@ -329,6 +332,12 @@ def write_report(run: Path) -> Path:
                         f" · bacak örtüşmesi {1000 * p['interleg_peak_m']:.2f} mm"
                         f" · arka bacak / basamak {1000 * p['rear_step_peak_m']:.2f} mm"
                     )
+            if "min_knee_deg" in p:
+                roll, pitch, yaw = p["peak_target_rpy_deg"]
+                text += (
+                    f" · en kapalı diz {p['min_knee_deg']:.1f}°"
+                    f" · tepe R/P/Y hedefi {roll:.1f}° / {pitch:.1f}° / {yaw:.1f}°"
+                )
             body = "".join(
                 "<tr>"
                 f"<td>{row['seed']}</td>"
@@ -364,9 +373,10 @@ def write_report(run: Path) -> Path:
                 ("max_lateral_com_m", "Azami yanal COM sapması, m"),
                 ("optimizer_epochs", "Tamamlanan PPO epoch"),
                 ("rear_riser_contact_steps", "Arka ayak kenar teması, örnek"),
+                ("min_knee_deg", "En kapalı diz, °"),
             )
             if body_control or key not in ("body_height_range_m", "max_lateral_com_m")
-            if key not in ("optimizer_epochs", "rear_riser_contact_steps")
+            if key not in ("optimizer_epochs", "rear_riser_contact_steps", "min_knee_deg")
             or any(key in row for row in rows)
         )
         sample = (

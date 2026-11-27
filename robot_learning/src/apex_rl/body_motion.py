@@ -6,6 +6,8 @@ import math
 
 import numpy as np
 
+from .ascent_pose import attitude_matrix
+
 WAVE = (0, 3, 1, 4, 2, 5)
 DOWN_WAVE = (2, 5, 1, 4, 0, 3)
 DT = 0.02
@@ -73,6 +75,8 @@ class BodyMotion:
         self.path_x = float(self.body[0])
         self.velocity = np.zeros(3)
         self.pitch = 0.0
+        self.roll = 0.0
+        self.yaw = 0.0
         self.anchors = data.xpos[self.env._foot_ids].copy()
         self.leg = None
         self.next_leg = 0
@@ -187,9 +191,8 @@ class BodyMotion:
                     self.lift_off, feet[stance, :2].mean(axis=0), pace
                 )
                 rise = max(0.0, self.landing[2] - self.lift_off[2])
-                self.swing_height = float(
-                    np.clip(0.040 + 0.25 * rise + 0.028 * residual[1], 0.018, 0.080)
-                )
+                lift = 0.034 + 0.14 * rise if env.course.steep_approach else 0.040 + 0.25 * rise
+                self.swing_height = float(np.clip(lift + 0.028 * residual[1], 0.018, 0.080))
                 edge_pad = self.radius + 0.012
                 self.rear_edge_swing = (
                     env.edge_control
@@ -213,7 +216,9 @@ class BodyMotion:
         xy = self.body[:2].copy()
         self.path_x = min(self.path_x + DT * pace, root[0] + (0.018 if env.short_climb else 0.022))
         tall_ascent = env.contact_ascent and self.terrain.rise_m >= 0.07
-        front = self.terrain.height(root[0] + (0.24 if tall_ascent else 0.17), root[1])
+        steep = env.course.steep_approach
+        preview = 0.29 if steep else (0.24 if tall_ascent else 0.17)
+        front = self.terrain.height(root[0] + preview, root[1])
         centre = self.terrain.height(root[0] - 0.03, root[1])
         if self.support_count >= 3:
             support = feet[stance]
@@ -249,12 +254,37 @@ class BodyMotion:
         rate = np.clip(5 * (target - self.body), [-0.065, -0.065, -0.05], [0.08, 0.065, 0.05])
         self.velocity += np.clip(rate - self.velocity, -0.50 * DT, 0.50 * DT)
         self.body += self.velocity * DT
+        pitch_gain = 2.0 if steep else (1.3 if tall_ascent else 0.7)
+        pitch_limit = 0.26 if steep else 0.18
         pitch = float(
-            np.clip(
-                (front - centre) * (1.3 if tall_ascent else 0.7) + 0.16 * residual[5], -0.14, 0.18
-            )
+            np.clip((front - centre) * pitch_gain + 0.16 * residual[5], -0.14, pitch_limit)
         )
         self.pitch += float(np.clip(pitch - self.pitch, -0.34 * DT, 0.34 * DT))
+        if env.attitude_control:
+            # Estimate left/right support slope from measured feet, then let
+            # PPO adjust the three attitude axes without moving planted feet.
+            roll_ref = 0.0
+            if self.support_count >= 3:
+                left = support[support[:, 1] > root[1]]
+                right = support[support[:, 1] < root[1]]
+                if len(left) and len(right):
+                    dz = float(left[:, 2].mean() - right[:, 2].mean())
+                    dy = float(left[:, 1].mean() - right[:, 1].mean())
+                    roll_ref = 0.45 * math.atan2(dz, max(0.15, dy))
+            roll_target = np.clip(roll_ref + 0.30 * residual[6], -0.15, 0.15)
+            yaw_target = np.clip(0.45 * residual[7], -0.16, 0.16)
+            if (
+                env.course.diagonal_transfer
+                and self.leg in (0, 3)
+                and self.landing[2] > self.lift_off[2] + 0.04
+            ):
+                # Lift the swinging shoulder and advance that side so the
+                # opposite side can carry the load through the support hull.
+                side = 1 if self.leg == 0 else -1
+                roll_target = np.clip(roll_target - side * 0.075, -0.20, 0.20)
+                yaw_target = np.clip(yaw_target + side * 0.090, -0.20, 0.20)
+            self.roll += float(np.clip(roll_target - self.roll, -0.30 * DT, 0.30 * DT))
+            self.yaw += float(np.clip(yaw_target - self.yaw, -0.27 * DT, 0.27 * DT))
         footholds = self.anchors.copy()
         if self.leg is not None:
             u = min(1.0, self.elapsed / duration)
@@ -286,9 +316,26 @@ class BodyMotion:
                 # the sole touches or the existing swing timeout expires.
                 foot[2] -= 0.06 * max(0.0, self.elapsed - duration)
             footholds[self.leg] = foot
-        c, s = math.cos(self.pitch), math.sin(self.pitch)
-        rotation = np.array([[c, 0, -s], [0, 1, 0], [s, 0, c]])
+        if env.attitude_control:
+            rotation = attitude_matrix(self.roll, self.pitch, self.yaw)
+        else:
+            c, s = math.cos(self.pitch), math.sin(self.pitch)
+            rotation = np.array([[c, 0, -s], [0, 1, 0], [s, 0, c]])
         body_frame = (footholds - self.body) @ rotation - env.hip
+        if steep and self.leg is not None:
+            # Keep the swing foot out of the minimum-reach circle implied
+            # by the knee stop, preserving its vertical clearance target.
+            leg = self.leg
+            coxa, femur, tibia = env.lengths
+            fold_limit = env.joint_low[3 * leg + 2]
+            inner = (
+                math.sqrt(femur**2 + tibia**2 + 2 * femur * tibia * math.cos(fold_limit)) + 0.002
+            )
+            x, y, z = body_frame[leg]
+            radius = math.hypot(x, y)
+            if abs(z) < inner and radius > 1e-5:
+                required = coxa + math.sqrt(inner**2 - z**2)
+                body_frame[leg, :2] *= max(1.0, required / radius)
         mc, ms = np.cos(env.mount), np.sin(env.mount)
         return np.column_stack(
             (

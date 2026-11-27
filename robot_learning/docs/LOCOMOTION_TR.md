@@ -323,6 +323,57 @@ eğitimlere rağmen 0/10 kaldı. İlk taşlı parkur 8/10 tamamlandı.
 İki denemede gövde temasıyla düşüş görüldü, bu nedenle daha zorlu
 taş dizilimine otomatik geçiş yapılmadı.
 
+#### Femur–tibia mafsal açıklığı ve üç eksenli çıkış
+
+MARK_2 montajının parça dönüşümleriyle femura bağlı
+`Tibia_Holder_3` ve hareketli `Tibia_Head` ayrı incelendi.
+1 mm örnek aralığındaki katı kesit taramasında örtüşme ilk
+kez −153°'de görüldü. −152°'de örnek örtüşmesi yoktu.
+Yeni parkurlarda simüle dizin fizik sınırı −150°, komut sınırı
+−149° oldu. Bunlar modelin diz açısıdır ve gerçek servo kalibrasyonu
+olarak kullanılmaz. Değerlendirme her 2 ms fizik adımında diz
+açısını örnekler ve −153°'ye ulaşan koşuyu geçirmez.
+
+PPO sekiz çıkış kullanır. Altı eski çıkışa roll ve yaw eklendi.
+Gövde dönüşümü aynı anda roll, pitch ve yaw uygular. Referans
+roll değeri destek ayaklarının sağ ve sol yükseklik farkından
+gelir. Salınım ayağı kaldırılırken, yüksek basamak denetimi
+ayak ucunu aynı yükseklikte tutup dizin katlanma sınırından
+doğan iç erişim yarıçapının dışına taşır. Gövdenin ön tarafı
+üst yüzeyi daha erken algıladığında pitch hedefi artırılır.
+Ayak destekleri ve CAD bacak çarpışmaları fizik motorunda kalır.
+
+```powershell
+& $py -m apex_rl.cli course-view --run robot_learning/runs/course-pose-ascent/hybrid-pose-up-07 --randomize --seed 1008150
+& $py -m apex_rl.cli course-watch --run robot_learning/runs/course-pose-ascent/hybrid-pose-up-07
+& $py -m apex_rl.cli course-view --run robot_learning/runs/course-steep-10-direct/hybrid-steep-up-10 --randomize --seed 1008301
+& $py -m apex_rl.cli course-watch --run robot_learning/runs/course-steep-10-direct/hybrid-steep-up-10
+```
+
+Tek robot ekranında hedeflenen ve ölçülen R/P/Y ile bölümdeki
+en kapalı diz açısı görünür. Dört robot izleyicisi iterasyon
+ve PPO epoch sayısını taşır. Kaynak montaj dosyaları elindeyse
+aynı kesit ölçümünü yeniden üretebilirsin.
+
+```powershell
+& $py robot_learning/tools/import_mark2_leg.py 'C:/Users/ASUSROG/Desktop/META-2/MARK_2' --components-output .runtime/knee-audit
+& $py robot_learning/tools/check_knee_clearance.py .runtime/knee-audit
+```
+
+5 cm 10/10, 7 cm iki bağımsız testte 20/20, 8 ve 9 cm ayrı ayrı
+10/10 tamamlandı ve düşme olmadı. 7 cm ayrıca üç eksende bozucu
+torkla 5/5 tamamlandı. 10 cm kademeli politikanın ilk eğitimi
+7/10'da kaldı. 7 cm politikasından doğrudan eğitilen 10 cm modeli
+iki testte 19/20 ve bir düşme ile daha iyi sonuç verdi. Bu modelin
+en kapalı ölçülen diz açısı −151,8°, en büyük R/P/Y hedefleri
+6,6°, 12,2° ve 3,1° oldu.
+
+Toplam 622.592 yeni simülasyon geçişi toplandı. 12 cm doğrudan
+eğitim 2/10, 15 cm daha yüksek engel deneyi 0/10 sonuç verdi.
+Çapraz yük aktaran 12 cm profili, ön ayak basamağa çıkarken aynı
+taraftaki gövdeyi yükseltti ve yaw hedefiyle o tarafı öne aldı.
+Ayrı değerlendirmede bu profil 0/10 kaldı.
+
 #### Önceki sabit desenli parkurlar
 
 | Seviye | Parkur | Başarı |

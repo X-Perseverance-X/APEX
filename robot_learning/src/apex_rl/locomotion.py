@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 from gymnasium import spaces
 
+from .ascent_pose import apply_knee_stops
 from .body_motion import BodyMotion
 from .contract import LEG_ORDER
 from .env import Meta1Env, _rotation_from_quaternion
@@ -24,6 +25,9 @@ class Course:
     tread_m: float = 0.42
     descending: bool = False
     link_contacts: bool = False
+    attitude_control: bool = False
+    steep_approach: bool = False
+    diagonal_transfer: bool = False
 
     @property
     def start_height(self) -> float:
@@ -246,6 +250,34 @@ COURSES = {
         ),
         waypoints=((0, 0), (0.52, 0), (0.90, 0.11), (1.29, 0.12), (1.99, -0.04)),
     ),
+    "hybrid-pose-up-05": Course(0.05, 1, edge_x=1.05, link_contacts=True, attitude_control=True),
+    "hybrid-pose-up-07": Course(0.07, 1, edge_x=1.05, link_contacts=True, attitude_control=True),
+    "hybrid-pose-up-10": Course(0.10, 1, edge_x=1.05, link_contacts=True, attitude_control=True),
+    "hybrid-pose-up-15": Course(0.15, 1, edge_x=1.05, link_contacts=True, attitude_control=True),
+    "hybrid-steep-up-08": Course(
+        0.08, 1, edge_x=1.05, link_contacts=True, attitude_control=True, steep_approach=True
+    ),
+    "hybrid-steep-up-09": Course(
+        0.09, 1, edge_x=1.05, link_contacts=True, attitude_control=True, steep_approach=True
+    ),
+    "hybrid-steep-up-10": Course(
+        0.10, 1, edge_x=1.05, link_contacts=True, attitude_control=True, steep_approach=True
+    ),
+    "hybrid-steep-up-12": Course(
+        0.12, 1, edge_x=1.05, link_contacts=True, attitude_control=True, steep_approach=True
+    ),
+    "hybrid-steep-up-15": Course(
+        0.15, 1, edge_x=1.05, link_contacts=True, attitude_control=True, steep_approach=True
+    ),
+    "hybrid-diagonal-up-12": Course(
+        0.12,
+        1,
+        edge_x=1.05,
+        link_contacts=True,
+        attitude_control=True,
+        steep_approach=True,
+        diagonal_transfer=True,
+    ),
 }
 
 TRIPOD = np.array([0, 1, 0, 1, 0, 1], dtype=float) * 0.5
@@ -265,6 +297,7 @@ class LocomotionEnv(Meta1Env):
     ):
         self.course_name = course
         self.course = COURSES[course]
+        self.attitude_control = self.course.attitude_control
         self.hybrid = course.startswith("hybrid-")
         self.rubble = isinstance(self.course, RubbleCourse)
         self.contact_ascent = (
@@ -296,10 +329,16 @@ class LocomotionEnv(Meta1Env):
         )
         self.stand_height -= self.course.start_height
         self.action_space = spaces.Box(
-            -1.0, 1.0, shape=(6 if body_control else 3,), dtype=np.float32
+            -1.0,
+            1.0,
+            shape=(8 if self.attitude_control else 6 if body_control else 3,),
+            dtype=np.float32,
         )
         self.observation_space = spaces.Box(
-            -np.inf, np.inf, shape=(103 if body_control else 85,), dtype=np.float32
+            -np.inf,
+            np.inf,
+            shape=(105 if self.attitude_control else 103 if body_control else 85,),
+            dtype=np.float32,
         )
         self._base_observation_space = spaces.Box(-np.inf, np.inf, shape=(72,), dtype=np.float32)
         self.mount = np.deg2rad([self.config["mount_yaw_deg"][leg] for leg in LEG_ORDER])
@@ -328,6 +367,8 @@ class LocomotionEnv(Meta1Env):
 
     def _model_xml(self) -> str:
         xml = self.course.scene(self.config)
+        if self.attitude_control:
+            xml = apply_knee_stops(xml)
         return (
             add_leg_contacts(xml, self.course.terrain_names) if self.course.link_contacts else xml
         )
@@ -369,6 +410,8 @@ class LocomotionEnv(Meta1Env):
                     *relative_feet,
                 ]
             )
+        if self.attitude_control:
+            extras.extend((self.body_motion.roll, self.body_motion.yaw))
         return np.concatenate((base, extras)).astype(np.float32)
 
     def _heading(self) -> float:
@@ -410,6 +453,8 @@ class LocomotionEnv(Meta1Env):
             self.body_motion.reset()
         self.min_body_z = self.max_body_z = float(self.data.qpos[2])
         self.max_lateral_com = 0.0
+        self.min_knee_position = float(self.data.qpos[self._leg_positions][2::3].min())
+        self.attitude_peak = np.zeros(3)
         return self._observation(), {"course": self.course_name}
 
     def _targets(self, residual: np.ndarray) -> np.ndarray:
@@ -517,6 +562,13 @@ class LocomotionEnv(Meta1Env):
             np.column_stack((coxa, shoulder, knee)).ravel(), self.joint_low, self.joint_high
         )
 
+    def _observe_link_contacts(self, contacts):
+        self.link_metrics.observe(contacts)
+        if self.attitude_control:
+            self.min_knee_position = min(
+                self.min_knee_position, float(self.data.qpos[self._leg_positions][2::3].min())
+            )
+
     def step(self, action):
         action = np.asarray(action, dtype=np.float32)
         if action.shape != self.action_space.shape or not np.isfinite(action).all():
@@ -527,8 +579,15 @@ class LocomotionEnv(Meta1Env):
         targets = self._targets(self.adjustment)
         self._apply_joint_targets(
             targets,
-            observe_contacts=self.link_metrics.observe if self.link_metrics is not None else None,
+            observe_contacts=(
+                self._observe_link_contacts if self.link_metrics is not None else None
+            ),
         )
+        if self.attitude_control:
+            controller = self.body_motion
+            self.attitude_peak = np.maximum(
+                self.attitude_peak, np.abs((controller.roll, controller.pitch, controller.yaw))
+            )
         self.steps += 1
         self.phase = (self.phase + 0.02 / self.period) % 1.0
         self.previous_action[:] = (targets - self.nominal) / 0.25
@@ -629,6 +688,9 @@ class LocomotionEnv(Meta1Env):
                 ),
                 rear_riser_contact_steps=self.rear_riser_contact_steps,
             )
+        if self.attitude_control:
+            info["min_knee_deg"] = math.degrees(self.min_knee_position)
+            info["peak_target_rpy_deg"] = np.rad2deg(self.attitude_peak).tolist()
         if self.record_pose and (
             self.steps % 5 == 0 or success or fallen or out or self.steps == self.episode_steps
         ):
