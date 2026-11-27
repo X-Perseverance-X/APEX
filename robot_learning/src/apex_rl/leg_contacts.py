@@ -53,11 +53,13 @@ class LinkContactMetrics:
     def __init__(self, model, terrain_ids):
         self.leg = np.full(model.ngeom, -1, dtype=np.int8)
         self.rear_link = np.zeros(model.ngeom, dtype=bool)
+        self.rigid_link = np.zeros(model.ngeom, dtype=bool)
         self.terrain = np.zeros(model.ngeom, dtype=bool)
         self.terrain[terrain_ids] = True
         for i, leg in enumerate(LEG_ORDER):
             ids = [model.geom(name).id for name in leg_geoms(leg)]
             self.leg[ids] = i
+            self.rigid_link[ids[:-1]] = True
             self.rear_link[ids[:-1]] = leg.endswith("R")
         self.reset()
 
@@ -66,6 +68,9 @@ class LinkContactMetrics:
         self.rear_step_peak_m = 0.0
         self.interleg_samples = 0
         self.rear_step_samples = 0
+        self.leg_stair_peak_m = 0.0
+        self.riser_contact_substeps = 0
+        self.sole_top_peak_m = 0.0
 
     def observe(self, contacts):
         a, b = contacts.geom.T
@@ -73,11 +78,22 @@ class LinkContactMetrics:
             return
         interleg = (self.leg[a] >= 0) & (self.leg[b] >= 0) & (self.leg[a] != self.leg[b])
         rear_step = (self.rear_link[a] & self.terrain[b]) | (self.rear_link[b] & self.terrain[a])
+        leg_stair = ((self.leg[a] >= 0) & self.terrain[b]) | ((self.leg[b] >= 0) & self.terrain[a])
+        rigid_stair = (self.rigid_link[a] & self.terrain[b]) | (
+            self.rigid_link[b] & self.terrain[a]
+        )
         depth = -contacts.dist
         self.interleg_peak_m = max(self.interleg_peak_m, float(depth[interleg].max(initial=0)))
         self.rear_step_peak_m = max(self.rear_step_peak_m, float(depth[rear_step].max(initial=0)))
         self.interleg_samples += int(np.any(depth[interleg] > OVERLAP_LIMIT_M))
         self.rear_step_samples += int(np.any(depth[rear_step] > OVERLAP_LIMIT_M))
+        self.leg_stair_peak_m = max(self.leg_stair_peak_m, float(depth[rigid_stair].max(initial=0)))
+        normal_z = contacts.frame.reshape(-1, 3, 3)[:, 0, 2]
+        sole_top = leg_stair & ~rigid_stair & (np.abs(normal_z) > 0.72)
+        self.sole_top_peak_m = max(self.sole_top_peak_m, float(depth[sole_top].max(initial=0)))
+        self.riser_contact_substeps += int(
+            np.any(leg_stair & (np.abs(normal_z) < 0.60) & (depth >= 0))
+        )
 
     def info(self):
         return {
@@ -85,4 +101,7 @@ class LinkContactMetrics:
             "rear_step_peak_m": self.rear_step_peak_m,
             "interleg_overlap_samples": self.interleg_samples,
             "rear_step_overlap_samples": self.rear_step_samples,
+            "leg_stair_peak_m": self.leg_stair_peak_m,
+            "riser_contact_substeps": self.riser_contact_substeps,
+            "sole_top_peak_m": self.sole_top_peak_m,
         }

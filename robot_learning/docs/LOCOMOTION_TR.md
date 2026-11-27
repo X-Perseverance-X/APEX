@@ -407,6 +407,55 @@ denemelik karşılaştırmada başarı artmadı.
 Toplam 229.376 yeni simülasyon geçişi toplandı. Bu koşu sonunda
 güvenilir çıkış eşiğini koruyan yükseklik 10 cm'dir.
 
+### Ev merdiveni parkuru
+
+Fotoğraflardaki düz kol 20 cm rıht, ilk sırada 30 cm ve sonraki sıralarda 27 cm
+basamak derinliğiyle modellenir. İnişte derinlikler ters sırayla gelir. 90 cm
+genişlik, beş düz basamak ve sola dönen üç adet 30° kama fotoğrafa dayalı
+tahminlerdir. Dönüş `home-corner-preview` sahnesinde incelenebilir. Fiziksel
+yürüyüş denemeleri düz kolda, bir ve üç basamaklı parkurlarda yapılır.
+
+```powershell
+Set-Location 'C:\Users\ASUSROG\Desktop\Proje\main_v17\APEX_META1_RADIO_SIL'
+$py = '.\.runtime\sim-rl-env\Scripts\python.exe'
+& $py -m apex_rl.cli course-view --course home-corner-preview --static
+& $py -m apex_rl.cli course-view --course hybrid-home-down-20-single --randomize --seed 1008953
+& $py -m apex_rl.cli course-view --course hybrid-home-up-20-single --randomize --seed 1009050
+```
+
+Çıkış görünümü henüz bitişi geçemeyen geliştirme testini tekrarlar. Rıht önünde ayak önce geri çekilir
+ve yükselir. Simülasyonda ölçülen yükseklik kenarı geçmeye yetince yatay hareket
+başlar. İki ön ayak basınca orta ayaklara sıra gelir. Gövde yüksekliği,
+öne eğimi ve yanal eğimi destek ayaklarına göre değişir. Dik yüz teması olan
+fizik adımlarının toplam süresi ile sert bacak parçalarının örtüşmesi ayrı ölçülür.
+Tabanın basamak üstündeki esnemesi ayrıca raporlanır.
+
+MARK_2 diz ara parçası ile `Tibia_Head` ve `Tibia_1` 0,4 mm kesitlerle ve
+0,25° aralıkla tarandı. İki parçada da kapanışta ilk örtüşme −152,25°'de
+görüldü. Ev parkuru değerlendirmesi ölçülen diz açısının −152° üzerinde
+kalmasını ve sert örtüşmenin en fazla 2 mm olmasını ister.
+
+```powershell
+& $py robot_learning/tools/check_knee_clearance.py .runtime/knee-audit --spacing-mm 0.4 --min-deg -154 --max-deg -149 --angle-step 0.25 --moving-part Tibia_1
+```
+
+İnişte tek 20 cm basamakta referans denetleyici ilk 5 denemenin tamamını
+dik yüze temas etmeden geçti. Ek 10 denemenin 8'i tamamlandı, ikisi düşüşle
+sonuçlandı. Farklı bir onlu grupta PPO 2/10, aynı koşullardaki referans
+10/10 tamamlandı. Üç adet 20 cm basamak ilk iniş ölçümünde 0/5 tamamlandı.
+Tek basamak çıkışının son referans turu 0/7 tamamlandı. En iyi denemede
+dört ayak üstte kaldı. Beş denemede gövde teması görüldü. Sert uzuv/basamak
+örtüşmesi en fazla 0,04 mm, bacaklar arası örtüşme 1,43 mm, en kapalı diz
+−150,75° oldu. Bu koşular tüm merdiveni çıkıp inmek için yeterlilik sağlamıyor.
+
+Altı PPO koşusunda toplam 294.912 yeni geçiş toplandı. Koşular ve HTML raporları
+`robot_learning/runs/course-home-*` klasörlerinde tutulur. Eğitim ve fizik bu
+oturumda dört paralel CPU ortamında çalıştı. Windows
+GPU sorgusu erişim hatası verdi ve yüklü PyTorch CUDA algılamadı. Toplu GPU
+fiziği için MuJoCo MJX ayrı bir çalışma altyapısı sunuyor.
+
+- [MuJoCo MJX](https://mujoco.readthedocs.io/en/stable/mjx.html)
+
 #### Önceki sabit desenli parkurlar
 
 | Seviye | Parkur | Başarı |

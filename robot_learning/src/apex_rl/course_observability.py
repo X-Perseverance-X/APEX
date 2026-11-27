@@ -352,6 +352,12 @@ def write_report(run: Path) -> Path:
                     f" · üst temas en fazla {p['peak_upper_contacts']}/6"
                     f" · öne ağırlık merkezi hedefi {1000 * p['forward_transfer_m']:.0f} mm"
                 )
+            if "mean_riser_contact_s" in p:
+                text += (
+                    f" · dik yüz ortalama teması {p['mean_riser_contact_s']:.2f} s"
+                    f" · sert uzuv/basamak {1000 * p['leg_stair_peak_m']:.2f} mm"
+                    f" · yumuşak taban/üst yüzey {1000 * p['sole_top_peak_m']:.2f} mm"
+                )
             body = "".join(
                 "<tr>"
                 f"<td>{row['seed']}</td>"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import xml.etree.ElementTree as ET
+from bisect import bisect_right
 from dataclasses import dataclass
 
 import numpy as np
@@ -13,6 +14,7 @@ from .ascent_pose import apply_knee_stops
 from .body_motion import BodyMotion
 from .contract import LEG_ORDER
 from .env import Meta1Env, _rotation_from_quaternion
+from .home_stairs import HomeStairGeometry
 from .leg_contacts import LinkContactMetrics, add_leg_contacts
 from .model import build_xml
 
@@ -30,12 +32,20 @@ class Course:
     diagonal_transfer: bool = False
     ledge_transfer: bool = False
     fore_probe: bool = False
+    home_stairs: HomeStairGeometry | None = None
 
     @property
     def start_height(self) -> float:
         return self.rise_m * self.risers if self.descending else 0.0
 
     def height(self, x: float, y: float = 0.0) -> float:
+        if self.home_stairs is not None:
+            if abs(y) > self.home_stairs.width_m / 2 or x < -1.25:
+                return 0.0
+            if not self.descending and x >= self.last_edge + 1.25:
+                return 0.0
+            level = bisect_right(self.step_edges, x + 1e-9)
+            return self.rise_m * (self.risers - level if self.descending else level)
         if self.descending:
             if abs(y) > 0.60 or x < -1.25:
                 return 0.0
@@ -49,7 +59,15 @@ class Course:
 
     @property
     def last_edge(self) -> float:
+        if self.home_stairs is not None:
+            return self.step_edges[-1]
         return self.edge_x + max(0, self.risers - 1) * self.tread_m
+
+    @property
+    def step_edges(self) -> tuple[float, ...]:
+        if self.home_stairs is not None:
+            return self.home_stairs.edges(self.edge_x, self.risers, self.descending)
+        return tuple(self.edge_x + i * self.tread_m for i in range(self.risers))
 
     @property
     def goal(self) -> float:
@@ -101,15 +119,30 @@ class Course:
                 start = self.edge_x + i * self.tread_m
                 depth = self.tread_m if i < self.risers - 1 else 1.25
                 height = (i + 1) * self.rise_m
+            if self.home_stairs is not None:
+                edge = self.step_edges
+                if self.descending:
+                    start = -1.25 if i == 0 else edge[i - 1]
+                    depth = edge[i] - start
+                else:
+                    start = edge[i]
+                    depth = edge[i + 1] - start if i < self.risers - 1 else 1.25
+                    if self.home_stairs.corner and i == self.risers - 1:
+                        depth = self.home_stairs.tread_m
+            half_width = self.home_stairs.width_m / 2 if self.home_stairs is not None else 0.60
             ET.SubElement(
                 world,
                 "geom",
                 name=f"course_step_{i + 1}",
                 type="box",
                 pos=f"{start + depth / 2} 0 {height / 2}",
-                size=f"{depth / 2} 0.60 {height / 2}",
+                size=f"{depth / 2} {half_width} {height / 2}",
                 friction="1 0.005 0.0001",
-                rgba=("0.24 0.38 0.46 1" if i % 2 == 0 else "0.30 0.47 0.55 1"),
+                rgba=(
+                    "0.40 0.22 0.13 1"
+                    if self.home_stairs is not None
+                    else ("0.24 0.38 0.46 1" if i % 2 == 0 else "0.30 0.47 0.55 1")
+                ),
             )
         ET.SubElement(
             world,
@@ -122,6 +155,14 @@ class Course:
             contype="0",
             conaffinity="0",
         )
+        if self.home_stairs is not None and self.home_stairs.corner:
+            world.remove(world.find("geom[@name='goal_marker']"))
+            self.home_stairs.add_corner(
+                root,
+                self.last_edge + self.home_stairs.tread_m,
+                self.risers * self.rise_m,
+                self.rise_m,
+            )
         return ET.tostring(root, encoding="unicode")
 
 
@@ -303,6 +344,40 @@ for height_cm in (11, 12, 13, 14, 16, 18, 20):
         ledge_transfer=True,
         fore_probe=True,
     )
+for direction in ("up", "down"):
+    descending = direction == "down"
+    for height_cm in (10, 12, 15, 20):
+        COURSES[f"hybrid-home-{direction}-{height_cm:02}"] = Course(
+            height_cm / 100,
+            3,
+            edge_x=1.05,
+            descending=descending,
+            link_contacts=True,
+            attitude_control=True,
+            steep_approach=not descending,
+            ledge_transfer=not descending,
+            fore_probe=not descending,
+            home_stairs=HomeStairGeometry(),
+        )
+    COURSES[f"hybrid-home-{direction}-20-single"] = Course(
+        0.20,
+        1,
+        edge_x=1.05,
+        descending=descending,
+        link_contacts=True,
+        attitude_control=True,
+        steep_approach=not descending,
+        ledge_transfer=not descending,
+        fore_probe=not descending,
+        home_stairs=HomeStairGeometry(),
+    )
+
+COURSES["home-corner-preview"] = Course(
+    0.20,
+    5,
+    edge_x=1.05,
+    home_stairs=HomeStairGeometry(corner=True),
+)
 
 TRIPOD = np.array([0, 1, 0, 1, 0, 1], dtype=float) * 0.5
 
@@ -480,6 +555,7 @@ class LocomotionEnv(Meta1Env):
         self.min_knee_position = float(self.data.qpos[self._leg_positions][2::3].min())
         self.attitude_peak = np.zeros(3)
         self.upper_rewarded = np.zeros(6, dtype=bool)
+        self.upper_reward_index = 0
         return self._observation(), {"course": self.course_name}
 
     def _targets(self, residual: np.ndarray) -> np.ndarray:
@@ -506,7 +582,12 @@ class LocomotionEnv(Meta1Env):
         return self._tripod_targets(residual)
 
     def _approach_complete(self, x: float) -> bool:
-        return self.course.edge_x - x <= 0.58
+        tall_home = (
+            self.course.home_stairs is not None
+            and self.contact_ascent
+            and self.course.rise_m >= 0.15
+        )
+        return self.course.edge_x - x <= (0.72 if tall_home else 0.58)
 
     def _tripod_targets(self, residual: np.ndarray, *, flat: bool = False) -> np.ndarray:
         period = 1.24 if flat else self.period
@@ -517,7 +598,17 @@ class LocomotionEnv(Meta1Env):
         u = np.clip((phase - duty) / (1 - duty), 0, 1)
         ramp = min(1.0, self.steps * 0.02 / 0.75)
         stride = (
-            (0.13 if flat else float(self.command[0]))
+            (
+                (
+                    0.105
+                    if self.course.home_stairs is not None
+                    and self.contact_ascent
+                    and self.course.rise_m >= 0.15
+                    else 0.13
+                )
+                if flat
+                else float(self.command[0])
+            )
             * (2.20 if self.climbing and not flat else period)
             * duty
             * (1.0 + 0.35 * residual[0])
@@ -601,6 +692,8 @@ class LocomotionEnv(Meta1Env):
         action = np.clip(action, -1, 1)
         self.adjustment = 0.75 * self.adjustment + 0.25 * action
         x0 = float(self.data.qpos[0])
+        home = self.course.home_stairs is not None and self.link_metrics is not None
+        previous_scrapes = self.link_metrics.riser_contact_substeps if home else 0
         targets = self._targets(self.adjustment)
         self._apply_joint_targets(
             targets,
@@ -669,11 +762,16 @@ class LocomotionEnv(Meta1Env):
             - 3.0 * (fallen or out)
         )
         if self.course.ledge_transfer:
+            if self.upper_reward_index != self.body_motion.ledge_index:
+                self.upper_reward_index = self.body_motion.ledge_index
+                self.upper_rewarded.fill(False)
             upper = self.body_motion.upper_contacts(soles, contact)
             # Reward only the first secure placement of each foot. Repeated
             # contacts at the same edge cannot earn the placement bonus again.
             reward += 0.42 * np.count_nonzero(upper & ~self.upper_rewarded)
             self.upper_rewarded |= upper
+        if home:
+            reward -= 0.009 * (self.link_metrics.riser_contact_substeps - previous_scrapes)
         if self.link_metrics is not None:
             info_contact = self.link_metrics.info()
         else:
@@ -725,6 +823,7 @@ class LocomotionEnv(Meta1Env):
         if self.course.ledge_transfer:
             info["peak_upper_contacts"] = self.body_motion.peak_upper_contacts
             info["forward_transfer_m"] = self.body_motion.transfer_peak_m
+            info["ledge_index"] = self.body_motion.ledge_index
         if self.record_pose and (
             self.steps % 5 == 0 or success or fallen or out or self.steps == self.episode_steps
         ):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import platform
 import time
 from functools import partial
@@ -18,7 +19,7 @@ from .course_observability import training_recorder, watch_stage, write_report
 from .leg_contacts import OVERLAP_LIMIT_M
 from .locomotion import COURSES, LocomotionEnv
 
-STAGES = tuple(COURSES)
+STAGES = tuple(name for name in COURSES if name != "home-corner-preview")
 SCHEMA = 1
 EVALUATION_SEED = 1_000_000
 MIN_SUCCESS = 0.80
@@ -95,12 +96,24 @@ REPLAY_MODELS = {
     "5938ddbb3a55a04eb745ada63e55bde6df5524496b780654d9967f500dc971c7": {
         "hybrid-transfer-up-12",
     },
+    "2e47318eaf206cb9ba4ad37f8fd6e07f2d7cd20d1d8c277c71bee7ec314b2565": {
+        "hybrid-probe-up-11",
+        "hybrid-probe-up-12",
+        "hybrid-probe-up-14",
+    },
+    "c80e1481f30dc92c8010f7c1d3626579e81b17dad632a90fa4c66cc9bcdc1218": {
+        "hybrid-home-up-10",
+        "hybrid-home-down-10",
+    },
+    "e316d00e667d3d171d203b402e14d3bd459759703c68ee2ab8dd1621ea1dba26": {
+        "hybrid-home-down-20-single",
+    },
 }
 
 
 def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     view = sub.add_parser("course-view", help="watch the tripod reference or a saved policy")
-    view.add_argument("--course", choices=STAGES)
+    view.add_argument("--course", choices=COURSES)
     view.add_argument("--run", type=Path, help="stage folder containing policy and manifest")
     view.add_argument("--static", action="store_true", help="inspect the parkour at rest")
     view.add_argument("--seed", type=int, default=42)
@@ -157,6 +170,7 @@ def _fingerprint(env: LocomotionEnv) -> str:
             "body_motion.py",
             "leg_contacts.py",
             "ascent_pose.py",
+            "home_stairs.py",
         )
     ]
     return hashlib.sha256(
@@ -214,8 +228,11 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
         )
     if env.attitude_control:
         body_stats["min_knee_deg"] = min(item["min_knee_deg"] for item in outcomes)
+        knee_limit = (
+            math.radians(-152) if env.course.home_stairs is not None else KNEE_CLEARANCE_LIMIT
+        )
         body_stats["knee_clearance_passed"] = bool(
-            np.deg2rad(body_stats["min_knee_deg"]) > KNEE_CLEARANCE_LIMIT
+            np.deg2rad(body_stats["min_knee_deg"]) > knee_limit
         )
         body_stats["peak_target_rpy_deg"] = np.max(
             [item["peak_target_rpy_deg"] for item in outcomes], axis=0
@@ -223,6 +240,13 @@ def benchmark(env: LocomotionEnv, policy, episodes: int, *, seed: int = EVALUATI
     if env.course.ledge_transfer:
         body_stats["peak_upper_contacts"] = max(item["peak_upper_contacts"] for item in outcomes)
         body_stats["forward_transfer_m"] = max(item["forward_transfer_m"] for item in outcomes)
+    if env.course.home_stairs is not None:
+        body_stats["leg_stair_peak_m"] = max(item["leg_stair_peak_m"] for item in outcomes)
+        body_stats["mean_riser_contact_s"] = env.model.opt.timestep * float(
+            np.mean([item["riser_contact_substeps"] for item in outcomes])
+        )
+        body_stats["sole_top_peak_m"] = max(item["sole_top_peak_m"] for item in outcomes)
+        body_stats["link_overlap_passed"] &= body_stats["leg_stair_peak_m"] <= OVERLAP_LIMIT_M
     return {
         "episodes": episodes,
         "successes": sum(item["success"] for item in outcomes),
@@ -248,6 +272,8 @@ def _inspect(args) -> None:
         course = course or manifest["course"]
         body_control = body_control or manifest.get("body_control", False)
     env_type = LocomotionEnv
+    if course == "home-corner-preview":
+        args.static = True
     if args.camera_gate:
         from .course_camera import CameraGatedCourse
 
@@ -334,6 +360,10 @@ def _view(env, policy, args) -> None:
                     )
                     details += f"\n{phase} | upper contacts peak {info['peak_upper_contacts']}/6"
                     details += f" | CoM shift {1000 * info['forward_transfer_m']:.0f} mm"
+                if env.course.home_stairs is not None:
+                    side_time = info["riser_contact_substeps"] * env.model.opt.timestep
+                    details += f"\nRiser contact {side_time:.2f} s"
+                    details += f" | rigid links {1000 * info['leg_stair_peak_m']:.2f} mm"
                 window.set_texts((None, mujoco.mjtGridPos.mjGRID_TOPLEFT, "Gait", details))
             window.sync()
             if done or truncated:

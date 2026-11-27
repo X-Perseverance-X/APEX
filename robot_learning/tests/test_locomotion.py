@@ -65,6 +65,65 @@ def test_descent_reference_walk_and_lane_frames():
         env.close()
 
 
+@pytest.mark.parametrize("direction, middle", [("up", 1.35), ("down", 1.32)])
+def test_home_stair_tread_depths_match_physical_risers(direction, middle):
+    env = LocomotionEnv(f"hybrid-home-{direction}-20")
+    try:
+        assert env.course.step_edges == pytest.approx((1.05, middle, 1.62))
+        for geom_id in env._terrain_ids:
+            step = env.model.geom(geom_id)
+            assert step.type[0] == mujoco.mjtGeom.mjGEOM_BOX
+            assert step.size[1] == pytest.approx(0.45)
+            assert step.pos[2] + step.size[2] == pytest.approx(env.course.height(step.pos[0]))
+    finally:
+        env.close()
+
+
+def test_home_corner_contains_three_distinct_winder_meshes():
+    env = LocomotionEnv("home-corner-preview")
+    try:
+        for index in range(1, 4):
+            geom = env.model.geom(f"winder_{index}")
+            assert geom.type[0] == mujoco.mjtGeom.mjGEOM_MESH
+            assert geom.contype[0] > 0
+        assert env.model.nmesh >= 3
+    finally:
+        env.close()
+
+
+def test_home_20_descent_distinguishes_sole_compression_from_riser_contact():
+    env = LocomotionEnv("hybrid-home-down-20-single")
+    try:
+        env.reset(seed=1008953)
+        for _ in range(env.episode_steps):
+            _, _, done, truncated, info = env.step(np.zeros(env.action_space.shape))
+            if done or truncated:
+                break
+        assert info["success"] and not info["fallen"]
+        assert info["riser_contact_substeps"] == 0
+        assert info["leg_stair_peak_m"] == 0 < info["sole_top_peak_m"]
+        assert info["min_knee_deg"] > -152
+    finally:
+        env.close()
+
+
+def test_home_high_swing_uses_measured_toe_before_crossing_or_lowering():
+    env = LocomotionEnv("hybrid-home-up-20-single")
+    try:
+        motion = env.body_motion
+        motion.swing_edge = 1.05
+        motion.lift_off = np.array([1.02, -0.20, 0.016])
+        motion.landing = np.array([1.11, -0.24, 0.216])
+        low = motion.high_edge_swing(0.90, 0.25, np.array([0.96, -0.22, 0.20]))
+        clear = motion.high_edge_swing(0.90, 0.25, np.array([0.96, -0.22, 0.24]))
+        over_tread = motion.high_edge_swing(1.0, 0.25, np.array([1.10, -0.22, 0.24]))
+        assert low[0] < motion.swing_edge < clear[0]
+        assert clear[2] == pytest.approx(0.25)
+        np.testing.assert_allclose(over_tread, motion.landing)
+    finally:
+        env.close()
+
+
 @pytest.mark.parametrize("course_name", ["step-05", "down-05"])
 def test_body_control_tracks_step_with_independent_footholds(course_name):
     env = LocomotionEnv(course_name, randomize=False, body_control=True)
