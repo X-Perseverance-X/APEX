@@ -397,9 +397,10 @@ for height_cm in (13, 14, 15, 16, 17, 18, 19, 20):
         body_support=True,
     )
 
-COURSES["hybrid-brace-transfer-up-13"] = replace(
-    COURSES["hybrid-brace-up-13"], brace_rear_placement=True
-)
+for height_cm in range(13, 21):
+    COURSES[f"hybrid-brace-transfer-up-{height_cm:02}"] = replace(
+        COURSES[f"hybrid-brace-up-{height_cm:02}"], brace_rear_placement=True
+    )
 
 TRIPOD = np.array([0, 1, 0, 1, 0, 1], dtype=float) * 0.5
 
@@ -439,6 +440,7 @@ class LocomotionEnv(Meta1Env):
         )
         self.record_pose = record_pose
         self.train_near_step = train_near_step
+        self.action_scale = 1.0
         self.gait = "tripod" if self.hybrid else "reference"
         self.switch_step = None
         self.approach_speed = 0.0
@@ -770,7 +772,7 @@ class LocomotionEnv(Meta1Env):
         action = np.asarray(action, dtype=np.float32)
         if action.shape != self.action_space.shape or not np.isfinite(action).all():
             raise ValueError("locomotion action has the wrong shape or a non-finite value")
-        action = np.clip(action, -1, 1)
+        action = self.action_scale * np.clip(action, -1, 1)
         self.adjustment = 0.75 * self.adjustment + 0.25 * action
         x0 = float(self.data.qpos[0])
         home = self.course.home_stairs is not None and self.link_metrics is not None

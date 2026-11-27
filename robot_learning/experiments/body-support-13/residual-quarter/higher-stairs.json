@@ -1,0 +1,101 @@
+[
+  {
+    "mode": "reference",
+    "first_seed": 1013600,
+    "course": "hybrid-brace-transfer-up-14",
+    "episodes": 5,
+    "successes": 0,
+    "falls": 0,
+    "peak_upper_contacts": 2,
+    "mean_progress_m": 0.7594489565933976,
+    "mean_riser_contact_s": 2.932
+  },
+  {
+    "mode": "reference",
+    "first_seed": 1013600,
+    "course": "hybrid-brace-transfer-up-15",
+    "episodes": 5,
+    "successes": 0,
+    "falls": 1,
+    "peak_upper_contacts": 1,
+    "mean_progress_m": 0.6972968230781784,
+    "mean_riser_contact_s": 0.3056
+  },
+  {
+    "mode": "reference",
+    "first_seed": 1013600,
+    "course": "hybrid-brace-transfer-up-16",
+    "episodes": 5,
+    "successes": 0,
+    "falls": 2,
+    "peak_upper_contacts": 1,
+    "mean_progress_m": 0.7174708590347822,
+    "mean_riser_contact_s": 0.514
+  },
+  {
+    "mode": "reference",
+    "first_seed": 1013600,
+    "course": "hybrid-brace-transfer-up-17",
+    "episodes": 5,
+    "successes": 0,
+    "falls": 2,
+    "peak_upper_contacts": 1,
+    "mean_progress_m": 0.7341956187167838,
+    "mean_riser_contact_s": 0.4396
+  },
+  {
+    "mode": "reference",
+    "first_seed": 1013600,
+    "course": "hybrid-brace-transfer-up-18",
+    "episodes": 5,
+    "successes": 0,
+    "falls": 1,
+    "peak_upper_contacts": 1,
+    "mean_progress_m": 0.7681675492322231,
+    "mean_riser_contact_s": 1.3452
+  },
+  {
+    "mode": "reference",
+    "first_seed": 1013600,
+    "course": "hybrid-brace-transfer-up-19",
+    "episodes": 5,
+    "successes": 0,
+    "falls": 1,
+    "peak_upper_contacts": 2,
+    "mean_progress_m": 0.832314821393292,
+    "mean_riser_contact_s": 1.2736
+  },
+  {
+    "mode": "reference",
+    "first_seed": 1013600,
+    "course": "hybrid-brace-transfer-up-20",
+    "episodes": 5,
+    "successes": 0,
+    "falls": 2,
+    "peak_upper_contacts": 1,
+    "mean_progress_m": 0.7085578848494687,
+    "mean_riser_contact_s": 0.9104000000000001
+  },
+  {
+    "mode": "quarter-policy",
+    "first_seed": 1013206,
+    "course": "hybrid-brace-transfer-up-14",
+    "episodes": 8,
+    "successes": 0,
+    "falls": 1,
+    "peak_upper_contacts": 5,
+    "mean_progress_m": 0.7975343573175855,
+    "mean_riser_contact_s": 1.5957500000000002
+  },
+  {
+    "mode": "quarter-policy",
+    "first_seed": 1013206,
+    "course": "hybrid-brace-transfer-up-15",
+    "episodes": 8,
+    "successes": 0,
+    "falls": 3,
+    "peak_upper_contacts": 4,
+    "mean_progress_m": 0.9174902373754437,
+    "mean_riser_contact_s": 0.26975000000000005
+  }
+]

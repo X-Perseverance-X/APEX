@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "course": "hybrid-brace-transfer-up-13",
+  "seed": 6231,
+  "eval_seed": 1013200,
+  "envs": 8,
+  "body_control": true,
+  "attitude_control": true,
+  "total_transitions": 131072,
+  "model_sha256": "c2d8cdeff6c918a4a3863050118887def9cacbb39d2c5bda2e0bd107c989679c",
+  "python": "3.12.9",
+  "mujoco": "3.17.0",
+  "stable_baselines3": "2.9.2",
+  "policy_export_allowed": false,
+  "action_scale": 0.25,
+  "ppo_epochs": 10,
+  "ppo_gamma": 0.99,
+  "ppo_gae_lambda": 0.95,
+  "steps_per_worker": 512,
+  "net_arch": {
+    "pi": [
+      128,
+      128
+    ],
+    "vf": [
+      128,
+      128
+    ]
+  },
+  "body_support": true
+}

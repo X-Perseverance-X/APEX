@@ -1,0 +1,175 @@
+<section id="meta1-policy-trace" aria-label="META-1 politika izleme">
+  <h2>META‑1 politika izleme</h2>
+  <p id="mpt-meta" class="text-small text-muted"></p>
+  <div class="mpt-controls">
+    <button class="btn btn-primary" id="mpt-play" type="button">Oynat</button>
+    <label for="mpt-time">Simülasyon zamanı <output class="tabular-nums" id="mpt-clock"></output></label>
+    <input class="form-range" id="mpt-time" type="range" min="0" value="0" step="1">
+  </div>
+  <svg id="mpt-progress" viewBox="0 0 720 72" preserveAspectRatio="none" role="img" aria-label="Politikanın ve referansın ileri konumu"></svg>
+  <p id="mpt-progress-note" class="text-small tabular-nums"></p>
+  <div id="mpt-layers" class="mpt-layers" aria-label="Giriş, gizli katman ve çıkış etkinlikleri"></div>
+  <div class="mpt-fields">
+    <label class="form-label" for="mpt-layer">Katman <select class="form-select" id="mpt-layer"></select></label>
+    <label class="form-label" for="mpt-node">Giriş veya nöron <select class="form-select" id="mpt-node"></select></label>
+  </div>
+  <p id="mpt-detail" class="tabular-nums"></p>
+  <p id="mpt-inputs" class="text-small text-muted"></p>
+  <script type="application/json" id="mpt-data">__TRACE_DATA__</script>
+</section>
+<style>
+  #meta1-policy-trace {
+    display: grid;
+    gap: calc(var(--font-size-base, 15px) * .62);
+    --mpt-policy: var(--viz-series-1, #287cb9);
+    --mpt-reference: var(--viz-series-2, #b0680e);
+  }
+  #meta1-policy-trace .mpt-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; }
+  #meta1-policy-trace #mpt-time { flex: 1 1 170px; min-width: 0; }
+  #meta1-policy-trace #mpt-progress { width: 100%; height: 72px; }
+  #meta1-policy-trace .mpt-layers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; }
+  #meta1-policy-trace .mpt-layer { min-width: 0; }
+  #meta1-policy-trace .mpt-layer p { margin-bottom: .25rem; }
+  #meta1-policy-trace .mpt-nodes { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 2px; }
+  #meta1-policy-trace .mpt-nodes.mpt-outputs { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  #meta1-policy-trace .mpt-cell { height: 8px; background: var(--muted, color-mix(in srgb, currentColor 12%, transparent)); }
+  #meta1-policy-trace .mpt-cell[data-current] { outline: 1px solid currentColor; outline-offset: 1px; }
+  #meta1-policy-trace .mpt-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: .7rem; }
+  #meta1-policy-trace .mpt-fields select { display: block; width: 100%; }
+  @media (max-width: 540px) {
+    #meta1-policy-trace .mpt-layers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #meta1-policy-trace .mpt-fields { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+<script>
+(() => {
+  const root = document.getElementById('meta1-policy-trace');
+  const byId = id => root.querySelector(`#mpt-${id}`);
+  const data = JSON.parse(byId('data').textContent);
+  const time = byId('time'), play = byId('play'), layer = byId('layer'), node = byId('node');
+  const samples = data.policy.samples;
+  const layerNames = ['Giriş', 'Gizli katman 1', 'Gizli katman 2', 'Çıkış'];
+  const labels = [data.inputs, ...data.weights.slice(0, 2).map(group =>
+    group.bias.map((_, index) => `Nöron ${index + 1}`)), data.outputs];
+  const number = (x, digits = 3) => x.toLocaleString('tr-TR', {maximumFractionDigits: digits});
+  const result = run => run.success ? 'tamamladı' : run.fallen ? 'düştü' : 'süre doldu';
+  let frame = 0, timer = null;
+  const last = samples.length - 1;
+  time.max = last;
+  byId('meta').textContent = `${number(data.rise * 100, 0)} cm · tohum ${data.seed} · ` +
+    labels.map(items => items.length).join(' → ') + ` · düzeltme ölçeği %${number(data.scale * 100, 0)}`;
+  const cells = layerNames.map((name, i) => {
+    layer.add(new Option(name, i));
+    const block = document.createElement('div');
+    block.className = 'mpt-layer';
+    const caption = document.createElement('p');
+    caption.className = 'text-small';
+    caption.textContent = `${name} · ${labels[i].length}`;
+    const grid = document.createElement('div');
+    grid.className = `mpt-nodes${i === 3 ? ' mpt-outputs' : ''}`;
+    grid.setAttribute('aria-hidden', 'true');
+    const marks = labels[i].map((_, j) => {
+      const cell = document.createElement('span');
+      cell.className = 'mpt-cell cursor-interaction';
+      cell.addEventListener('click', () => {layer.value = i; selectNodes(j); draw(); save();});
+      grid.append(cell);
+      return cell;
+    });
+    block.append(caption, grid);
+    byId('layers').append(block);
+    return marks;
+  });
+
+  const svg = byId('progress'), ns = 'http://www.w3.org/2000/svg';
+  const end = Math.max(data.policy.elapsed, data.reference.elapsed, 1);
+  const xMax = Math.max(data.goal, data.policy.progress, data.reference.progress) + .1;
+  const point = row => [2 + row.t / end * 716, 66 - row.x / xMax * 60];
+  function addMark(tag, attrs, stroke) {
+    const mark = document.createElementNS(ns, tag);
+    for (const [key, val] of Object.entries(attrs)) mark.setAttribute(key, val);
+    mark.setAttribute('vector-effect', 'non-scaling-stroke');
+    if (stroke) mark.style.stroke = stroke;
+    svg.append(mark);
+    return mark;
+  }
+  const edgeY = point({t: 0, x: data.edge})[1];
+  addMark('line', {x1: 2, x2: 718, y1: edgeY, y2: edgeY, opacity: .26}, 'currentColor');
+  for (const name of ['policy', 'reference']) {
+    const run = data[name];
+    const rows = [...run.samples, {t: run.elapsed, x: run.progress}];
+    addMark('polyline', {points: rows.map(row => point(row).join(',')).join(' '), fill: 'none', 'stroke-width': 2}, `var(--mpt-${name})`);
+  }
+  const cursor = addMark('line', {x1: 2, x2: 2, y1: 2, y2: 70, opacity: .65}, 'currentColor');
+
+  function selectNodes(selected = 0) {
+    const names = labels[Number(layer.value)];
+    node.replaceChildren(...names.map((name, i) => new Option(name, i)));
+    node.value = Math.min(Math.max(0, selected), names.length - 1);
+  }
+
+  function draw() {
+    const row = samples[frame];
+    const values = [row.inputs, ...row.layers, row.mean];
+    const targetLayer = Number(layer.value), targetNode = Number(node.value);
+    byId('clock').textContent = `${number(row.t, 2)} s`;
+    time.setAttribute('aria-valuetext', `${number(row.t, 2)} saniye`);
+    time.value = frame;
+    cursor.setAttribute('x1', point(row)[0]); cursor.setAttribute('x2', point(row)[0]);
+    const phase = row.phase === 'tripod' ? 'referans yaklaşma' : `denge yürüyüşü${row.leg === null ? '' : ' · ' + data.legs[row.leg]}`;
+    byId('progress-note').textContent = `Politika ${number(row.x, 2)} m · ${phase} · ` +
+      `Mavi politika ${result(data.policy)} · turuncu referans ${result(data.reference)} · yatay çizgi basamak kenarı`;
+    for (const [i, group] of cells.entries()) {
+      for (const [j, mark] of group.entries()) {
+        const value = values[i][j];
+        const pct = Math.min(Math.abs(value), 1) * 92;
+        mark.style.background = `color-mix(in srgb, var(--mpt-${value >= 0 ? 'policy' : 'reference'}) ${pct}%, var(--muted, #b0b4bb33))`;
+        mark.toggleAttribute('data-current', i === targetLayer && j === targetNode);
+      }
+    }
+    const label = labels[targetLayer][targetNode];
+    let detail = `${label} · ${number(values[targetLayer][targetNode])}`;
+    if (targetLayer === 3) detail += ` · filtrelenmiş düzeltme ${number(row.applied[targetNode])}`;
+    byId('detail').textContent = `${detail} · eleştirmen V ${number(row.value)}`;
+    const weights = data.weights[targetLayer - 1];
+    if (!weights) {
+      byId('inputs').textContent = 'Renkler · mavi pozitif · turuncu negatif';
+      return;
+    }
+    const sum = weights.weight[targetNode].map((w, i) => [labels[targetLayer - 1][i], w * values[targetLayer - 1][i]])
+      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 3);
+    byId('inputs').textContent = `Doğrudan katkı (w × giriş) · ${sum.map(([name, v]) => `${name} ${number(v)}`).join(' · ')} · sapma ${number(weights.bias[targetNode])}`;
+  }
+
+  function restore(state) {
+    const view = state?.privateContent;
+    if (!view || view.seed !== data.seed) return;
+    frame = Number.isInteger(view.frame) ? Math.min(Math.max(0, view.frame), last) : 0;
+    layer.value = Number.isInteger(view.layer) && labels[view.layer] ? view.layer : 3;
+    selectNodes(Number.isInteger(view.node) ? view.node : 1);
+  }
+  function save() {
+    const i = Number(layer.value), j = Number(node.value);
+    window.openai?.setWidgetState?.({
+      privateContent: {seed: data.seed, frame, layer: i, node: j},
+      modelContent: {course: data.course, seed: data.seed, t: samples[frame].t, selected: labels[i][j]},
+    })?.catch(() => {});
+  }
+  function stop() { clearInterval(timer); timer = null; play.textContent = 'Oynat'; }
+  time.addEventListener('input', () => {stop(); frame = Number(time.value); draw();});
+  time.addEventListener('change', save);
+  layer.addEventListener('change', () => {selectNodes(); draw(); save();});
+  node.addEventListener('change', () => {draw(); save();});
+  play.addEventListener('click', () => {
+    if (timer !== null) {stop(); save(); return;}
+    if (frame === last) frame = 0;
+    draw(); play.textContent = 'Durdur';
+    const delay = last ? Math.max(25, (samples[1].t - samples[0].t) * 1000) : 100;
+    timer = setInterval(() => {if (frame === last) {stop(); save(); return;} frame += 1; draw();}, delay);
+  });
+  window.addEventListener('openai:set_globals', event => {restore(event.detail?.globals?.widgetState); draw();});
+  frame = samples.findIndex(row => row.phase === 'wave' && row.x >= data.edge - .12);
+  if (frame < 0) frame = samples.findIndex(row => row.phase === 'wave');
+  if (frame < 0) frame = 0;
+  layer.value = 3; selectNodes(1); restore(window.openai?.widgetState); draw();
+})();
+</script>

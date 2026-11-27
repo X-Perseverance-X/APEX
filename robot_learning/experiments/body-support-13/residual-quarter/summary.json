@@ -1,0 +1,10 @@
+[
+  {
+    "course": "hybrid-brace-transfer-up-13",
+    "passed": false,
+    "episodes": 20,
+    "successes": 1,
+    "falls": 3,
+    "mean_progress_m": 0.9171800188986466
+  }
+]

@@ -118,6 +118,9 @@ REPLAY_MODELS = {
     "de3c16e2749fcd9c0182d4e10be6b4872ecf64a5ce1b7a0e3fcbc5a4eb21e065": {
         "hybrid-brace-up-13",
     },
+    "4e1ef836f9951dc3f4cd327094eb93989221c6acde0e90638300de799ec1629a": {
+        "hybrid-brace-transfer-up-13",
+    },
 }
 
 
@@ -144,11 +147,20 @@ def add_commands(sub: argparse._SubParsersAction, project: Path) -> None:
     watch.add_argument("--live", action="store_true", help="tail the recordings during training")
     report = sub.add_parser("course-report", help="generate an offline HTML report")
     report.add_argument("--run", type=Path, required=True, help="experiment root")
+    trace = sub.add_parser("course-policy-view", help="replay real PPO activations and actions")
+    trace.add_argument("--run", type=Path, required=True, help="stage folder with a PPO policy")
+    trace.add_argument("--output", type=Path, required=True)
+    trace.add_argument("--seed", type=int, default=EVALUATION_SEED)
+    trace.add_argument("--sample-every", type=int, default=20, help="sample every N control steps")
+    trace.add_argument("--fragment", action="store_true", help="write the embeddable trace")
     train = sub.add_parser("course-train", help="train PPO with evaluation gates between courses")
     train.add_argument("--start", choices=STAGES, default=STAGES[0])
     train.add_argument("--through", choices=STAGES)
     train.add_argument("--timesteps", type=int, default=200_000, help="new transitions per stage")
     train.add_argument("--envs", type=int, default=4)
+    train.add_argument(
+        "--action-scale", type=float, help="limit the learned corrections to the reference"
+    )
     train.add_argument(
         "--gamma", type=float, default=0.99, help="PPO reward discount per control step"
     )
@@ -209,7 +221,15 @@ def _read_policy(run: Path, env: LocomotionEnv, *, exact_course: bool, vector=No
         raise ValueError("run uses an incompatible locomotion environment")
     if exact_course and manifest["course"] != env.course_name:
         raise ValueError("run course does not match requested course")
+    env.action_scale = _action_scale(manifest)
     return PPO.load(run / POLICY_FILE, env=vector, device="cpu")
+
+
+def _action_scale(manifest):
+    scale = float(manifest.get("action_scale", 1.0))
+    if not 0 < scale <= 1:
+        raise ValueError("action scale must be in (0, 1]")
+    return scale
 
 
 def _action(env: LocomotionEnv, policy, obs: np.ndarray) -> np.ndarray:
@@ -410,11 +430,13 @@ def _view(env, policy, args) -> None:
             time.sleep(max(0.0, 0.02 - (time.monotonic() - start)))
 
 
-def _make_env(course: str, monitor_path: str, body_control: bool):
+def _make_env(course: str, monitor_path: str, body_control: bool, action_scale: float):
     from stable_baselines3.common.monitor import Monitor
 
+    env = LocomotionEnv(course, record_pose=True, body_control=body_control, train_near_step=True)
+    env.action_scale = action_scale
     return Monitor(
-        LocomotionEnv(course, record_pose=True, body_control=body_control, train_near_step=True),
+        env,
         filename=monitor_path,
         info_keywords=("success", "fallen", "progress_m", "touchdowns", "pack_voltage_proxy_v"),
     )
@@ -443,12 +465,21 @@ def _train(args) -> None:
     args.output.mkdir(parents=True, exist_ok=False)
     policy = None
     summary = []
+    resume = (
+        json.loads((args.resume / "manifest.json").read_text(encoding="utf-8"))
+        if args.resume
+        else {}
+    )
+    action_scale = _action_scale(resume) if args.action_scale is None else args.action_scale
+    if args.resume and action_scale != _action_scale(resume):
+        raise ValueError("continued training requires the previous action scale")
     for course in STAGES[STAGES.index(args.start) : STAGES.index(args.through) + 1]:
         stage = args.output / course
         stage.mkdir()
         eval_env = LocomotionEnv(course, body_control=args.body_control)
+        eval_env.action_scale = action_scale
         factories = [
-            partial(_make_env, course, str(stage / f"env-{i}.csv"), args.body_control)
+            partial(_make_env, course, str(stage / f"env-{i}.csv"), args.body_control, action_scale)
             for i in range(args.envs)
         ]
         vector = (
@@ -472,6 +503,7 @@ def _train(args) -> None:
                 "mujoco": mujoco.__version__,
                 "stable_baselines3": sb3.__version__,
                 "policy_export_allowed": False,
+                "action_scale": action_scale,
             }
             manifest_path = stage / "manifest.json"
             manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -551,9 +583,34 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
         watch_stage(args.run, live=args.live)
     elif args.command == "course-report":
         print(write_report(args.run))
+    elif args.command == "course-policy-view":
+        import torch
+
+        from .policy_trace import write_trace
+
+        if not 1 <= args.sample_every <= 200 or args.seed < 0:
+            parser.error("sample every 1–200 control steps with a nonnegative seed")
+        torch.set_num_threads(1)
+        manifest = json.loads((args.run / "manifest.json").read_text(encoding="utf-8"))
+        env = LocomotionEnv(manifest["course"], body_control=manifest.get("body_control", False))
+        try:
+            model = _read_policy(args.run, env, exact_course=True)
+            write_trace(
+                env,
+                model,
+                seed=args.seed,
+                sample_every=args.sample_every,
+                output=args.output,
+                fragment=args.fragment,
+            )
+        finally:
+            env.close()
+        print(args.output.resolve())
     elif args.command == "course-train":
         if not 1 <= args.envs <= 32:
             parser.error("--envs must be between 1 and 32")
+        if args.action_scale is not None and not 0 < args.action_scale <= 1:
+            parser.error("action scale must be in (0, 1]")
         if not (0 < args.gamma < 1 and 0 <= args.gae_lambda <= 1):
             parser.error("gamma must be in (0, 1), and GAE lambda must be in [0, 1]")
         if args.timesteps < 512 or not 10 <= args.eval_episodes <= 100:
@@ -561,7 +618,7 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
         hybrid = args.start.startswith("hybrid-")
         if args.through is None:
             if COURSES[args.start].brace_rear_placement:
-                args.through = args.start
+                args.through = "hybrid-brace-transfer-up-20"
             elif hybrid:
                 brace = COURSES[args.start].body_support
                 args.through = next(
@@ -577,7 +634,7 @@ def run_command(args, parser: argparse.ArgumentParser) -> None:
         if COURSES[args.start].body_support != COURSES[args.through].body_support:
             parser.error("body-support courses use a separate policy and curriculum")
         if COURSES[args.start].brace_rear_placement != COURSES[args.through].brace_rear_placement:
-            parser.error("the rear-placement experiment runs as a standalone course")
+            parser.error("use one rear-placement controller family per curriculum run")
         if COURSES[args.start].body_support and args.eval_episodes < BRACE_EVAL_EPISODES:
             parser.error(
                 f"body-support courses require at least {BRACE_EVAL_EPISODES} evaluation episodes"

@@ -514,6 +514,36 @@ Arka ayak aktarımıyla referans 1013200–1013219 grubunda 2/20 tamamladı.
 ölçülmedi. Aynı parkurda 65.536 geçişle eğitilen PPO 0/20 ve üç düşme ile
 kaldı. Üç PPO koşusunda toplam 851.968 yeni geçiş toplandı.
 
+Arka ayak aktarımı parkurları 13–20 cm arasında birer santimetre artar. Daha
+yüksek parkurlar tekil referans denemelerinde de açılabilir. PPO müfredatı
+başarısız olduğu aşamada durur. `--action-scale 0.25` ağın yürüyüşe yaptığı
+düzeltmeleri tam aralığın dörtte biriyle sınırlar. Ölçek manifestte saklanır ve
+aynı politika yeniden oynatılırken veya eğitimi sürdürülürken kullanılır.
+
+```powershell
+& $py -m apex_rl.cli course-view --course hybrid-brace-transfer-up-15 --randomize --seed 1013600
+& $py -m apex_rl.cli course-view --run robot_learning/experiments/body-support-13/residual-quarter/hybrid-brace-transfer-up-13 --randomize --seed 1013213
+& $py -m apex_rl.cli course-policy-view --run robot_learning/experiments/body-support-13/residual-quarter/hybrid-brace-transfer-up-13 --seed 1013213 --output robot_learning/runs/meta1-policy-success.html
+```
+
+Politika izleyicisi aynı başlangıç koşulunda PPO ile referans yürüyüşünü
+karşılaştırır. Zamanı sürükleyince 127 girişin, iki gizli katmanın ve 12
+çıkışın gerçek değerleri değişir. Seçili nöron için bir önceki katmandan
+gelen en büyük üç işaretli `ağırlık × değer` katkısı gösterilir. Bu değerler,
+seçili anda tek katmandaki hesabı açıklar. Çıkış satırındaki filtrelenmiş
+düzeltme kırpılmış ağ çıkışı, komut ölçeği ve zaman filtresinden üretilir.
+Yaklaşmada yürüyüş denetleyicisi sabit tripod komutunu kullanır.
+
+%25 düzeltme ölçeğiyle 131.072 yeni geçişte eğitilen politika 13 cm'de
+1013200–1013219 grubunu 1/20 tamamlama ve üç düşmeyle bitirdi. Önceki PPO aynı
+grupta 0/20 kalmıştı. 1013213 koşusunda altı ayak da üst yüzeye geçti. Dik
+yüzle 0,40 saniye temas, bacaklar arasında 0,44 mm azami örtüşme ölçüldü.
+0,25 saniye temas sınırı ve tamamlanma oranı sağlanmadığı için müfredat 13 cm'de
+kaldı. Bağımsız 1013800–1013811 tekrarı 0/12 tamamlanma ve sıfır düşmeyle
+sonuçlandı. 14–20 cm'nin her birinde beş bağımsız referans denemesi yapıldı.
+13 cm politikası ayrıca 14 ve 15 cm'ye doğrudan aktarıldı. İki yükseklikte de
+0/8 tamamlandı ve ulaşılan en yüksek temas sayıları sırasıyla beş ve dört ayaktı.
+
 - [ANYmal Parkour, ETH Zürich](https://arxiv.org/abs/2306.14874)
 
 #### Önceki sabit desenli parkurlar
