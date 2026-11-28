@@ -387,12 +387,17 @@ class BoxTraverse(StagedAscent):
         # Nothing can move: carry the body part of the way towards the stage pose.
         nx, nz, npitch = nominal
         cx, cz, cp = float(self.body[0]), float(self.body[2]), float(self.pitch)
-        for frac in (1.0, 0.6, 0.3):
+        # If the nominal move would lower a link into the tread, walk the
+        # body forward over the planted feet before trying to lower it.
+        for frac, preserve_height in (
+            (1.0, False), (0.6, False), (0.3, False),
+            (1.0, True), (0.6, True), (0.3, True),
+        ):
             body = np.array(
                 [
                     cx + frac * float(np.clip(nx - cx, -0.04, 0.04)),
                     0.0,
-                    cz + frac * float(np.clip(nz - cz, -0.03, 0.03)),
+                    cz if preserve_height else cz + frac * float(np.clip(nz - cz, -0.03, 0.03)),
                 ]
             )
             p = cp + frac * float(np.clip(npitch - cp, -math.radians(5), math.radians(5)))
@@ -401,6 +406,17 @@ class BoxTraverse(StagedAscent):
                 continue
             if key == self.last_shift:
                 continue
+            if preserve_height:
+                initial = np.array([cx, float(self.body[1]), cz])
+                stance = np.ones(6, bool)
+                if any(
+                    not self._chassis_ok(initial + u * (body - initial), cp + u * (p - cp))
+                    or not self._stance_ok(
+                        feet, stance, initial + u * (body - initial), cp + u * (p - cp), margin
+                    ).feasible
+                    for u in (0.25, 0.5, 0.75)
+                ):
+                    continue
             if (
                 self._chassis_ok(body, p)
                 and self._stance_ok(feet, np.ones(6, bool), body, p, margin).feasible

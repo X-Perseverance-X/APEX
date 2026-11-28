@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -52,10 +53,18 @@ def test_mirrored_descent_checks_equal_the_direct_checks():
         env.close()
 
 
-def test_box_traverse_climbs_walks_on_top_and_steps_down():
-    env = box.BoxEnv("hybrid-box-16")
+@pytest.mark.parametrize(
+    ("seed", "edge_x"), ((1013200, None), (42, 0.3646)),
+    ids=("standard-approach", "12-cm-approach"),
+)
+def test_box_traverse_climbs_walks_on_top_and_steps_down(monkeypatch, seed, edge_x):
+    if edge_x is not None:
+        monkeypatch.setitem(
+            COURSES, "hybrid-box-16", replace(COURSES["hybrid-box-16"], edge_x=edge_x)
+        )
+    env = box.BoxEnv("hybrid-box-16", randomize=edge_x is None)
     try:
-        env.reset(seed=1013200)
+        env.reset(seed=seed)
         action = np.zeros(env.action_space.shape, dtype=np.float32)
         phases = set()
         done = False
