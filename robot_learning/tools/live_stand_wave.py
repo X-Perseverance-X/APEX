@@ -46,7 +46,9 @@ def run_on_pi():
             and spine["spine_state"] == "STAND" and spine["mode"] in modes
             and spine["pca_right_online"] and spine["pca_left_online"]
             and spine["config_valid"] and spine["home_set"]
-            and spine["firmware_version"] == "v57.33-gait-clearance-camera"
+            and spine["firmware_version"] in {
+                "v57.33-gait-clearance-camera", "v57.34-reachable-gait",
+            }
             and 7.0 <= spine["battery_right_v"] <= 8.45
         )
 

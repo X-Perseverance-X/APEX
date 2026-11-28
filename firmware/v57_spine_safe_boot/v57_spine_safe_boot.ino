@@ -35,7 +35,7 @@
 #include "DFRobotDFPlayerMini.h"
 #include "Adafruit_VL53L1X.h"
 
-#define APEX_FIRMWARE_VERSION "v57.33-gait-clearance-camera"
+#define APEX_FIRMWARE_VERSION "v57.34-reachable-gait"
 #define APEX_BUILD_PROFILE    "esp32s3-n16r8-generic"
 
 WebServer server(80);
@@ -2317,7 +2317,8 @@ bool beginStandupSequence(String &reason) {
 }
 
 // ================= 3D EULER MATRİSİ =================
-void calculate_body_ik_and_move(int leg, float targetX, float targetY, float targetZ) {
+bool calculateBodyIkTargets(int leg, float targetX, float targetY, float targetZ,
+                            float (&angles)[3], bool gaitLimits) {
   // Canonical robot frame: +X ileri, +Y sol, +Z yukarı.
   // Pozitif roll: sol taraf yukarı; pozitif pitch: burun aşağı;
   // pozitif yaw: yukarıdan bakınca sola/CCW dönüş (sağ-el kuralı).
@@ -2369,6 +2370,7 @@ void calculate_body_ik_and_move(int leg, float targetX, float targetY, float tar
   float c = sqrtf(ikZ * ikZ + r * r);
   const float cMax = (a + b) * 0.999f;
   const float cMin = fabsf(a - b) * 1.001f;
+  if (gaitLimits && (d - l < 5.0f || c < cMin || c > cMax)) return false;
   c = constrain(c, cMin, cMax);
 
   const float thetaCoxaGeom = atan2f(ikYOut, ikX) * 180.0f / PI;
@@ -2377,20 +2379,65 @@ void calculate_body_ik_and_move(int leg, float targetX, float targetY, float tar
   const float thetaFemurGeom = atan2f(r, -ikZ) * 180.0f / PI + acosf(cosFemur) * 180.0f / PI;
   const float thetaTibiaGeom = 180.0f - acosf(cosTibia) * 180.0f / PI;
 
-  if (!isfinite(thetaCoxaGeom) || !isfinite(thetaFemurGeom) || !isfinite(thetaTibiaGeom)) return;
+  const float geometric[3] = {thetaCoxaGeom, thetaFemurGeom, thetaTibiaGeom};
+  for (int joint = 0; joint < 3; joint++) {
+    const float angle = mapIkToServoDeg(leg, joint, geometric[joint]);
+    if (!isfinite(angle) || angle < -5.0f || angle > 185.0f) return false;
+    if (gaitLimits) {
+      const float trim = offset[leg][joint] + (joint == 0 ? COXA_SOFTWARE_TRIM_DEG[leg] : 0.0f);
+      if (angle < max(MIN_DEGREE, MIN_DEGREE - trim) ||
+          angle > min(MAX_DEGREE, MAX_DEGREE - trim)) return false;
+    }
+    angles[joint] = angle;
+  }
+  return true;
+}
 
-  const float servoCoxa  = mapIkToServoDeg(leg, 0, thetaCoxaGeom);
-  const float servoFemur = mapIkToServoDeg(leg, 1, thetaFemurGeom);
-  const float servoTibia = mapIkToServoDeg(leg, 2, thetaTibiaGeom);
+void calculate_body_ik_and_move(int leg, float targetX, float targetY, float targetZ) {
+  float angles[3];
+  if (!calculateBodyIkTargets(leg, targetX, targetY, targetZ, angles, false)) return;
+  for (int joint = 0; joint < 3; joint++) send_to_PCA9685(leg, joint, angles[joint]);
+}
 
-  // Aşırı/ulaşılamaz komutta sessizce yanlış poza gitmek yerine o frame'i atla.
-  if (servoCoxa < -5.0f || servoCoxa > 185.0f ||
-      servoFemur < -5.0f || servoFemur > 185.0f ||
-      servoTibia < -5.0f || servoTibia > 185.0f) return;
-
-  send_to_PCA9685(leg, 0, servoCoxa);
-  send_to_PCA9685(leg, 1, servoFemur);
-  send_to_PCA9685(leg, 2, servoTibia);
+void moveGaitFoot(int leg, float baseX, float baseY, float targetX, float targetY, float targetZ) {
+  float angles[3];
+  if (!calculateBodyIkTargets(leg, targetX, targetY, targetZ, angles, true)) {
+    // First fit the horizontal stroke at ground height. Then keep as much of
+    // the requested lift as the calibrated joint range admits at that point.
+    if (!calculateBodyIkTargets(leg, targetX, targetY, s_gaitZ, angles, true)) {
+      if (!calculateBodyIkTargets(leg, baseX, baseY, s_gaitZ, angles, true)) {
+        calculate_body_ik_and_move(leg, baseX, baseY, s_gaitZ);
+        return;
+      }
+      const float dx = targetX - baseX;
+      const float dy = targetY - baseY;
+      float low = 0.0f, high = 1.0f;
+      for (int i = 0; i < 7; i++) {
+        const float mid = (low + high) * 0.5f;
+        float trial[3];
+        if (calculateBodyIkTargets(leg, baseX + dx*mid, baseY + dy*mid, s_gaitZ, trial, true)) {
+          low = mid;
+          for (int joint = 0; joint < 3; joint++) angles[joint] = trial[joint];
+        } else {
+          high = mid;
+        }
+      }
+      targetX = baseX + dx*low;
+      targetY = baseY + dy*low;
+    }
+    float low = s_gaitZ, high = targetZ;
+    for (int i = 0; i < 7 && high > low; i++) {
+      const float mid = (low + high) * 0.5f;
+      float trial[3];
+      if (calculateBodyIkTargets(leg, targetX, targetY, mid, trial, true)) {
+        low = mid;
+        for (int joint = 0; joint < 3; joint++) angles[joint] = trial[joint];
+      } else {
+        high = mid;
+      }
+    }
+  }
+  for (int joint = 0; joint < 3; joint++) send_to_PCA9685(leg, joint, angles[joint]);
 }
 
 void loadMemory() {
@@ -3425,13 +3472,14 @@ void loop() {
         // hata güvenilir bir hedefi-geride-bırakma göstergesidir. Fazı
         // durdurmadan en fazla 0.60x'e yavaşlatır; uzun takılmayı önler.
         float lagPhaseScale = 1.0f;
-        if (!pureTurnGaitActive && gaitTrackingErrorDeg > GAIT_LAG_SOFT_DEG) {
+        const float turnGovernor = constrain((s_joyMag - 0.20f) / 0.35f, 0.0f, 1.0f);
+        if (gaitTrackingErrorDeg > GAIT_LAG_SOFT_DEG) {
           float lag = constrain((gaitTrackingErrorDeg - GAIT_LAG_SOFT_DEG) /
                                 (GAIT_LAG_HARD_DEG - GAIT_LAG_SOFT_DEG), 0.0f, 1.0f);
-          lagPhaseScale = 1.0f - 0.40f * lag;
+          lagPhaseScale = 1.0f - 0.55f * lag * (pureTurnGaitActive ? turnGovernor : 1.0f);
         }
         float phaseBlend = min(1.0f, controlFrameDtS * 7.0f);
-        if (pureTurnGaitActive) gaitPhaseRateScale = 1.0f;
+        if (pureTurnGaitActive && turnGovernor == 0.0f) gaitPhaseRateScale = 1.0f;
         else gaitPhaseRateScale += (lagPhaseScale - gaitPhaseRateScale) * phaseBlend;
 
         currentPhase += (controlFrameDtS * 1000.0f / cycleDuration) * gaitPhaseRateScale;
@@ -3499,8 +3547,11 @@ void loop() {
                           ? constrain(s_joyMag / 0.35f, 0.0f, 1.0f)
                           : constrain(s_joyMag / GAIT_FULL_LIFT_INPUT, 0.0f, 1.0f);
           float liftSin = sinf(bt * PI);
-          float liftShape = preservePureTurnGait ? powf(liftSin, 4.0f)
-                                                 : liftSin * liftSin;
+          const float liftSquared = liftSin * liftSin;
+          const float turnBlend = constrain((s_joyMag - 0.20f) / 0.35f, 0.0f, 1.0f);
+          const float liftShape = preservePureTurnGait
+                                  ? liftSquared * (turnBlend + (1.0f - turnBlend) * liftSquared)
+                                  : liftSquared;
           legZ = s_gaitZ + s_lift * liftBlend * liftShape;
         } else {
           float st = (t_leg - 0.5) * 2.0;
@@ -3522,7 +3573,7 @@ void loop() {
           legY = baseLegY + (leg_vY / 2.0) * stance_curve;
           legZ = s_gaitZ;
         }
-        calculate_body_ik_and_move(i, legX, legY, legZ);
+        moveGaitFoot(i, legBaseX, baseLegY, legX, legY, legZ);
       }
       gaitTrackingErrorDeg = maxDiffThisFrame;
     }

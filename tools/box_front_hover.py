@@ -60,7 +60,7 @@ def attitude(mode):
             and d["imu_age_s"]<.3 and d["imu"]["online"] and s["outputs_armed"]
             and s["mode"]==mode and s["spine_state"]=="STAND"
             and s["pca_right_online"] and s["pca_left_online"] and s["config_valid"]
-            and s["firmware_version"]=="v57.33-gait-clearance-camera"
+            and s["firmware_version"] in {"v57.33-gait-clearance-camera", "v57.34-reachable-gait"}
             and 7.0<=s["battery_right_v"]<=8.45):
         raise RuntimeError("STAND/IMU precondition changed")
     return d["imu"]["rpy_deg"][:2]
